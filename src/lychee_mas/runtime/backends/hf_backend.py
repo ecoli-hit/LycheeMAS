@@ -8,7 +8,9 @@ latent 注入（约束 #3）。
   - encode_hidden(text)                           -> 末层 hidden states（latent 的源）
   - generate_chat_with_prefix(messages, prefix)   -> 把 (1,P,H) soft prefix 拼到前面再生成
 
-所有生成都是贪心（do_sample=False）以保证可复现。返回值带 token/延迟记账，供成本轴使用。
+默认贪心（do_sample=False）以保证可复现；可选采样解码（do_sample=True + temperature/top_p，构造时
+设随机种子复现），用于免训练 latent 软前缀这类「贪心会重复塌缩」的场景。返回值带 token/延迟记账，
+供成本轴使用。
 
 ⚠️ 改动（CLAUDE.md 迁移要点）：
   - torch / transformers 惰性导入（仅在构造/方法内 import），保证无这些库时本模块可被 import。
@@ -38,7 +40,9 @@ class GenResult:
 
 class HFBackend:
     def __init__(self, model_name: Optional[str] = None, device: str = "cuda:0",
-                 dtype: Any = None, enable_thinking: bool = False):
+                 dtype: Any = None, enable_thinking: bool = False,
+                 do_sample: bool = False, temperature: float = 0.7,
+                 top_p: float = 0.8, seed: int = 0):
         # torch/transformers 在此惰性导入（无 GPU/无库的离线环境不应触发本类构造）
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -63,6 +67,24 @@ class HFBackend:
             f"expected hidden {EXPECTED_HIDDEN}, got {self.H}"  # 约束 #3
         # 输入嵌入层；latent 拼接与 soft_token 都要用它
         self.embed = self.model.get_input_embeddings()
+        # 解码参数：默认贪心；采样时按 temperature/top_p，并设种子保证 run 级可复现
+        self.do_sample = do_sample
+        self.temperature = temperature
+        self.top_p = top_p
+        self.seed = seed
+        if do_sample:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
+    def _gen_kwargs(self, max_new_tokens: int) -> Dict[str, Any]:
+        """统一生成参数：默认贪心；do_sample=True 时加 temperature/top_p（构造已设种子）。"""
+        kw: Dict[str, Any] = {"max_new_tokens": max_new_tokens, "do_sample": self.do_sample,
+                              "pad_token_id": self.tok.pad_token_id}
+        if self.do_sample:
+            kw["temperature"] = self.temperature
+            kw["top_p"] = self.top_p
+        return kw
 
     # ---- 构造 prompt 的 token ids ----
     def _chat_ids(self, messages: List[Dict]):
@@ -79,8 +101,7 @@ class HFBackend:
         with torch.no_grad():
             ids = self._chat_ids(messages)
             t0 = time.time()
-            out = self.model.generate(input_ids=ids, max_new_tokens=max_new_tokens,
-                                      do_sample=False, pad_token_id=self.tok.pad_token_id)
+            out = self.model.generate(input_ids=ids, **self._gen_kwargs(max_new_tokens))
             dt = time.time() - t0
             new = out[0, ids.shape[1]:]  # 用 input_ids 时 generate 回显输入，需切掉前缀只取新 token
             return GenResult(self.tok.decode(new, skip_special_tokens=True),
@@ -115,8 +136,7 @@ class HFBackend:
             attn = torch.ones(1, P + ids.shape[1], device=self.device, dtype=torch.long)
             t0 = time.time()
             out = self.model.generate(inputs_embeds=inp, attention_mask=attn,
-                                      max_new_tokens=max_new_tokens, do_sample=False,
-                                      pad_token_id=self.tok.pad_token_id)
+                                      **self._gen_kwargs(max_new_tokens))
             dt = time.time() - t0
             # 用 inputs_embeds 时 generate 只返回新 token（不回显输入），故无需切片（约束 #3）
             return GenResult(self.tok.decode(out[0], skip_special_tokens=True),

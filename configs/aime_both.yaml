@@ -1,0 +1,37 @@
+# CDM 双通道（both：NL + 隐空间同时注入）在 AIME 上的全量实验配置（新框架 scripts/run_mas.py）。
+# 这是 CDM 主线条件：自然语言通道 + 隐空间通道一起给到应答 agent。
+# 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=3 \
+#         python scripts/run_mas.py --config configs/aime_both.yaml
+# 命令行同名项可覆盖（如 --n 3 / --P 32 / --results-root <dir>）。
+
+backend:                         # HF 模型后端（latent 通道要求 hidden=2560，仅 Qwen3-4B 适用）
+  model_path: /data/mxy/Models/Qwen/Qwen3-4B
+  model_tag: qwen3-4b
+  device: cuda:0
+  dtype: bfloat16
+  enable_thinking: false
+  do_sample: true                # ★ 采样解码：免训练 latent 软前缀在贪心下会重复塌缩，故用采样
+  temperature: 0.7               # Qwen3 非思考模式推荐档位
+  top_p: 0.8
+  seed: 0                        # 采样可复现（构造时设种子）
+
+memory:                          # CDM 双通道记忆方法
+  name: dual_channel
+  latent_strategy: soft_token    # latent 通道方法
+  nl_strategy: prev_output       # NL 通道：原样传上一个 agent 输出（带来源标志）
+  max_encode_tokens: 4096
+  include_transcript: true
+  tau: 1.0
+
+router:                          # 触发算法接缝
+  method: both                   # ★ NL + 隐空间同时注入（CDM 双通道主线）
+  P: 16                          # latent prefix 长度
+
+run:
+  task: aime2024
+  n: all                         # 全量（30 题）
+  max_rounds: 2
+  max_new_tokens: 4096
+
+eval:
+  results_root: /data/mxy/Project/CDM/results/lychee_v0_1   # 落 .../qwen3-4b/both/aime2024
