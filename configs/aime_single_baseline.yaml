@@ -1,0 +1,32 @@
+# 单模型推理 baseline：1 个 agent 直接答题、不注入任何记忆（method=none + team=single）。
+# 作为 MAS / 各记忆方法的对照（看多智能体 + 记忆相对单模型加了多少）。
+# 跑法：bash run_4gpu.sh configs/aime_single_baseline.yaml
+#   或  CUDA_VISIBLE_DEVICES=4 python run_mas.py --config configs/aime_single_baseline.yaml
+
+backend:                         # HF 模型后端
+  model_path: /data/mxy/Models/Qwen/Qwen3-4B
+  model_tag: qwen3-4b
+  device: cuda:0
+  dtype: bfloat16
+  enable_thinking: false         # 与 MAS 对照保持一致（关思考模式）；想要更强参考可设 true
+
+memory:                          # method=none 下不会注入，字段仅保留完整
+  name: dual_channel
+  latent_strategy: soft_token
+  nl_strategy: prev_output
+  max_encode_tokens: 4096
+  include_transcript: true
+  tau: 1.0
+
+router:                          # 触发算法接缝
+  method: none                   # ★ 不注入任何记忆（纯模型）
+
+run:                             # 单次实验运行参数
+  task: aime2024                 # ★ AIME
+  team: single                   # ★ 单 agent 直接作答（baseline）
+  n: all                         # 全量
+  max_rounds: 1                  # 单 agent 一轮即可（终止上限 = 1*1）
+  max_new_tokens: 4096           # AIME 推理较长，给足生成预算
+
+eval:
+  results_root: /data/mxy/Project/CDM/results/autogen_base   # 落 results/.../qwen3-4b/none/aime2024（与 MAS 同树）

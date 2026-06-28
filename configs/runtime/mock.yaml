@@ -1,0 +1,4 @@
+# runtime=mock：离线确定性后端（测试/CI 默认，零重依赖）。
+name: mock
+prompt_tokens: 8       # 每条伪消息的固定 prompt token 记账
+completion_tokens: 8   # 每条伪消息的固定 completion token 记账

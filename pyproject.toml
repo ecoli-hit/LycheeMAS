@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lychee-mas"
+version = "0.1.0"
+description = "LycheeMAS — 基于 AutoGen 的五层多智能体系统研究框架（统一图抽象 G=(V,E,W,T,M)）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "LycheeMAS" }]
+# 核心骨架零运行依赖（黄金法则 4）：纯标准库即可 import 并跑通离线 mock 示例。
+dependencies = []
+
+[project.optional-dependencies]
+# 运行时后端 + latent 注入（autogen / torch / transformers）。仅 runtime/backends/autogen_*.py 与
+# hf_backend / 真实推理才需要；离线 mock 不需要。
+runtime = [
+    "autogen-agentchat>=0.7,<0.8",
+    "autogen-core>=0.7,<0.8",
+    "autogen-ext[openai]>=0.7,<0.8",
+    "torch",
+    "transformers",
+]
+numeric = ["numpy"]
+config = ["pyyaml", "hydra-core"]
+dev = ["pytest", "ruff", "mypy"]
+# 全量：上面所有 + 数据/数学评分依赖（datasets / sympy 等供 eval 真实跑分）
+all = [
+    "autogen-agentchat>=0.7,<0.8",
+    "autogen-core>=0.7,<0.8",
+    "autogen-ext[openai]>=0.7,<0.8",
+    "torch",
+    "transformers",
+    "numpy",
+    "pyyaml",
+    "hydra-core",
+    "datasets",
+    "sympy",
+    "regex",
+    "latex2sympy2",
+    "word2number",
+    "pytest",
+    "ruff",
+    "mypy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["lychee_mas*"]
+# 排除 vendored 的 AutoGen 源码（src/autogen/ 仅作参照，不打包）
+exclude = ["autogen*", "LycheeMAS*"]
+
+[tool.ruff]
+line-length = 100
+# 只检查本框架代码；vendored autogen 与旧 LycheeMAS 不参与 lint。
+src = ["src/lychee_mas"]
+extend-exclude = ["src/autogen", "src/LycheeMAS"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+# math_parsing_util.py 是 Qwen2.5-Math 的逐字借用，保留原样不强制风格。
+[tool.ruff.lint.per-file-ignores]
+"src/lychee_mas/eval/math_parsing_util.py" = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+# 只收集本框架测试，避免触碰 vendored src/autogen 的测试（它们需 autogen 才能 collect）。
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+exclude = ["src/autogen", "src/LycheeMAS"]

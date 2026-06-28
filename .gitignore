@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# 虚拟环境 / 密钥
+.venv/
+venv/
+.env
+
+# 实验产物 / 数据（CLAUDE.md §7：不提交 runs/ 与大产物）
+runs/
+*.jsonl
+checkpoints/
+data/raw/
+data/processed/
+
+# 工具缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS
+.DS_Store
+
+# Claude Code 本地配置（不共享）
+**/.claude/settings.local.json
