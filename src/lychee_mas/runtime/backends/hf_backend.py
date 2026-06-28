@@ -163,16 +163,19 @@ class HFBackend:
 
     # ---- C2C 原语：prefill 时逐层把 source KV 经 projector 融合进 target KV，再生成 ----
     def generate_chat_with_cache_fusion(self, messages: List[Dict], source_layers, projectors,
-                                        max_new_tokens: int = 256) -> GenResult:
+                                        max_new_tokens: int = 256,
+                                        src_span=None, tgt_span=None) -> GenResult:
         """source_layers: encode_kv_cache 产出的逐层 (K,V)；projectors: 逐层 C2CProjector。
 
-        要求 source/target 在融合位置上长度对齐（per-position 融合）；不对齐则跳过（透传）。
+        src_span/tgt_span 给定则只在该跨度融合（角色条件融合，问题后缀对齐）；
+        均 None 则要求整段等长、融合全序列。
         """
         import torch
 
         with torch.no_grad():
             ids = self._chat_ids(messages)
-            cache = _make_fusion_cache(source_layers, projectors, self.model.config)
+            cache = make_fusion_cache(source_layers, projectors, self.model.config,
+                                      src_span=src_span, tgt_span=tgt_span)
             t0 = time.time()
             out = self.model.generate(input_ids=ids, past_key_values=cache,
                                       **self._gen_kwargs(max_new_tokens))
@@ -182,11 +185,26 @@ class HFBackend:
                              ids.shape[1], int(new.shape[0]), dt)
 
 
-def _make_fusion_cache(source_layers, projectors, config):
-    """惰性构造一个 FusionCache(DynamicCache)：update 时（仅 prefill 且位置对齐）用 projector 把
-    source 的逐层 (K,V) 融合进 target 的 (K,V)，再交给父类存储。这样无需 monkeypatch 注意力，
-    生成走原生 generate（约束 #3 的 cache 级版本）。不强制 no_grad —— 训练时调用方保留梯度。
+def common_suffix_len(a, b) -> int:
+    """两个 1D token id 序列（list/tensor）的公共后缀长度。用于角色条件融合的跨度对齐：
+    source/target 的 system 角色前缀不同（不融合），共享的问题+生成提示后缀对齐（融合）。
+    """
+    a = list(a)
+    b = list(b)
+    k = 0
+    while k < len(a) and k < len(b) and a[-1 - k] == b[-1 - k]:
+        k += 1
+    return k
 
+
+def make_fusion_cache(source_layers, projectors, config, src_span=None, tgt_span=None):
+    """构造 FusionCache(DynamicCache)：prefill 时用 projector 把 source 的逐层 (K,V) 融合进
+    target 的 (K,V)，再交父类存储。无需 monkeypatch 注意力，生成/前向都走原生路径。
+    不强制 no_grad —— 训练时调用方保留梯度（projector 可训，base 冻结）。
+
+    跨度对齐：
+      - src_span=(s0,L) / tgt_span=(t0,L)：只融合各自该区间（角色条件融合用，问题后缀对齐）。
+      - 均为 None：要求 source 与 target 整段等长，融合全序列（自增强/对齐场景）。
     用 config 构造（与模型内部 `DynamicCache(config=...)` 一致，正确建出各层 cache 类型）。
     """
     from transformers import DynamicCache
@@ -196,20 +214,40 @@ def _make_fusion_cache(source_layers, projectors, config):
             super().__init__(config=config)
             self._src = source_layers   # list[(K,V)]，每层 (1, Hkv, Ns, Dh)
             self._proj = projectors     # 逐层 C2CProjector
+            self._ss = src_span
+            self._ts = tgt_span
             self.fuse = True            # 只在 prefill 融合
 
         def update(self, key_states, value_states, layer_idx, *args, **kwargs):
             do = (self.fuse and key_states.shape[-2] > 1
-                  and layer_idx < len(self._proj) and layer_idx < len(self._src))
+                  and layer_idx < len(self._proj) and layer_idx < len(self._src)
+                  and self._src[layer_idx][0] is not None)
             if do:
                 ks, vs = self._src[layer_idx]
-                if ks is not None and ks.shape[-2] == key_states.shape[-2]:  # 位置对齐才融合
-                    proj = self._proj[layer_idx]
-                    pdt = next(proj.parameters()).dtype
-                    kf, vf = proj((ks.to(pdt), vs.to(pdt)),
-                                  (key_states.to(pdt), value_states.to(pdt)))
-                    key_states = kf.to(key_states.dtype)
-                    value_states = vf.to(value_states.dtype)
+                proj = self._proj[layer_idx]
+                pdt = next(proj.parameters()).dtype
+                if self._ts is None:  # 全序列融合（要求等长）
+                    if ks.shape[-2] == key_states.shape[-2]:
+                        kf, vf = proj((ks.to(pdt), vs.to(pdt)),
+                                      (key_states.to(pdt), value_states.to(pdt)))
+                        key_states = kf.to(key_states.dtype)
+                        value_states = vf.to(value_states.dtype)
+                else:  # 跨度融合（角色条件）
+                    s0, ln = self._ss
+                    t0, _ = self._ts
+                    if t0 + ln <= key_states.shape[-2] and s0 + ln <= ks.shape[-2]:
+                        kf, vf = proj((ks[:, :, s0:s0 + ln].to(pdt), vs[:, :, s0:s0 + ln].to(pdt)),
+                                      (key_states[:, :, t0:t0 + ln].to(pdt),
+                                       value_states[:, :, t0:t0 + ln].to(pdt)))
+                        import torch as _t  # 用 cat 重组，避免 in-place 破坏 autograd
+                        key_states = _t.cat([key_states[:, :, :t0], kf.to(key_states.dtype),
+                                             key_states[:, :, t0 + ln:]], dim=2)
+                        value_states = _t.cat([value_states[:, :, :t0], vf.to(value_states.dtype),
+                                               value_states[:, :, t0 + ln:]], dim=2)
             return super().update(key_states, value_states, layer_idx, *args, **kwargs)
 
     return FusionCache()
+
+
+# 旧名保留（内部调用）
+_make_fusion_cache = make_fusion_cache

@@ -119,6 +119,9 @@ class C2CProjector(nn.Module):
         self.final_temperature = final_temperature
         self.anneal_steps = anneal_steps
         self.scalar_temperature = 1.0
+        # 推理门控：True=硬阈值 (logit>0)（C2C 默认，假设退火把 logit 推到 ±大）；
+        # False=软门 sigmoid(logit)（当退火未把 logit 推开时更忠实地施加所学融合）。
+        self.hard_gate = True
 
     def update_temperature(self, step: int) -> None:
         """指数退火门控温度（1.0 -> final，anneal_steps 步内）；训练每 optimizer step 调一次。"""
@@ -143,7 +146,7 @@ class C2CProjector(nn.Module):
             g = -torch.log(-torch.log(u + 1e-20) + 1e-20)
             gate = torch.sigmoid((gl + g) / self.gate_temperature)
         else:
-            gate = (gl > 0).to(gl.dtype)
+            gate = (gl > 0).to(gl.dtype) if self.hard_gate else torch.sigmoid(gl)
         return target_kv + gate * torch.sigmoid(scalar) * projected  # add_self
 
     def forward(self, source_kv: Tuple[Tensor, Tensor], target_kv: Tuple[Tensor, Tensor],
