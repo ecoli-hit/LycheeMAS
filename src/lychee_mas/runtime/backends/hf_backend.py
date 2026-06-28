@@ -141,3 +141,75 @@ class HFBackend:
             # 用 inputs_embeds 时 generate 只返回新 token（不回显输入），故无需切片（约束 #3）
             return GenResult(self.tok.decode(out[0], skip_special_tokens=True),
                              P + ids.shape[1], int(out.shape[1]), dt, prefix_len=P)
+
+    # ---- C2C 原语：模型维度（建 projector 栈用）----
+    def kv_dims(self) -> tuple:
+        """返回 (num_hidden_layers, num_key_value_heads, head_dim)，给 C2C projector 栈定形。"""
+        c = self.model.config
+        head_dim = getattr(c, "head_dim", c.hidden_size // c.num_attention_heads)
+        return c.num_hidden_layers, c.num_key_value_heads, head_dim
+
+    # ---- C2C 原语：把 messages 编码成逐层 KV cache（source 端，融合的来源）----
+    def encode_kv_cache(self, messages: List[Dict]):
+        """前向一遍取每层 (K,V)（post-RoPE，cache 里存的就是它）。返回 (n_tokens, [(K,V),...])。"""
+        import torch
+
+        with torch.no_grad():
+            ids = self._chat_ids(messages)
+            out = self.model(input_ids=ids, use_cache=True)
+            layers = [(lyr.keys.detach(), lyr.values.detach())
+                      for lyr in out.past_key_values.layers]
+        return ids.shape[1], layers
+
+    # ---- C2C 原语：prefill 时逐层把 source KV 经 projector 融合进 target KV，再生成 ----
+    def generate_chat_with_cache_fusion(self, messages: List[Dict], source_layers, projectors,
+                                        max_new_tokens: int = 256) -> GenResult:
+        """source_layers: encode_kv_cache 产出的逐层 (K,V)；projectors: 逐层 C2CProjector。
+
+        要求 source/target 在融合位置上长度对齐（per-position 融合）；不对齐则跳过（透传）。
+        """
+        import torch
+
+        with torch.no_grad():
+            ids = self._chat_ids(messages)
+            cache = _make_fusion_cache(source_layers, projectors, self.model.config)
+            t0 = time.time()
+            out = self.model.generate(input_ids=ids, past_key_values=cache,
+                                      **self._gen_kwargs(max_new_tokens))
+            dt = time.time() - t0
+            new = out[0, ids.shape[1]:]
+            return GenResult(self.tok.decode(new, skip_special_tokens=True),
+                             ids.shape[1], int(new.shape[0]), dt)
+
+
+def _make_fusion_cache(source_layers, projectors, config):
+    """惰性构造一个 FusionCache(DynamicCache)：update 时（仅 prefill 且位置对齐）用 projector 把
+    source 的逐层 (K,V) 融合进 target 的 (K,V)，再交给父类存储。这样无需 monkeypatch 注意力，
+    生成走原生 generate（约束 #3 的 cache 级版本）。不强制 no_grad —— 训练时调用方保留梯度。
+
+    用 config 构造（与模型内部 `DynamicCache(config=...)` 一致，正确建出各层 cache 类型）。
+    """
+    from transformers import DynamicCache
+
+    class FusionCache(DynamicCache):
+        def __init__(self):
+            super().__init__(config=config)
+            self._src = source_layers   # list[(K,V)]，每层 (1, Hkv, Ns, Dh)
+            self._proj = projectors     # 逐层 C2CProjector
+            self.fuse = True            # 只在 prefill 融合
+
+        def update(self, key_states, value_states, layer_idx, *args, **kwargs):
+            do = (self.fuse and key_states.shape[-2] > 1
+                  and layer_idx < len(self._proj) and layer_idx < len(self._src))
+            if do:
+                ks, vs = self._src[layer_idx]
+                if ks is not None and ks.shape[-2] == key_states.shape[-2]:  # 位置对齐才融合
+                    proj = self._proj[layer_idx]
+                    pdt = next(proj.parameters()).dtype
+                    kf, vf = proj((ks.to(pdt), vs.to(pdt)),
+                                  (key_states.to(pdt), value_states.to(pdt)))
+                    key_states = kf.to(key_states.dtype)
+                    value_states = vf.to(value_states.dtype)
+            return super().update(key_states, value_states, layer_idx, *args, **kwargs)
+
+    return FusionCache()
