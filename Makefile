@@ -1,14 +1,20 @@
 # LycheeMAS Makefile —— recipe 前缀用 '>'（CLAUDE.md §2 的 .RECIPEPREFIX 约定）。
+# 环境约定：先 `conda activate LycheeMAS && source .venv/bin/activate`（uv 管理的 venv），再跑 install/install-all。
 .RECIPEPREFIX := >
-.PHONY: install install-all demo test lint format typecheck clean snapshot selfcheck
+.PHONY: venv install install-all demo test lint format typecheck clean snapshot selfcheck
 
-# 仅骨架 + 开发工具：纯离线 mock 即可跑通（无需 autogen/torch/API）
+# 用 uv 创建项目 .venv（Python 3.12）；之后 `source .venv/bin/activate` 再 make install-all
+venv:
+> uv venv .venv --python 3.12
+
+# 仅骨架 + 开发工具：纯离线 mock 即可跑通（无需 autogen/torch/API）。须先激活 .venv。
 install:
-> uv pip install -e ".[dev]" || pip install -e ".[dev]"
+> uv pip install -e ".[dev]"
 
-# 全量：autogen + torch/transformers + 数据/数学评分依赖 + dev
+# 全量：autogen + torch/transformers + 数据/数学评分依赖 + dev。须先激活 .venv。
+# 注意：勿加 --upgrade，避免覆盖 .venv 内已装的 CUDA 版 torch / vLLM。
 install-all:
-> uv pip install -e ".[all]" || pip install -e ".[all]"
+> uv pip install -e ".[all]"
 
 # 离线端到端示例（runtime=mock，零重依赖）
 demo:

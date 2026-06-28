@@ -43,13 +43,14 @@
 ## 2. 环境与常用命令（conda + uv）
 
 ```bash
-# 1) 建环境
-conda create -n lychee python=3.11 -y && conda activate lychee
-conda install -c conda-forge uv -y          # 或 pip install uv
+# 1) 建/进环境（本仓库约定：conda 环境 LycheeMAS + uv 管理的 .venv）
+conda create -n LycheeMAS python=3.12 -y && conda activate LycheeMAS   # 首次；已建好直接 conda activate LycheeMAS
+source .venv/bin/activate                      # 首次创建：uv venv .venv --python 3.12（或 make venv）
 
-# 2) 安装（src-layout，可编辑装）
+# 2) 安装（src-layout，可编辑装；在已激活的 .venv 内执行）
 uv pip install -e ".[dev]"     # 仅骨架 + 开发工具：离线 mock 即可跑通（无需 autogen/torch/API）
 uv pip install -e ".[all]"     # 全量：autogen 0.7.x + torch + transformers + numpy + hydra + dev（真实跑分/训练用）
+                               # ⚠ 勿加 --upgrade：.venv 内已是 CUDA 版 torch/vLLM，升级会换成无 CUDA 的 PyPI 轮子
 
 # 3) 日常（Makefile 用 '>' 作 recipe 前缀，见 .RECIPEPREFIX）
 make demo        # 离线端到端：PYTHONPATH=src python examples/01_static_chain_e2e.py
