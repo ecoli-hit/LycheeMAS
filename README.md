@@ -2,13 +2,13 @@
 
 基于 **AutoGen** 的五层多智能体系统（MAS）研究框架。主线是把整个 MAS 统一表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**，每一层都是对 G（或其执行轨迹 τ）的一次变换：
 
-| 层 | 模块 | 职责 |
-|----|------|------|
-| L1 | `lychee_mas.layers.l1_construct` | 多智能体网络构建（团队组建 + 静态/动态图）|
-| L2 | `lychee_mas.layers.l2_prune` | 网络剪枝与优化（含模型级词表降本）|
-| L3 | `lychee_mas.layers.l3_memory` | 运行时多维度多表征记忆管理（NL/隐空间/参数）|
-| L4 | `lychee_mas.layers.l4_aggregate` | 多轨迹聚合与融合 |
-| L5 | `lychee_mas.layers.l5_attribute_train` | 错误归因 + 强化学习训练 |
+| 层 | 模块                                  | 职责                                         |
+| -- | ------------------------------------- | -------------------------------------------- |
+| L1 | `lychee_mas.layers.construct`       | 多智能体网络构建（团队组建 + 静态/动态图）   |
+| L2 | `lychee_mas.layers.prune`           | 网络剪枝与优化（含模型级词表降本）           |
+| L3 | `lychee_mas.layers.memory`          | 运行时多维度多表征记忆管理（NL/隐空间/参数） |
+| L4 | `lychee_mas.layers.aggregate`       | 多轨迹聚合与融合                             |
+| L5 | `lychee_mas.layers.attribute_train` | 错误归因 + 强化学习训练                      |
 
 设计四原则：**可插拔可消融**（registry + config）、**Runtime 抽象隔离 AutoGen**、**性能-成本联合度量**、**可复现**。
 
@@ -86,3 +86,4 @@ docs/            开发文档（见 docs/DEVELOPMENT.md）
 ```
 
 > 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、迁移映射表）见 `docs/DEVELOPMENT.md`。
+

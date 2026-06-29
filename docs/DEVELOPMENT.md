@@ -168,42 +168,11 @@ LLMMessage 历史 ─_to_chat─▶ [{role,content}]
 - `segment_mean` / `stride` / `tail`：naive 对照路径（直接在末层 hidden 上压缩）。
 
 **硬约束**（原样保留）：
+
 - prefix 形状必须 `(1,P,H)` 且 `H==2560`（`hf_backend` 运行期 `assert`）。
 - latent 只能在**同模型对**（hidden 对齐）且 latent 可用时跨 agent 传，否则路由器回退 NL（`_enforce_availability` + `RoutingContext.same_model_pair`）。
 - `PREV_OUTPUT_HEADER`（"## Input from the previous agent"）**集中定义在** `memory/channels/nl.py`，`construct/templates.py` import 复用（消除重复字符串）。
 - 单次对话内按 `(len(source), P)` 缓存 latent prefix，source 一变即失效。
-
----
-
-## 7. 迁移映射表（旧 `src/LycheeMAS/` → 新 `src/lychee_mas/`）
-
-| 旧路径 | 新路径 | 备注 |
-|---|---|---|
-| `memory/manager.py` | `layers/memory/base.py` | `MemoryManager`(ABC) + `MemoryBundle`；torch 注解改前向引用（惰性）|
-| `memory/nl_memory.py` | `layers/memory/channels/nl.py` | `PREV_OUTPUT_HEADER` 集中定义于此 |
-| `memory/latent_memory.py` | `layers/memory/channels/latent.py` | `soft_token_prefix/compress_hidden/LatentMemory`；torch 方法内惰性 import |
-| `memory/managers/dual_channel.py` | `layers/memory/managers/cdm.py` | `memory_manager/cdm`（逻辑/张量形状原样）|
-| `memory/managers/external_baselines.py` | `layers/memory/managers/external.py` | `memory_manager/mem0`、`/ama`（桩，统一报错文案）|
-| `router/base.py` | `layers/memory/routing/base.py` | `MemoryRouter/RouterInputs/RouteDecision/Channel` + `_enforce_availability` |
-| `router/static_router.py` | `layers/memory/routing/static.py` | `memory_router/static` + `memory_router/fixed`（always-X）|
-| `router/learned_router.py` | `layers/memory/routing/learned.py` | `memory_router/learned`（占位 fallback）|
-| `router/soft_gate.py` | `layers/memory/routing/soft_gate.py` | `memory_router/soft_gate`（占位 fallback）|
-| `context/routing_context.py` | `layers/memory/routing/context.py` | `RoutingContext`；决策日志可选写 `TraceStore` |
-| `models/injection_client.py` | `runtime/backends/autogen_injection_client.py` | `model_client/injection`；autogen+torch 惰性（工厂延迟构造子类）|
-| `models/vllm_prompt_embeds_client.py` | `runtime/backends/vllm_client.py` | `model_client/vllm`（桩）|
-| `backends/backend_hf.py` | `runtime/backends/hf_backend.py` | `HFBackend`；torch/transformers 惰性；删硬编码路径→`LYCHEE_HF_MODEL`/构造参数 |
-| `teams/groupchat.py` | `runtime/backends/autogen_runtime.py` | `runtime/autogen`；`run` 返回 `Trajectory`；autogen 惰性 |
-| `agents/roles.py` | `layers/construct/templates.py` | `Role/ROLE_SYSTEM/TEAMS` 保留；`topology_generator/static`；复用 `PREV_OUTPUT_HEADER` |
-| `benchs/loaders.py` | `eval/benchmarks/__init__.py` | 各 task 注册 `benchmark/<task>`；datasets 惰性、不在 import 读盘 |
-| `benchs/metrics.py` | `eval/metrics.py` | score 逻辑保持；math/yaml 惰性导入 |
-| `benchs/math_parsing_util.py` | `eval/math_parsing_util.py` | 逐字复制（Qwen2.5-Math 借用）|
-| `benchs/task_config.py` | `eval/task_config.py` | team/extractor 映射保持 |
-| `configs/config.py` + `*.yaml` | `configs/` | 旧 YAML 复制 + 新增组件分组 config + 顶层 `config.yaml` |
-| `run_mas.py` | `pipeline.py`（编排循环）+ `scripts/run_experiment.py`（CLI/落盘）| 默认 `runtime=mock` 离线可跑 |
-
-散落的 `make_router/make_memory/FIXED/EXTERNAL` dict → 由 **REGISTRY** 取代（按 name 取组件）。
-
----
 
 ## 8. 测试说明
 
