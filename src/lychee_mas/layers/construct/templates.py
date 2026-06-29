@@ -54,18 +54,21 @@ ROLE_SYSTEM = {
 # ）。
 AIME_ANALYST = """\
 # ROLE
-You are the Problem Analyst solving AIME math problems. Parse the problem and produce a
+You are the Problem Analyst for AIME math problems. Parse the problem and produce a short
 solving plan. You do NOT compute the final answer.
+
+# NOTE
+Every AIME answer is a single INTEGER between 0 and 999.
 
 # INPUT
 The math problem to solve (the user's question).
 
 # RULES
 - Restate the problem; list ASKED_FOR, GIVEN_CONDITIONS, implicit constraints.
-- Propose 1-2 strategies. Do NOT solve.
+- Propose 1-2 concrete strategies. Do NOT solve.
 
 # OUTPUT
-PROBLEM_RESTATEMENT / ASKED_FOR / GIVEN_CONDITIONS / ANSWER_FORMAT / STRATEGIES
+PROBLEM_RESTATEMENT / ASKED_FOR / GIVEN_CONDITIONS / STRATEGIES
 """
 
 AIME_SOLVER = f"""\
@@ -77,13 +80,16 @@ The Analyst's plan, given to you as a note headed "{PREV_OUTPUT_HEADER}".
 Follow that plan together with the original problem.
 
 # RULES
-- Show every non-trivial step. Reach a concrete EXACT answer: an integer (possibly
-  negative) OR a closed-form expression (fraction / radical / signed expression). Keep it
-  exact — do NOT round to a decimal.
+- Show every non-trivial step.
+- The AIME answer is a SINGLE INTEGER between 0 and 999. Compute it all the way to that
+  integer: evaluate EVERY expression (binomial, factorial, fraction, radical, power, sum) to
+  a concrete number. NEVER leave the answer as an unevaluated expression and NEVER as a
+  decimal.
+- If your result is not an integer in [0, 999], you made an error — recheck before answering.
 - Do NOT declare the official answer (the Verifier does).
 
 # OUTPUT
-SOLUTION_STEPS / SOLVER_ANSWER: \\boxed{{<answer>}} /
+SOLUTION_STEPS / SOLVER_ANSWER: \\boxed{{<integer 0-999>}} /
 KEY_ASSUMPTIONS: [steps a checker should scrutinize]
 """
 
@@ -96,18 +102,18 @@ The Solver's full solution and its SOLVER_ANSWER, given to you as a note headed
 "{PREV_OUTPUT_HEADER}". Follow that solution together with the original problem.
 
 # HARD RULES
-1. REQUIRE SOLVER_ANSWER: if the Solver did not give a concrete SOLVER_ANSWER, do NOT
-   guess — reply in one line asking the Analyst to state it, and stop.
+1. INTEGER ONLY: the final answer MUST be a single INTEGER between 0 and 999 inside
+   \\boxed{{}}. NEVER approve an unevaluated expression or a decimal — if SOLVER_ANSWER is not
+   a concrete integer, compute it to one before approving.
 2. NO ASSUMPTIONS: use only values given in the problem / produced by the Solver.
-3. INDEPENDENT CHECK: re-derive the key step(s) yourself, using a different method when
-   possible.
-   - If your independent result agrees with SOLVER_ANSWER AND it satisfies every
-     GIVEN_CONDITION -> accept.
-   - If they disagree, point out the likely error in ONE line so the Solver can retry.
+3. INDEPENDENT CHECK: re-derive the key step(s) yourself, with a different method if possible.
+   - DEFAULT TO KEEPING SOLVER_ANSWER: approve it unless you find a SPECIFIC, concrete error.
+   - Only change the answer if you found such an error AND can compute the correct integer
+     with confidence — never replace it with a guess.
 
-# OUTPUT (only when confident)
-A one-line justification, then on the FINAL line exactly (wrap the answer in \\boxed{{}}):
-APPROVE: \\boxed{{<answer>}}
+# OUTPUT
+A one-line justification, then on the FINAL line exactly (a bare integer inside \\boxed):
+APPROVE: \\boxed{{<integer 0-999>}}
 """
 
 

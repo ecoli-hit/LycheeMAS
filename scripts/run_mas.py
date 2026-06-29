@@ -47,6 +47,7 @@ def _get(cfg: dict, dotted: str, default=None):
 
 async def run_one(cfg: dict, args) -> dict:
     import torch
+    from lychee_mas.core.registry import REGISTRY
     from lychee_mas.core.types import TaskQuery
     from lychee_mas.eval import metrics as M
     from lychee_mas.eval.benchmarks import load as load_task
@@ -88,6 +89,8 @@ async def run_one(cfg: dict, args) -> dict:
     max_new_tokens = int(_get(cfg, "run.max_new_tokens", 4096))
     team_profile = args.team or _get(cfg, "run.team")  # None=按 task 自动选
     results_root = args.results_root or _get(cfg, "eval.results_root", "runs/lychee")
+    n_runs = args.samples if args.samples is not None else int(_get(cfg, "run.samples", 1))
+    agg_name = args.aggregator or _get(cfg, "run.aggregator")  # K>1 时多数表决用
 
     # ---- backend：模型只加载一次，记忆/各 agent 复用（apples-to-apples）----
     backend = HFBackend(model_path, device=device, dtype=dtype, enable_thinking=enable_thinking,
@@ -107,29 +110,44 @@ async def run_one(cfg: dict, args) -> dict:
     ctx = RoutingContext(task=task, router=router, memory=memory, team=team_profile)
     runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
                              max_rounds=max_rounds, model_id=model_tag)
-    # 落盘标签：强制队伍时用 "{team}_{method}"（如单模型 baseline=single_none），避免撞目录
-    run_label = f"{team_profile}_{method}" if team_profile else method
+    # 自一致性：K>1 时每题采样 K 条轨迹再多数表决（aggregator）
+    aggregator = None
+    if n_runs > 1:
+        if not agg_name:
+            raise SystemExit("run.samples>1 需要 run.aggregator（如 self_consistency）")
+        aggregator = REGISTRY.create("aggregator", agg_name)
+        if not do_sample:
+            print("[warn] samples>1 但 backend.do_sample=false，多次采样会相同；建议开 do_sample",
+                  flush=True)
+    # 落盘标签：强制队伍用 "{team}_{method}"；自一致性加 _scK 避免与贪心结果撞目录
+    base_label = f"{team_profile}_{method}" if team_profile else method
+    run_label = f"{base_label}_sc{n_runs}" if n_runs > 1 else base_label
     print(f"[MAS] task={task} method={method} team={profile} router={router.name} "
-          f"memory={memory.name} n={len(data)} kind={kind} P={P} max_new_tokens={max_new_tokens}",
-          flush=True)
+          f"memory={memory.name} n={len(data)} kind={kind} P={P} K={n_runs} agg={agg_name} "
+          f"max_new_tokens={max_new_tokens}", flush=True)
 
     samples, q_sum, pos_sum, gen_sum, lat_sum, msg_sum = [], 0.0, 0, 0, 0.0, 0
     for i, it in enumerate(data):
-        ctx.reset()  # 清 turn/决策/记忆库
-        # 长程记忆任务把对话历史预载进记忆库（AIME 无 context，此处不触发）
-        if it.get("context") and hasattr(memory, "seed"):
-            memory.seed(it["context"])
         q = TaskQuery(question=it["question"], context=it.get("context"),
                       gold=it["gold"], meta={"kind": kind})
-        traj = await runtime.run(graph, q)
-        pred = traj.final_answer.content if traj.final_answer else ""
+        trajs = []
+        for _k in range(n_runs):
+            ctx.reset()  # 每条轨迹清 turn/决策/记忆库
+            if it.get("context") and hasattr(memory, "seed"):
+                memory.seed(it["context"])  # 长程记忆任务预载（AIME 无 context 不触发）
+            trajs.append(await runtime.run(graph, q))
+        votes = [(t.final_answer.content if t.final_answer else "") for t in trajs]
+        pred = aggregator.aggregate(trajs).content if aggregator else votes[0]
         correct = M.score(kind, pred, it["gold"])
-        # 成本三元组：把本样本所有 agent 轮次的决策逐项求和（routing_trace 来自 ctx.decisions）
-        decs = traj.meta.get("decisions", [])
-        item_pos = sum(int(d.get("prompt_pos", 0)) for d in decs)
-        item_gen = sum(int(d.get("gen_tokens", 0)) for d in decs)
-        item_lat = sum(float(d.get("latency_s", 0.0)) for d in decs)
-        n_msgs = len(traj.messages)
+        # 成本：K 条轨迹所有 agent 轮次决策求和（自一致性总开销）
+        item_pos = item_gen = n_msgs = 0
+        item_lat = 0.0
+        for t in trajs:
+            decs = t.meta.get("decisions", [])
+            item_pos += sum(int(d.get("prompt_pos", 0)) for d in decs)
+            item_gen += sum(int(d.get("gen_tokens", 0)) for d in decs)
+            item_lat += sum(float(d.get("latency_s", 0.0)) for d in decs)
+            n_msgs += len(t.messages)
         q_sum += correct
         pos_sum += item_pos
         gen_sum += item_gen
@@ -138,16 +156,18 @@ async def run_one(cfg: dict, args) -> dict:
         samples.append({
             "question": it["question"][:500], "method": method,
             "final_answer": pred, "gold": it["gold"], "correct": correct,
-            "n_messages": n_msgs, "routing_trace": decs,
+            "votes": votes, "k": n_runs,
+            "n_messages": n_msgs, "routing_trace": trajs[0].meta.get("decisions", []),
             "cost_prompt_pos": item_pos, "gen_tokens": item_gen,
             "latency_s": round(item_lat, 3)})
-        print(f"  [{i + 1}/{len(data)}] correct={correct:.2f} msgs={n_msgs} "
-              f"pos={item_pos} ans={pred[:60]!r}", flush=True)
+        print(f"  [{i + 1}/{len(data)}] correct={correct:.2f} K={n_runs} "
+              f"pred={pred[:40]!r} votes={votes}", flush=True)
 
     n = len(data)
     metrics = {
         "model": model_tag, "method": method, "team": team_profile, "task": task, "probe": "mas",
         "memory": memory.name, "router": router.name, "n": n,
+        "samples_k": n_runs, "aggregator": agg_name,
         "quality": round(q_sum / n, 4) if n else None, "quality_metric": kind,
         "cost_prompt_pos_mean": round(pos_sum / n, 1) if n else 0,
         "gen_tokens_mean": round(gen_sum / n, 1) if n else 0,
@@ -172,6 +192,8 @@ def main() -> None:
     ap.add_argument("--team", default=None, help="覆盖 run.team（如 single）")
     ap.add_argument("--n", default=None, help="样本数；all/0=全量")
     ap.add_argument("--P", type=int, default=None, help="latent prefix 长度")
+    ap.add_argument("--samples", type=int, default=None, help="每题采样轨迹数 K（自一致性，>1）")
+    ap.add_argument("--aggregator", default=None, help="K>1 时聚合器名（如 self_consistency）")
     ap.add_argument("--model-path", dest="model_path", default=None)
     ap.add_argument("--model-tag", dest="model_tag", default=None)
     ap.add_argument("--results-root", dest="results_root", default=None)

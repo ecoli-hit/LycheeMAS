@@ -1,0 +1,39 @@
+# MAS（改进 prompt 的 analyst→solver→verifier）+ 自一致性（K 次采样多数表决）在 AIME 上的配置。
+# 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
+#         python scripts/run_mas.py --config configs/aime_mas_sc.yaml
+# 落盘：results/lychee_v0_1/qwen3-4b/aime_nl_only_sc5/aime2024/
+
+backend:                         # HF 模型后端
+  model_path: /data/mxy/Models/Qwen/Qwen3-4B
+  model_tag: qwen3-4b
+  device: cuda:0
+  dtype: bfloat16
+  enable_thinking: false
+  do_sample: true                # ★ 自一致性需采样多样性（贪心下 K 条相同）
+  temperature: 0.7               # Qwen3 非思考模式推荐档位
+  top_p: 0.8
+  seed: 0
+
+memory:                          # 记忆方法接缝（MAS 走 NL 通道）
+  name: dual_channel
+  latent_strategy: soft_token
+  nl_strategy: prev_output       # 向下传上一个 agent 的输出
+  max_encode_tokens: 4096
+  include_transcript: true
+  tau: 1.0
+
+router:
+  method: nl_only                # 全程 NL 通道
+  P: 16
+
+run:
+  task: aime2024
+  team: aime                     # analyst→solver→verifier（改进 prompt：整数答案 + verifier 默认保留）
+  n: all                         # 全量 30 题
+  max_rounds: 2
+  max_new_tokens: 4096
+  samples: 5                     # ★ 自一致性采样数 K
+  aggregator: self_consistency   # ★ 对各轨迹最终整数多数表决
+
+eval:
+  results_root: /data/mxy/Project/CDM/results/lychee_v0_1
