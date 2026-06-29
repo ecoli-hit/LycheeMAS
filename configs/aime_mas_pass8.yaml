@@ -1,7 +1,8 @@
-# MAS（改进 prompt 的 analyst→solver→verifier）+ 自一致性（K 次采样多数表决）在 AIME 上的配置。
+# MAS（改进 prompt 的 analyst→solver→verifier）在 AIME 上的 pass@1 配置：
+# 每题采样 8 次、对每条单独评分，pass@1 = 平均单样本准确率（不投票）。
 # 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
-#         python scripts/run_mas.py --config configs/aime_mas_sc.yaml
-# 落盘：results/lychee_v0_1/qwen3-4b/aime_nl_only_sc5/aime2024/
+#         python scripts/run_mas.py --config configs/aime_mas_pass8.yaml
+# 落盘：results/lychee_v0_1/qwen3-4b/aime_nl_only_pass8/aime2024/
 
 backend:                         # HF 模型后端
   model_path: /data/mxy/Models/Qwen/Qwen3-4B
@@ -9,7 +10,7 @@ backend:                         # HF 模型后端
   device: cuda:0
   dtype: bfloat16
   enable_thinking: false
-  do_sample: true                # ★ 自一致性需采样多样性（贪心下 K 条相同）
+  do_sample: true                # pass@1 多采样需多样性（贪心下 8 条相同）
   temperature: 0.7               # Qwen3 非思考模式推荐档位
   top_p: 0.8
   seed: 0
@@ -17,13 +18,13 @@ backend:                         # HF 模型后端
 memory:                          # 记忆方法接缝（MAS 走 NL 通道）
   name: dual_channel
   latent_strategy: soft_token
-  nl_strategy: prev_output       # 向下传上一个 agent 的输出
+  nl_strategy: prev_output
   max_encode_tokens: 4096
   include_transcript: true
   tau: 1.0
 
 router:
-  method: nl_only                # 全程 NL 通道
+  method: nl_only
   P: 16
 
 run:
@@ -32,8 +33,8 @@ run:
   n: all                         # 全量 30 题
   max_rounds: 2
   max_new_tokens: 4096
-  samples: 5                     # ★ 自一致性采样数 K
-  aggregator: self_consistency   # ★ 对各轨迹最终整数多数表决
+  samples: 8                     # ★ 每题跑 8 次
+  # 不设 aggregator -> 不投票，报 pass@1（平均单样本准确率）
 
 eval:
   results_root: /data/mxy/Project/CDM/results/lychee_v0_1

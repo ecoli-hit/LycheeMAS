@@ -110,77 +110,78 @@ async def run_one(cfg: dict, args) -> dict:
     ctx = RoutingContext(task=task, router=router, memory=memory, team=team_profile)
     runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
                              max_rounds=max_rounds, model_id=model_tag)
-    # 自一致性：K>1 时每题采样 K 条轨迹再多数表决（aggregator）
-    aggregator = None
-    if n_runs > 1:
-        if not agg_name:
-            raise SystemExit("run.samples>1 需要 run.aggregator（如 self_consistency）")
-        aggregator = REGISTRY.create("aggregator", agg_name)
-        if not do_sample:
-            print("[warn] samples>1 但 backend.do_sample=false，多次采样会相同；建议开 do_sample",
-                  flush=True)
-    # 落盘标签：强制队伍用 "{team}_{method}"；自一致性加 _scK 避免与贪心结果撞目录
+    # pass@1：K>1 时每题采样 K 条轨迹，**对每条单独评分**；pass@1 = 平均单样本准确率（不投票）。
+    # aggregator 可选：给出则额外报投票准确率 vote_acc，但主指标恒为 pass@1。
+    aggregator = REGISTRY.create("aggregator", agg_name) if (n_runs > 1 and agg_name) else None
+    if n_runs > 1 and not do_sample:
+        print("[warn] samples>1 但 backend.do_sample=false，多次采样会相同；建议开 do_sample",
+              flush=True)
+    # 落盘标签：多采样加 _passK 避免与贪心结果撞目录
     base_label = f"{team_profile}_{method}" if team_profile else method
-    run_label = f"{base_label}_sc{n_runs}" if n_runs > 1 else base_label
+    run_label = f"{base_label}_pass{n_runs}" if n_runs > 1 else base_label
     print(f"[MAS] task={task} method={method} team={profile} router={router.name} "
-          f"memory={memory.name} n={len(data)} kind={kind} P={P} K={n_runs} agg={agg_name} "
+          f"memory={memory.name} n={len(data)} kind={kind} P={P} K={n_runs} "
           f"max_new_tokens={max_new_tokens}", flush=True)
 
-    samples, q_sum, pos_sum, gen_sum, lat_sum, msg_sum = [], 0.0, 0, 0, 0.0, 0
+    samples = []
+    correct_samples = total_samples = passk_hits = pos_sum = gen_sum = msg_sum = 0
+    lat_sum = vote_correct = 0.0
     for i, it in enumerate(data):
         q = TaskQuery(question=it["question"], context=it.get("context"),
                       gold=it["gold"], meta={"kind": kind})
-        trajs = []
+        trajs, per_correct = [], []
         for _k in range(n_runs):
             ctx.reset()  # 每条轨迹清 turn/决策/记忆库
             if it.get("context") and hasattr(memory, "seed"):
                 memory.seed(it["context"])  # 长程记忆任务预载（AIME 无 context 不触发）
-            trajs.append(await runtime.run(graph, q))
-        votes = [(t.final_answer.content if t.final_answer else "") for t in trajs]
-        pred = aggregator.aggregate(trajs).content if aggregator else votes[0]
-        correct = M.score(kind, pred, it["gold"])
-        # 成本：K 条轨迹所有 agent 轮次决策求和（自一致性总开销）
-        item_pos = item_gen = n_msgs = 0
-        item_lat = 0.0
-        for t in trajs:
+            t = await runtime.run(graph, q)
+            trajs.append(t)
+            pk = t.final_answer.content if t.final_answer else ""
+            per_correct.append(M.score(kind, pk, it["gold"]))
+        answers = [(t.final_answer.content if t.final_answer else "") for t in trajs]
+        n_ok = sum(per_correct)
+        correct_samples += n_ok
+        total_samples += len(per_correct)
+        passk_hits += int(n_ok > 0)
+        if aggregator is not None:
+            vote_correct += M.score(kind, aggregator.aggregate(trajs).content, it["gold"])
+        for t in trajs:  # 成本：K 条轨迹所有 agent 轮次决策求和
             decs = t.meta.get("decisions", [])
-            item_pos += sum(int(d.get("prompt_pos", 0)) for d in decs)
-            item_gen += sum(int(d.get("gen_tokens", 0)) for d in decs)
-            item_lat += sum(float(d.get("latency_s", 0.0)) for d in decs)
-            n_msgs += len(t.messages)
-        q_sum += correct
-        pos_sum += item_pos
-        gen_sum += item_gen
-        lat_sum += item_lat
-        msg_sum += n_msgs
+            pos_sum += sum(int(d.get("prompt_pos", 0)) for d in decs)
+            gen_sum += sum(int(d.get("gen_tokens", 0)) for d in decs)
+            lat_sum += sum(float(d.get("latency_s", 0.0)) for d in decs)
+            msg_sum += len(t.messages)
         samples.append({
-            "question": it["question"][:500], "method": method,
-            "final_answer": pred, "gold": it["gold"], "correct": correct,
-            "votes": votes, "k": n_runs,
-            "n_messages": n_msgs, "routing_trace": trajs[0].meta.get("decisions", []),
-            "cost_prompt_pos": item_pos, "gen_tokens": item_gen,
-            "latency_s": round(item_lat, 3)})
-        print(f"  [{i + 1}/{len(data)}] correct={correct:.2f} K={n_runs} "
-              f"pred={pred[:40]!r} votes={votes}", flush=True)
+            "question": it["question"][:500], "method": method, "gold": it["gold"],
+            "k": n_runs, "answers": answers, "per_sample_correct": per_correct,
+            "pass1": round(n_ok / len(per_correct), 4), "any_correct": int(n_ok > 0),
+            "routing_trace": trajs[0].meta.get("decisions", [])})
+        print(f"  [{i + 1}/{len(data)}] pass@1={n_ok}/{n_runs} any={int(n_ok > 0)} "
+              f"gold={it['gold']!r} answers={answers}", flush=True)
 
     n = len(data)
+    ts = total_samples or 1
     metrics = {
         "model": model_tag, "method": method, "team": team_profile, "task": task, "probe": "mas",
-        "memory": memory.name, "router": router.name, "n": n,
-        "samples_k": n_runs, "aggregator": agg_name,
-        "quality": round(q_sum / n, 4) if n else None, "quality_metric": kind,
-        "cost_prompt_pos_mean": round(pos_sum / n, 1) if n else 0,
-        "gen_tokens_mean": round(gen_sum / n, 1) if n else 0,
-        "latency_s_mean": round(lat_sum / n, 3) if n else 0,
-        "messages_mean": round(msg_sum / n, 2) if n else 0}
+        "memory": memory.name, "router": router.name, "n": n, "samples_k": n_runs,
+        "total_samples": total_samples,
+        "pass@1": round(correct_samples / ts, 4),
+        f"pass@{n_runs}": round(passk_hits / n, 4) if n else None,
+        "quality": round(correct_samples / ts, 4), "quality_metric": "pass@1",
+        "cost_prompt_pos_mean": round(pos_sum / ts, 1),
+        "gen_tokens_mean": round(gen_sum / ts, 1),
+        "latency_s_mean": round(lat_sum / ts, 3),
+        "messages_mean": round(msg_sum / ts, 2)}
+    if aggregator is not None:
+        metrics["vote_acc"] = round(vote_correct / n, 4) if n else None
     out_dir = M.result_dir(model_tag, run_label, task, root=results_root)
     snapshot = {"config_file": args.config, "config": cfg,
                 "resolved": {"task": task, "method": method, "team": profile,
                              "P": P, "n": n, "model_path": model_path,
                              "max_new_tokens": max_new_tokens, "max_rounds": max_rounds}}
     M.write_results(out_dir, samples, metrics, snapshot)
-    print(f"[done] {task}/{run_label}: q={metrics['quality']} "
-          f"cost={metrics['cost_prompt_pos_mean']}pos -> {out_dir}", flush=True)
+    print(f"[done] {task}/{run_label}: pass@1={metrics['pass@1']} "
+          f"pass@{n_runs}={metrics.get(f'pass@{n_runs}')} -> {out_dir}", flush=True)
     return metrics
 
 

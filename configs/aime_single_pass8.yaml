@@ -1,8 +1,8 @@
-# 单模型 + 自一致性（强基线）在 AIME 上的配置：1 个 solver、不注入记忆、K 次采样多数表决。
-# 用来判断「优化后的 MAS」是否真的超过「单模型自一致性」。
+# 单模型在 AIME 上的 pass@1 基线：1 个 solver、不注入记忆、每题采样 8 次、对每条单独评分。
+# pass@1 = 平均单样本准确率（不投票），与 MAS 同口径对比。
 # 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=1 \
-#         python scripts/run_mas.py --config configs/aime_single_sc.yaml
-# 落盘：results/lychee_v0_1/qwen3-4b/single_none_sc5/aime2024/
+#         python scripts/run_mas.py --config configs/aime_single_pass8.yaml
+# 落盘：results/lychee_v0_1/qwen3-4b/single_none_pass8/aime2024/
 
 backend:
   model_path: /data/mxy/Models/Qwen/Qwen3-4B
@@ -10,7 +10,7 @@ backend:
   device: cuda:0
   dtype: bfloat16
   enable_thinking: false
-  do_sample: true                # ★ 自一致性需采样多样性
+  do_sample: true                # pass@1 多采样需多样性
   temperature: 0.7
   top_p: 0.8
   seed: 0
@@ -24,17 +24,16 @@ memory:                          # method=none 下不注入，字段仅保留完
   tau: 1.0
 
 router:
-  method: none                   # 单模型纯作答，不注入记忆
+  method: none
   P: 16
 
 run:
   task: aime2024
   team: single                   # 1 个 solver 直接答题
   n: all
-  max_rounds: 1                  # 单 agent 一轮
+  max_rounds: 1
   max_new_tokens: 4096
-  samples: 5                     # ★ 自一致性采样数 K
-  aggregator: self_consistency
+  samples: 8                     # ★ 每题跑 8 次
 
 eval:
   results_root: /data/mxy/Project/CDM/results/lychee_v0_1
