@@ -173,11 +173,30 @@ class C2CProjector(nn.Module):
 def build_projector_stack(num_hidden_layers: int, head_dim: int, num_kv_heads: int,
                           hidden_dim: int = 1024, intermediate_dim: int = 1024,
                           num_layers: int = 3, dtype: torch.dtype = torch.float32,
-                          zero_init: bool = True) -> "nn.ModuleList":
-    """为同模型场景建每层一个 C2CProjector（source/target 同维同头）。zero_init 让初始为恒等。"""
+                          zero_init: bool = True, src_num_kv_heads=None,
+                          src_head_dim=None) -> "nn.ModuleList":
+    """每个 target 层建一个 C2CProjector。zero_init 让初始为恒等。
+
+    同模型：src_* 留空 = 与 target 同维同头。跨模型：传 source 的 kv 头数/head_dim
+    （C2C 原生支持 source≠target 维度；num_hidden_layers 始终是 *target* 层数）。
+    """
+    sh = src_head_dim or head_dim
+    sk = src_num_kv_heads or num_kv_heads
     return nn.ModuleList([
-        C2CProjector(source_dim=head_dim, target_dim=head_dim,
-                     source_num_heads=num_kv_heads, target_num_heads=num_kv_heads,
+        C2CProjector(source_dim=sh, target_dim=head_dim,
+                     source_num_heads=sk, target_num_heads=num_kv_heads,
                      hidden_dim=hidden_dim, intermediate_dim=intermediate_dim,
                      num_layers=num_layers, dtype=dtype, zero_init=zero_init)
         for _ in range(num_hidden_layers)])
+
+
+def map_source_to_target_layers(source_layers, n_target: int):
+    """跨模型层映射：source 与 target 层数可能不同（如 28 vs 36）。
+    返回长度 n_target 的列表，第 i 项 = source 第 round(i*(n_src-1)/(n_target-1)) 层的 (K,V)。
+    层数相同则原样返回（恒等映射）。
+    """
+    n_src = len(source_layers)
+    if n_src == n_target:
+        return list(source_layers)
+    denom = max(1, n_target - 1)
+    return [source_layers[round(i * (n_src - 1) / denom)] for i in range(n_target)]

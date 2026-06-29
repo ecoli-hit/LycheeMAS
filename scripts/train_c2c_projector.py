@@ -1,20 +1,25 @@
-"""训练 C2C 投影器（latent 通道，Phase3 PoC）—— 角色条件融合 + 答案监督。
+"""训练 C2C 投影器（latent 通道）—— 支持两种设定，都保证 KV 融合的**位置对齐**。
 
-设定（CDM 单模型，同 Qwen3-4B）：
-  - source = 「分析者」角色前缀 + 问题  → 冻结模型前向得逐层 KV cache。
-  - target = 「求解者」角色前缀 + 问题 + 答案（teacher forcing）。
-  - 两者共享「问题+生成提示」后缀 token（角色前缀不同、不融合）；在该共享跨度上，
-    用逐层 C2CProjector 把 source 的 KV 融合进 target 的 KV（make_fusion_cache 的 span 模式）。
-  - 损失 = 只在答案 token 上的 CLM 交叉熵。冻结 base，只训 projector（C2C 原则）。
+A) 跨模型（`--source-model PATH`，忠实复现 C2C）：
+   source/target 是两个不同模型，喂**同一份 token ids**（特殊 token id 跨 Qwen 家族共享）。
+   位置天然 1:1 对齐；融合整个 prompt 段。层数/ kv 头数不同由层映射 + 跨维 projector 处理。
+   例：source=Qwen2.5-Math-1.5B（数学知识），target=Qwen3-4B。
 
-目标：让「拿到分析者 KV 的求解者」答得更好，把免训练 latent 的退化换成可学习融合。
+B) 同模型角色条件（默认）：source=分析者前缀+问题，target=求解者前缀+问题。
+   **修复位置对齐**：先把两个角色 system 前缀**补到等 token 长度**，使共享的「问题+生成提示」后缀
+   落在**相同绝对位置**（否则同一 token 在 source/target 的 RoPE 相位不一致——旧实现的 bug）。
 
-跑法（需 [all] + GPU；数据走本地 gsm8k parquet）：
+公共：冻结所有 base，只训 projector（C2C 原则）；损失=只在答案 token 上的 CLM 交叉熵；
+在共享对齐段上用逐层 C2CProjector 把 source KV 融进 target KV。
+
+跑法：
+  # 跨模型（推荐，忠实 C2C）
   CUDA_VISIBLE_DEVICES=0 python scripts/train_c2c_projector.py \
-      --model-path /data/mxy/Models/Qwen/Qwen3-4B --n 2000 --steps 400 \
-      --out runs/c2c/qwen3-4b_gsm8k
-
-torch/transformers 惰性导入；本脚本被 import 不触发重依赖（黄金法则 2）。
+      --source-model /data/mxy/Models/Qwen/Qwen2.5-Math-1.5B --n 2000 --steps 400 \
+      --out runs/c2c/qwen2.5math1.5b__qwen3-4b_gsm8k
+  # 同模型（已修对齐）
+  CUDA_VISIBLE_DEVICES=0 python scripts/train_c2c_projector.py --n 2000 --steps 400 \
+      --out runs/c2c/qwen3-4b_self_gsm8k
 """
 from __future__ import annotations
 
@@ -27,7 +32,6 @@ import time
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 
-# 角色前缀：内容不同（⇒ 同一问题的 KV 不同，融合非平凡），长度无所谓（按公共后缀对齐问题段）
 ANALYST_SYS = ("You are a math analyst. Carefully identify the quantities, relations, and the "
                "solution strategy for the problem. Think about what computations are needed.")
 SOLVER_SYS = ("You are a math solver. Solve the problem step by step and end with the final "
@@ -36,9 +40,7 @@ SOLVER_SYS = ("You are a math solver. Solve the problem step by step and end wit
 
 def load_gsm8k(n: int):
     import pandas as pd
-    f = glob.glob(os.path.join(_ROOT, "..", "..", "Data", "raw", "gsm8k", "main",
-                               "train-*.parquet"))
-    f = f or glob.glob("/data/mxy/Project/CDM/Data/raw/gsm8k/main/train-*.parquet")
+    f = glob.glob("/data/mxy/Project/CDM/Data/raw/gsm8k/main/train-*.parquet")
     df = pd.read_parquet(f[0])
     if n:
         df = df.iloc[:n]
@@ -46,10 +48,12 @@ def load_gsm8k(n: int):
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="训练 C2C 投影器（角色条件融合 PoC）")
+    ap = argparse.ArgumentParser(description="训练 C2C 投影器（跨模型 / 同模型对齐修复）")
     ap.add_argument("--model-path", default=os.environ.get("LYCHEE_HF_MODEL",
-                    "/data/mxy/Models/Qwen/Qwen3-4B"))
-    ap.add_argument("--n", type=int, default=2000, help="gsm8k 训练子集大小")
+                    "/data/mxy/Models/Qwen/Qwen3-4B"), help="target/receiver 模型")
+    ap.add_argument("--source-model", default=None,
+                    help="给定则跨模型（source/sharer）；不给则同模型角色条件")
+    ap.add_argument("--n", type=int, default=2000)
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--proj-hidden", type=int, default=512)
@@ -59,13 +63,15 @@ def main() -> None:
     ap.add_argument("--max-ans-len", type=int, default=320)
     ap.add_argument("--grad-accum", type=int, default=4)
     ap.add_argument("--log-every", type=int, default=20)
-    ap.add_argument("--save-every", type=int, default=0, help=">0 则每该步数存一次中间 ckpt")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--out", default=os.path.join("runs", "c2c", "qwen3-4b_gsm8k"))
+    ap.add_argument("--out", default=os.path.join("runs", "c2c", "run"))
     args = ap.parse_args()
 
     import torch
-    from lychee_mas.layers.memory.channels.c2c_projector import build_projector_stack
+    from lychee_mas.layers.memory.channels.c2c_projector import (
+        build_projector_stack,
+        map_source_to_target_layers,
+    )
     from lychee_mas.runtime.backends.hf_backend import (
         HFBackend,
         common_suffix_len,
@@ -75,33 +81,42 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     os.makedirs(args.out, exist_ok=True)
+    cross = args.source_model is not None
 
-    # ---- 冻结的 base（eval + requires_grad False）----
-    be = HFBackend(args.model_path, device="cuda:0", dtype=torch.bfloat16, enable_thinking=False)
-    model, tok = be.model, be.tok
-    model.eval()
-    for p in model.parameters():
+    # ---- target（receiver），冻结 ----
+    tgt = HFBackend(args.model_path, device="cuda:0", dtype=torch.bfloat16, enable_thinking=False)
+    tgt.model.eval()
+    for p in tgt.model.parameters():
         p.requires_grad_(False)
-    nL, nKV, hd = be.kv_dims()
-    print(f"[train] base frozen; kv_dims layers={nL} kv_heads={nKV} head_dim={hd}", flush=True)
+    nL, nKV, hd = tgt.kv_dims()
+    tok = tgt.tok
 
-    # ---- 可训练 projector 栈（fp32，zero_init=恒等起步）----
+    # ---- source（sharer）：跨模型则另载，同模型则就是 target ----
+    if cross:
+        src = HFBackend(args.source_model, device="cuda:0", dtype=torch.bfloat16,
+                        enable_thinking=False, strict_hidden=False)
+        src.model.eval()
+        for p in src.model.parameters():
+            p.requires_grad_(False)
+        nL_s, nKV_s, hd_s = src.kv_dims()
+        print(f"[train] CROSS-MODEL  source={os.path.basename(args.source_model)} "
+              f"(L={nL_s} kv={nKV_s} hd={hd_s}) -> target (L={nL} kv={nKV} hd={hd})", flush=True)
+    else:
+        src = tgt
+        nKV_s, hd_s = nKV, hd
+        print(f"[train] SAME-MODEL role-conditioned (L={nL} kv={nKV} hd={hd})", flush=True)
+
+    # ---- projector 栈（target 层数；跨维由 src kv/hd 指定）----
     projectors = build_projector_stack(nL, hd, nKV, hidden_dim=args.proj_hidden,
                                        intermediate_dim=args.proj_intermediate,
-                                       num_layers=args.proj_layers,
-                                       dtype=torch.float32, zero_init=True).to("cuda:0")
+                                       num_layers=args.proj_layers, dtype=torch.float32,
+                                       zero_init=True, src_num_kv_heads=nKV_s,
+                                       src_head_dim=hd_s).to("cuda:0")
     projectors.train()
-    for p in projectors.parameters():
-        p.requires_grad_(True)
     for proj in projectors:
-        proj.anneal_steps = max(1, args.steps // 2)  # 前半程退火门控温度
-    nparam = sum(p.numel() for p in projectors.parameters())
-    print(f"[train] projector params: {nparam/1e6:.1f}M ({nL} layers)", flush=True)
-
-    opt = AdamW([p for p in projectors.parameters()], lr=args.lr, weight_decay=0.01)
-    data = load_gsm8k(args.n)
-    print(f"[train] gsm8k examples: {len(data)}; steps={args.steps} grad_accum={args.grad_accum}",
-          flush=True)
+        proj.anneal_steps = max(1, args.steps // 2)
+    print(f"[train] projector params: {sum(p.numel() for p in projectors.parameters())/1e6:.1f}M "
+          f"({nL} layers)", flush=True)
 
     def chat_ids(sys_prompt, problem):
         msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": problem}]
@@ -109,70 +124,87 @@ def main() -> None:
                                        enable_thinking=False)
         return tok(text, return_tensors="pt").input_ids[0].tolist()
 
-    def encode_source(src_ids):
-        with torch.no_grad():
-            ids = torch.tensor([src_ids], device="cuda:0")
-            out = model(input_ids=ids, use_cache=True)
-            return [(lyr.keys.detach(), lyr.values.detach()) for lyr in out.past_key_values.layers]
+    # 同模型：把两个角色 system 前缀补到等 token 长度（=> 问题后缀绝对位置一致，修 RoPE 对齐）
+    analyst_sys = ANALYST_SYS
+    if not cross:
+        dummy = "x"
+        while len(chat_ids(analyst_sys, dummy)) < len(chat_ids(SOLVER_SYS, dummy)):
+            analyst_sys += "\n"
+        solver_sys = SOLVER_SYS
+        while len(chat_ids(solver_sys, dummy)) < len(chat_ids(analyst_sys, dummy)):
+            solver_sys += "\n"
+        assert len(chat_ids(analyst_sys, dummy)) == len(chat_ids(solver_sys, dummy))
+        print("[train] equalized role-prefix lengths -> aligned positions", flush=True)
+    else:
+        solver_sys = SOLVER_SYS
 
-    step, running, n_acc, t0 = 0, 0.0, 0, time.time()
+    opt = AdamW(list(projectors.parameters()), lr=args.lr, weight_decay=0.01)
+    data = load_gsm8k(args.n)
+    print(f"[train] gsm8k={len(data)} steps={args.steps} ga={args.grad_accum} cross={cross}",
+          flush=True)
+
+    def build_example(problem, answer):
+        """返回 (tgt_full_ids, labels, mapped_src_layers, src_span, tgt_span) 或 None（跳过）。"""
+        tgt_prompt = chat_ids(solver_sys, problem)          # target 端 prompt
+        src_prompt = tgt_prompt if cross else chat_ids(analyst_sys, problem)
+        if len(tgt_prompt) > args.max_prompt_len or len(src_prompt) > args.max_prompt_len:
+            return None
+        if cross:                                           # 同一 ids 喂两模型，整段对齐
+            Lp = len(tgt_prompt)
+            src_span = tgt_span = (0, Lp)
+        else:                                               # 等长前缀 -> 公共后缀同位对齐
+            ln = common_suffix_len(src_prompt, tgt_prompt)
+            if ln < 8:
+                return None
+            src_span = (len(src_prompt) - ln, ln)
+            tgt_span = (len(tgt_prompt) - ln, ln)
+        src_layers = map_source_to_target_layers(src.encode_kv_cache_ids(src_prompt), nL)
+        ans = tok(answer, add_special_tokens=False).input_ids[:args.max_ans_len]
+        ans = ans + [tok.eos_token_id]
+        return tgt_prompt + ans, [-100] * len(tgt_prompt) + ans, src_layers, src_span, tgt_span
+
+    step, running, n_acc, t0, di = 0, 0.0, 0, time.time(), 0
     opt.zero_grad()
-    di = 0
     while step < args.steps:
-        problem, answer = data[di % len(data)]
+        ex = build_example(*data[di % len(data)])
         di += 1
-        src_ids = chat_ids(ANALYST_SYS, problem)
-        tgt_prompt = chat_ids(SOLVER_SYS, problem)
-        if len(src_ids) > args.max_prompt_len or len(tgt_prompt) > args.max_prompt_len:
+        if ex is None:
             continue
-        ln = common_suffix_len(src_ids, tgt_prompt)  # 共享问题+生成提示后缀
-        if ln < 8:
-            continue
-        src_span = (len(src_ids) - ln, ln)
-        tgt_span = (len(tgt_prompt) - ln, ln)
-        ans_ids = tok(answer, add_special_tokens=False).input_ids[:args.max_ans_len]
-        ans_ids = ans_ids + [tok.eos_token_id]
-        tgt_full = tgt_prompt + ans_ids
-        labels = [-100] * len(tgt_prompt) + ans_ids
-
-        src_layers = encode_source(src_ids)
-        cache = make_fusion_cache(src_layers, projectors, model.config, src_span, tgt_span)
-        ids = torch.tensor([tgt_full], device="cuda:0")
-        lab = torch.tensor([labels], device="cuda:0")
-        out = model(input_ids=ids, labels=lab, past_key_values=cache, use_cache=True)
-        loss = out.loss / args.grad_accum
-        loss.backward()
+        tgt_full, labels, src_layers, src_span, tgt_span = ex
+        cache = make_fusion_cache(src_layers, projectors, tgt.model.config, src_span, tgt_span)
+        out = tgt.model(input_ids=torch.tensor([tgt_full], device="cuda:0"),
+                        labels=torch.tensor([labels], device="cuda:0"),
+                        past_key_values=cache, use_cache=True)
+        (out.loss / args.grad_accum).backward()
         running += float(out.loss.detach())
         n_acc += 1
-
         if n_acc % args.grad_accum == 0:
-            torch.nn.utils.clip_grad_norm_([p for p in projectors.parameters()], 1.0)
+            torch.nn.utils.clip_grad_norm_(list(projectors.parameters()), 1.0)
             opt.step()
             opt.zero_grad()
             step += 1
             for proj in projectors:
                 proj.update_temperature(step)
             if step % args.log_every == 0:
-                avg = running / n_acc
                 gate = float(torch.sigmoid(projectors[nL // 2].key_gate_logit).detach())
-                print(f"[step {step}/{args.steps}] loss={avg:.4f} mid_gate={gate:.3f} "
+                print(f"[step {step}/{args.steps}] loss={running/n_acc:.4f} mid_gate={gate:.3f} "
                       f"{(time.time()-t0)/step:.2f}s/step", flush=True)
                 running, n_acc = 0.0, 0
-            if args.save_every and step % args.save_every == 0:
-                _save(projectors, args, nL, nKV, hd, os.path.join(args.out, f"step{step}"))
 
-    _save(projectors, args, nL, nKV, hd, os.path.join(args.out, "final"))
+    _save(projectors, args, nL, nKV, hd, nKV_s, hd_s, cross, os.path.join(args.out, "final"))
     print(f"[done] -> {os.path.join(args.out, 'final')}", flush=True)
 
 
-def _save(projectors, args, nL, nKV, hd, out_dir):
+def _save(projectors, args, nL, nKV, hd, nKV_s, hd_s, cross, out_dir):
     import torch
     os.makedirs(out_dir, exist_ok=True)
     torch.save({
         "state_dicts": [p.state_dict() for p in projectors],
         "build": {"num_hidden_layers": nL, "head_dim": hd, "num_kv_heads": nKV,
+                  "src_num_kv_heads": nKV_s, "src_head_dim": hd_s,
                   "hidden_dim": args.proj_hidden, "intermediate_dim": args.proj_intermediate,
-                  "num_layers": args.proj_layers}},
+                  "num_layers": args.proj_layers},
+        "meta": {"cross": cross, "source_model": args.source_model, "model_path": args.model_path}},
         os.path.join(out_dir, "projectors.pt"))
 
 

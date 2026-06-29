@@ -42,7 +42,7 @@ class HFBackend:
     def __init__(self, model_name: Optional[str] = None, device: str = "cuda:0",
                  dtype: Any = None, enable_thinking: bool = False,
                  do_sample: bool = False, temperature: float = 0.7,
-                 top_p: float = 0.8, seed: int = 0):
+                 top_p: float = 0.8, seed: int = 0, strict_hidden: bool = True):
         # torch/transformers 在此惰性导入（无 GPU/无库的离线环境不应触发本类构造）
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -63,8 +63,10 @@ class HFBackend:
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=dtype).to(self.device).eval()  # eval 模式（无 dropout，确定性）
         self.H = self.model.config.hidden_size
-        assert self.H == EXPECTED_HIDDEN, \
-            f"expected hidden {EXPECTED_HIDDEN}, got {self.H}"  # 约束 #3
+        # 约束 #3（latent soft-prefix 路径要求 H==2560）；C2C cache 融合按 head_dim 跨维，
+        # source 模型 H 可不同 ⇒ strict_hidden=False 跳过此 assert。
+        if strict_hidden:
+            assert self.H == EXPECTED_HIDDEN, f"expected hidden {EXPECTED_HIDDEN}, got {self.H}"
         # 输入嵌入层；latent 拼接与 soft_token 都要用它
         self.embed = self.model.get_input_embeddings()
         # 解码参数：默认贪心；采样时按 temperature/top_p，并设种子保证 run 级可复现
@@ -160,6 +162,17 @@ class HFBackend:
             layers = [(lyr.keys.detach(), lyr.values.detach())
                       for lyr in out.past_key_values.layers]
         return ids.shape[1], layers
+
+    def encode_kv_cache_ids(self, ids):
+        """从给定 token ids（list 或 (1,N) tensor）前向取每层 (K,V)。
+        跨模型时给 source/target 喂**同一份 ids**（位置天然对齐），由本方法在 source 模型上编码。"""
+        import torch
+
+        with torch.no_grad():
+            t = torch.tensor([ids], device=self.device) if not torch.is_tensor(ids) \
+                else ids.to(self.device)
+            out = self.model(input_ids=t, use_cache=True)
+            return [(lyr.keys.detach(), lyr.values.detach()) for lyr in out.past_key_values.layers]
 
     # ---- C2C 原语：prefill 时逐层把 source KV 经 projector 融合进 target KV，再生成 ----
     def generate_chat_with_cache_fusion(self, messages: List[Dict], source_layers, projectors,
