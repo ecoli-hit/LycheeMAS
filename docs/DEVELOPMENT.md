@@ -218,3 +218,9 @@ make lint     # ruff check src 通过（line-length 100；math_parsing_util 逐�
 ```bash
 PYTHONPATH=src python -c "import sys, lychee_mas; print('HEAVY LOADED:', [m for m in ('torch','transformers','autogen_core','autogen_agentchat','numpy','yaml','sympy','datasets') if m in sys.modules] or 'NONE')"
 ```
+
+---
+
+## 11. 组内论文落地开发文档（`docs/dev/`）
+
+把本组论文（AgentInit / AgentDropout / AgentVocab / MASPO …）逐篇接成真实组件的开发蓝图（开发流程 / 写哪些代码 / 在哪里实现 / 接口函数 / 预期时间）见 **[`docs/dev/README.md`](dev/README.md)**（含跨文档共性事实：编排缺口、CLI 开关、MASGraph 邻接前置、惰性导入、六步配方）。
