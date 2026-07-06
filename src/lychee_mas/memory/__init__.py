@@ -26,10 +26,12 @@ from .routing import (
     StaticRouter,
     fixed_channel_router,
 )
+from .store import MemoryStore  # 从原 stores/ 迁入：L3 记忆缓存接缝
 
 __all__ = [
     "MemoryManager",
     "MemoryBundle",
+    "MemoryStore",
     "NLMemory",
     "LatentMemory",
     "PREV_OUTPUT_HEADER",

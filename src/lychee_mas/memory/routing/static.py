@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
 
-from ....core.registry import REGISTRY
+from ...core.registry import REGISTRY
 from .base import Channel, MemoryRouter, RouteDecision, RouterInputs
 
 

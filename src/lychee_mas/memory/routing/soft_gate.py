@@ -8,7 +8,7 @@ TODO：产出连续门控权重 g = softmax(W·features)，在 {none,nl,latent,b
 """
 from __future__ import annotations
 
-from ....core.registry import REGISTRY
+from ...core.registry import REGISTRY
 from .base import MemoryRouter, RouteDecision, RouterInputs
 from .static import StaticRouter
 

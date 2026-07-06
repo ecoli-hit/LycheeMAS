@@ -1,17 +1,21 @@
-"""L4 聚合器实现（TrajectoryAggregator 接缝）。
+"""L4 处理层 · **并行子模块**——并发跑 K 次 MAS，再用 aggregator 聚合成一个 Answer。
 
+- processor/parallel           并行处理器：并发 K 次 → K 条轨迹 → aggregator 聚合（子模块入口）
 - aggregator/self_consistency  纯标准库多数投票（真实可测组件，CLAUDE.md §5 要求至少一个可跑）
 - aggregator/dynamicagg        动态聚合（在研，桩）
 
-self_consistency 对 list[Answer]（或从 list[Trajectory] 取 final_answer）按归一化内容取众数。
+`aggregator`（TrajectoryAggregator）是并行处理器的可插拔归约策略：对 list[Answer]（或从
+list[Trajectory] 取 final_answer）按归一化内容取众数（self_consistency）。
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from collections import Counter
 
 from ....core.registry import REGISTRY
 from ....core.types import Answer, Trajectory
+from ..base import ProcessingResult, Runner
 
 
 def _norm(text: str) -> str:
@@ -83,4 +87,24 @@ class DynamicAggregator:
         raise NotImplementedError("dynamicagg: not wired yet (TODO)")
 
 
-__all__ = ["SelfConsistencyVote", "DynamicAggregator"]
+@REGISTRY.register("processor", "parallel")
+class ParallelProcessor:
+    """并行处理：并发调用 runner **K 次**产出 K 条轨迹，再用 `aggregator` 聚合成一个 Answer。
+
+    K=`k`；聚合策略 = `aggregator`（默认 self_consistency 多数投票）。runner 需每次产出独立轨迹
+    （调用方负责隔离，如 ctx.reset）。"""
+
+    name = "parallel"
+
+    def __init__(self, k: int = 5, aggregator: str = "self_consistency", **kwargs):
+        self.k = max(1, int(k))
+        self.aggregator = aggregator
+        self.cfg = kwargs
+
+    async def run(self, runner: Runner) -> ProcessingResult:
+        trajs = list(await asyncio.gather(*[runner() for _ in range(self.k)]))
+        agg = REGISTRY.create("aggregator", self.aggregator)
+        return ProcessingResult(answer=agg.aggregate(trajs), trajectories=trajs)
+
+
+__all__ = ["SelfConsistencyVote", "DynamicAggregator", "ParallelProcessor"]

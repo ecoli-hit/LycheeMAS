@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from ....core.registry import REGISTRY
+from ...core.registry import REGISTRY
 from ..base import MemoryBundle, MemoryManager
 from ..routing.base import RouteDecision
 

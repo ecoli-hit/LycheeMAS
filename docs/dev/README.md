@@ -14,7 +14,7 @@
 | [01-agentinit.md](01-agentinit.md) | **AgentInit** — Diversity & Expertise Orchestration | EMNLP'25 Findings (CCF-B) | L1 · `agent_selector/agentinit` | `layers/construct/selectors/__init__.py:14` | 🟡 |
 | [02-agentdropout.md](02-agentdropout.md) | **AgentDropout** — Dynamic Agent Elimination | ACL'25 (CCF-A) | L2 · `graph_pruner/agentdropout` | `layers/prune/pruners/__init__.py:27` | 🟢 |
 | [03-agentvocab.md](03-agentvocab.md) | **AgentVocab** — Structure-Aware Vocabulary Adaptation | ICML'26 (CCF-A) | L2 · `vocab_adapter/agentvocab` | `layers/prune/vocab/__init__.py:13` | 🔴 |
-| [04-maspo.md](04-maspo.md) | **MASPO** — Joint Prompt Optimization | ICML'26 (CCF-A) | L5 · `trainer/maspo` | `layers/attribute_train/__init__.py:63` | 🟢 |
+| [04-maspo.md](04-maspo.md) | **MASPO** — Joint Prompt Optimization | ICML'26 (CCF-A) | L5 · `trainer/maspo` | `train/__init__.py:63` | 🟢 |
 
 > 把握度：🟢 据官方仓库 + arXiv 写实 / 🟡 arXiv 在但部分算法细节待核验 / 🔴 公开信息有限、需对照论文 PDF 回填。
 >
@@ -93,10 +93,10 @@ build_graph()                       # 只调 topology_generator/static（按 tea
 
 ### 3.4 可复用锚点（别重造轮子）
 
-- **实现模板**：`aggregator/self_consistency`（`layers/aggregate/aggregators/__init__.py`）——纯标准库、注册干净、有 `_norm/_as_answers` 辅助，是"一个可跑组件"的范本。
+- **实现模板**：`aggregator/self_consistency`（`layers/processing/parallel/__init__.py`）——纯标准库、注册干净、有 `_norm/_as_answers` 辅助，是"一个可跑组件"的范本。
 - **拓扑**：`StaticTopology.build(agents=...)`（`construct/templates.py:222`）已支持显式 agents；复用 `team_to_agentspecs()`、`TEAMS`、`Role`。
 - **类型**：`MASGraph(nodes, rounds, meta)`（`runtime/base.py`）、`AgentSpec.profile`（装专长/多样性特征）、`Trajectory`/`Message`/`Answer`（`core/types.py`）。
-- **采轨迹/评分**：`stores/TraceStore`（消息级落点 + 决策日志，供 MASPO 采样）、`eval/metrics.py::score`（供 MASPO reward / 实验评分）。
+- **采轨迹/评分**：`trace/TraceStore`（消息级落点 + 决策日志，供 MASPO 采样）、`eval/metrics.py::score`（供 MASPO reward / 实验评分）。
 
 ### 3.5 惰性导入铁律（黄金法则 2）
 

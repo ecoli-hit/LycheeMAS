@@ -47,7 +47,7 @@ def main() -> None:
     import torch
     from lychee_mas.eval.benchmarks import load as load_task
     from lychee_mas.eval.metrics import score
-    from lychee_mas.layers.memory.channels.c2c_projector import (
+    from lychee_mas.memory.channels.c2c_projector import (
         build_projector_stack,
         map_source_to_target_layers,
     )

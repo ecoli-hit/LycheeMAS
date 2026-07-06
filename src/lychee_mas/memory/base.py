@@ -27,8 +27,11 @@ class MemoryBundle:
     """本轮要注入的东西。按通道不同，两个字段可各自为 None（none 通道则都为 None）。"""
 
     nl_text: Optional[str] = None  # 注入进 prompt 的文本（NL 通道）
-    # (1,P,H) 的 embedding 层 prefix（latent 通道，torch.Tensor）
+    # (1,P,H) 的 embedding 层 prefix（latent 通道-soft_token，torch.Tensor）
     latent_prefix: Optional[Any] = None
+    # C2C latent 通道：训练好的逐层 projector 栈（nn.ModuleList）。非空 = 走 KV-cache 融合而非
+    # prefix；source（上一个 agent 的输入+输出）由注入 client 从 ctx 组装，此处只携带 projector。
+    latent_c2c: Optional[Any] = None
     meta: dict = field(default_factory=dict)  # 附带元信息（如所选 channel、是否空 source）
 
     @property

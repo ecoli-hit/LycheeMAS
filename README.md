@@ -6,11 +6,13 @@
 | -- | ------------------------------------- | -------------------------------------------- |
 | L1 | `lychee_mas.layers.construct`       | 多智能体网络构建（团队组建 + 静态/动态图）   |
 | L2 | `lychee_mas.layers.prune`           | 网络剪枝与优化（含模型级词表降本）           |
-| L3 | `lychee_mas.layers.memory`          | 运行时多维度多表征记忆管理（NL/隐空间/参数） |
-| L4 | `lychee_mas.layers.aggregate`       | 多轨迹聚合与融合                             |
-| L5 | `lychee_mas.layers.attribute_train` | 错误归因 + 强化学习训练                      |
+| L3 | `lychee_mas.memory`                 | 运行时多维度多表征记忆管理（NL/隐空间/参数；已提升为顶层包） |
+| L4 | `lychee_mas.layers.processing`      | 决定跑几次 MAS：`serial` 单次执行 + `parallel` 并发 K 次并聚合 |
+| L5 | `lychee_mas.trace` + `lychee_mas.train` | 错误归因/信用（trace，含 TraceStore）+ 强化学习/提示优化训练（train） |
 
 设计四原则：**可插拔可消融**（registry + config）、**Runtime 抽象隔离 AutoGen**、**性能-成本联合度量**、**可复现**。
+
+**当前研究主线 = 记忆层 CDM**（`lychee_mas.memory`）：双通道记忆（自然语言 + 隐空间）+ 运行时动态通道选择。隐空间通道两种物化策略——`soft_token`（免训练自压缩）与 `c2c`（训练好的 Cache-to-Cache 逐层 KV 融合器）。端到端实验驱动见 `scripts/run_mas.py`。
 
 ## 安装
 
@@ -74,8 +76,10 @@ make lint     # ruff check src
 src/lychee_mas/
 ├── core/        统一图抽象类型（types）+ 组件注册表（registry）
 ├── runtime/     Runtime 协议 + 后端（mock / autogen / HF / vLLM）；唯一允许 import autogen 的位置
-├── stores/      TraceStore（执行轨迹/决策落点）+ MemoryStore
-├── layers/      L1..L5 五层变换（各层 base.py 协议 + 注册实现）
+├── memory/      L3 记忆层 CDM（顶层包）：channels / managers / routing + store.py（MemoryStore）
+├── trace/       L5-读：归因/信用（attributor + credit_assigner）+ store.py（TraceStore）
+├── train/       L5-写：RL/提示优化训练（trainer/maspo）
+├── layers/      L1/L2/L4 层变换（construct / prune / processing{parallel,serial}；各层 base.py + 注册实现）
 ├── pipeline.py  Orchestrator.run（端到端编排，按 config 从 REGISTRY 取组件）
 └── eval/        benchmarks（数据 loaders）+ metrics（评分/落盘）+ task_config
 configs/         Hydra/YAML 配置（按组件分组）
@@ -85,5 +89,5 @@ tests/           pytest（离线、零重依赖）
 docs/            开发文档（见 docs/DEVELOPMENT.md）
 ```
 
-> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、迁移映射表）见 `docs/DEVELOPMENT.md`。
+> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、各层扩展点）见 `docs/DEVELOPMENT.md`。
 

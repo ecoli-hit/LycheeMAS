@@ -6,7 +6,7 @@ TODO：把 RouterInputs 特征化（role/task one-hot、turn、query embedding�
 """
 from __future__ import annotations
 
-from ....core.registry import REGISTRY
+from ...core.registry import REGISTRY
 from .base import MemoryRouter, RouteDecision, RouterInputs
 from .static import StaticRouter
 

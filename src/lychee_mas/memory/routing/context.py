@@ -7,7 +7,7 @@ GroupChat 里 agent 串行发言，所以单个共享 context 是安全的：每
 router（记忆通道决策）与 memory（记忆方法）是两个可替换接缝；其余固定。
 
 决策日志默认存在 `self.decisions`（可解释性 + 落盘）；若构造时传入 `trace_store`，则同时
-写入 `stores.TraceStore`（CLAUDE.md §8：统一落点）。
+写入 `trace.TraceStore`（CLAUDE.md §8：统一落点）。
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class RoutingContext:
         "none": True, "nl": True, "latent": True, "both": True})  # 各通道是否可用（约束 #2 用）
     model_of_role: Dict[str, str] = field(default_factory=dict)  # role -> model id（判同模型对）
     decisions: List[dict] = field(default_factory=list)  # 决策日志（可解释性 + 落盘 routing_trace）
-    trace_store: Any = None  # 可选 stores.TraceStore：把决策同时写入统一落点
+    trace_store: Any = None  # 可选 trace.TraceStore：把决策同时写入统一落点
 
     def turn_of(self, role: str) -> int:
         return self.turns.get(role, 0)  # 读取某角色当前轮次（默认 0）

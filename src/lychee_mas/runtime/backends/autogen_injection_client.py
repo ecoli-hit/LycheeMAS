@@ -76,7 +76,7 @@ def _build_injection_client_class():
     )
 
     # RouterInputs 是纯 dataclass（无 autogen/torch），从 L3 触发接缝直接复用
-    from ...layers.memory.routing.base import RouterInputs
+    from ...memory.routing.base import RouterInputs
 
     class InjectionClient(ChatCompletionClient):
         """实现 AutoGen 的 ChatCompletionClient 接口。一个 agent 一个实例（绑定其 role）。"""
@@ -123,9 +123,18 @@ def _build_injection_client_class():
                     insert_at += 1
                 send_msgs.insert(insert_at, {"role": "system", "content": bundle.nl_text})
 
-            if bundle.latent_prefix is not None:
-                # latent 通道：把 prefix 张量拼到 token embedding 前（在 backend 的 embedding 层注
-                # 入）
+            if bundle.latent_c2c is not None:
+                # C2C latent 通道：source=上一个 agent 的输入+输出（从 ctx 取），经 projector 把其
+                # KV 融进本 agent 生成；首个 agent 无前驱则退回普通生成。
+                src_msgs = self._c2c_source()
+                if src_msgs is not None:
+                    g = self.backend.generate_chat_with_c2c(
+                        send_msgs, src_msgs, bundle.latent_c2c,
+                        max_new_tokens=self.max_new_tokens)
+                else:
+                    g = self.backend.generate_chat(send_msgs, max_new_tokens=self.max_new_tokens)
+            elif bundle.latent_prefix is not None:
+                # latent 通道（soft_token）：把 prefix 张量拼到 token embedding 前
                 g = self.backend.generate_chat_with_prefix(send_msgs, bundle.latent_prefix,
                                                            max_new_tokens=self.max_new_tokens)
             else:
@@ -140,12 +149,31 @@ def _build_injection_client_class():
                 prompt_tokens=g.n_prompt_pos, completion_tokens=g.n_gen_tokens)
             self.ctx.log_decision(self.role, turn, sender, decision, {
                 "prompt_pos": g.n_prompt_pos, "gen_tokens": g.n_gen_tokens,
-                "prefix_len": bundle.prefix_len, "nl_chars": len(bundle.nl_text or ""),
+                "prefix_len": g.prefix_len, "nl_chars": len(bundle.nl_text or ""),
                 "latency_s": round(g.latency_s, 3),
                 "input_messages": input_messages,
                 "output": g.text})
             return CreateResult(finish_reason="stop", content=g.text, usage=self._usage,
                                 cached=False)
+
+        def _c2c_source(self):
+            """C2C 的 source = 上一个 agent 的「输入消息 + 其输出」（从 ctx.decisions 取）。
+
+            ctx.log_decision 在每个 agent 生成后落了 input_messages 与 output；本 agent 发言时
+            decisions[-1] 即上一个发言者。无前驱（首个 agent）返回 None ⇒ 注入 client 退回普通生成。
+            """
+            decs = getattr(self.ctx, "decisions", None)
+            if not decs:
+                return None
+            prev = decs[-1]
+            inp = prev.get("input_messages")
+            if not inp:
+                return None
+            src = [{"role": m["role"], "content": m["content"]} for m in inp]
+            out = prev.get("output")
+            if isinstance(out, str) and out.strip():
+                src.append({"role": "assistant", "content": out})  # 带上前驱的实际输出
+            return src
 
         async def create_stream(self, messages, *, tools=[], tool_choice="auto",
                                 json_output=None, extra_create_args={}, cancellation_token=None):

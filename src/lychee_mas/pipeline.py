@@ -22,7 +22,7 @@ class Orchestrator:
       - runtime: 运行时名（REGISTRY "runtime" 类别），默认 "mock"（离线确定性）。
       - team:    静态拓扑的队伍 profile 名（topology_generator/static），默认 "default"。
       - aggregator: 可选聚合器名（REGISTRY "aggregator"）；给出则对 [trajectory] 聚合出最终 Answer。
-      - trace_store: 可选 stores.TraceStore；给出则把每条 Message 通过 runtime.intercept 写入。
+      - trace_store: 可选 trace.TraceStore；给出则把每条 Message 通过 runtime.intercept 写入。
       - runtime_kwargs: 透传给 runtime 构造（如 autogen 后端的 backend/ctx）。
     """
 

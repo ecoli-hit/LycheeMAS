@@ -26,5 +26,6 @@ data/processed/
 # OS
 .DS_Store
 
-# Claude Code 本地配置（不共享）
+# Claude Code 本地状态（会话/worktrees/本地配置，不共享）
+.claude/
 **/.claude/settings.local.json

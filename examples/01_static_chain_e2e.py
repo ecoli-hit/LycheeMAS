@@ -13,7 +13,7 @@ import pprint
 from lychee_mas import REGISTRY
 from lychee_mas.core.types import TaskQuery
 from lychee_mas.pipeline import Orchestrator
-from lychee_mas.stores import TraceStore
+from lychee_mas.trace import TraceStore
 
 
 async def main() -> None:

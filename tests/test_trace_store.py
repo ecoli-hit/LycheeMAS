@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from lychee_mas.core.types import Message
-from lychee_mas.stores import MemoryStore, TraceStore
+from lychee_mas.memory import MemoryStore
+from lychee_mas.trace import TraceStore
 
 
 def test_trace_store_collects_messages():

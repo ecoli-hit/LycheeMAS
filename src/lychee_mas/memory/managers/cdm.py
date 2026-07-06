@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from ....core.registry import REGISTRY
+from ...core.registry import REGISTRY
 from ..base import MemoryBundle, MemoryManager
+from ..channels.c2c_channel import C2CLatentChannel  # 仅纯 python，import 不触发 torch
 from ..channels.latent import LatentMemory
 from ..channels.nl import NLMemory
 from ..routing.base import RouteDecision
@@ -30,12 +31,17 @@ class DualChannelMemoryManager(MemoryManager):
 
     def __init__(self, backend, latent_strategy: str = "soft_token",
                  nl_strategy: str = "prev_output",
-                 max_encode_tokens: int = 4096, include_transcript: bool = True):
+                 max_encode_tokens: int = 4096, include_transcript: bool = True,
+                 c2c_ckpt: str | None = None, c2c_gate: str = "soft"):
         self.backend = backend
+        self.latent_strategy = latent_strategy
         # NL 通道：按 nl_strategy 选方法
         self.nl = NLMemory(getattr(backend, "tok", None), strategy=nl_strategy)
-        # latent 通道：按 latent_strategy 选方法
+        # latent 通道：soft_token 走免训练自压缩；c2c 走训练好的 KV-cache 融合器
         self.latent = LatentMemory(backend, latent_strategy, max_encode_tokens)
+        # latent_strategy=="c2c" 时，持有训练好的 projector 栈（懒加载）；source 由注入 client 组装
+        self.c2c = (C2CLatentChannel(backend, c2c_ckpt, gate=c2c_gate)
+                    if latent_strategy == "c2c" else None)
         self.include_transcript = include_transcript  # 是否把运行中的对话也并入 source
         self._seed = ""  # 基础上下文（任务历史），seed() 预载
         self._transcript: List[str] = []  # 运行中累积的对话行
@@ -92,10 +98,15 @@ class DualChannelMemoryManager(MemoryManager):
             # NL 通道默认 = 向下传递上一个 agent 的输出（query），原样不截断
             bundle.nl_text = self.nl.recall(query)
         if decision.uses_latent():  # latent / both
-            source = self._source()  # latent 仍压缩完整 source（seed + transcript）
-            if source:
-                key = (len(source), decision.P)  # 同 source 同 P 复用缓存，省重复编码
-                if key not in self._prefix_cache:
-                    self._prefix_cache[key] = self.latent.build_prefix(source, decision.P)
-                bundle.latent_prefix = self._prefix_cache[key]
+            if self.c2c is not None:
+                # C2C：不物化 prefix，携带 projector 栈；source 的组装/对齐由注入 client 用 ctx 完成
+                bundle.latent_c2c = self.c2c.get_projectors()
+                bundle.meta["latent_kind"] = "c2c"
+            else:
+                source = self._source()  # soft_token：压缩完整 source（seed + transcript）
+                if source:
+                    key = (len(source), decision.P)  # 同 source 同 P 复用缓存，省重复编码
+                    if key not in self._prefix_cache:
+                        self._prefix_cache[key] = self.latent.build_prefix(source, decision.P)
+                    bundle.latent_prefix = self._prefix_cache[key]
         return bundle

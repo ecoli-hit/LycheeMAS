@@ -6,7 +6,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from lychee_mas.layers.memory.channels.c2c_projector import (  # noqa: E402
+from lychee_mas.memory.channels.c2c_projector import (  # noqa: E402
     C2CProjector,
     build_projector_stack,
 )
@@ -61,9 +61,12 @@ def test_cross_dim_projection_shape():
 def test_temperature_anneal_monotonic():
     proj = C2CProjector(128, 128, 8, 8, hidden_dim=64, intermediate_dim=64, num_layers=3,
                         initial_temperature=1.0, final_temperature=0.001, anneal_steps=100)
-    proj.update_temperature(0); t0 = float(proj.gate_temperature)
-    proj.update_temperature(50); t1 = float(proj.gate_temperature)
-    proj.update_temperature(1000); t2 = float(proj.gate_temperature)
+    proj.update_temperature(0)
+    t0 = float(proj.gate_temperature)
+    proj.update_temperature(50)
+    t1 = float(proj.gate_temperature)
+    proj.update_temperature(1000)
+    t2 = float(proj.gate_temperature)
     assert t0 > t1 > t2 and abs(t2 - 0.001) < 1e-6
 
 

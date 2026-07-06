@@ -1,18 +1,19 @@
-"""L5 错误归因 + 强化学习训练协议（CLAUDE.md §5/§10）。
+"""Trace —— 执行轨迹的归因/信用协议（从 attribute_train 拆出；CLAUDE.md §5/§10）。
+
+本包 = 「读」执行轨迹的一侧：错误归因 + 信用分配 + TraceStore（轨迹/决策落点，见 store.py）。
+训练（Trainer）拆到姊妹包 `lychee_mas.train`（「写」参数/提示的一侧）。
 
 - FailureAttributor  错误归因：把一条失败轨迹定位到「哪个 agent / 哪一步」出错（Attribution 列表）。
 - CreditAssigner     信用分配：把归因转成 per-agent 稠密信用（核心贡献：attribution_guided）。
-- Trainer            训练：先 maspo（提示级，无权重更新）；topology_rl/marl 留接口（
-NotImplementedError）。
 
-接口先稳定，RL 库以后接（放 optional extra [train]，只在 trainer/* 实现里依赖，不污染基座）。
+接口先稳定，产出的信用喂给 `lychee_mas.train` 的 Trainer。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from ...core.types import Trajectory
+from ..core.types import Trajectory
 
 
 @dataclass
@@ -39,12 +40,3 @@ class CreditAssigner(Protocol):
     """信用分配：把归因 + 标量奖励转成 per-agent 信用（agent -> float）。"""
 
     def credits(self, attributions: list[Attribution], reward: float) -> dict[str, float]: ...
-
-
-@runtime_checkable
-class Trainer(Protocol):
-    """训练：把信用与轨迹喂给优化过程，产出新参数/提示（Params）。"""
-
-    def credits(self, attrs: list[Attribution], reward: float) -> dict[str, float]: ...
-
-    def train(self, generator, policies, mem_policies, traces, credits) -> Any: ...

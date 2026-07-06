@@ -15,7 +15,7 @@ CATEGORIES = (
     "agent_selector", "topology_generator",
     "graph_pruner", "vocab_adapter",
     "memory_manager", "memory_router",
-    "aggregator",
+    "aggregator", "processor",
     "attributor", "credit_assigner", "trainer",
     "benchmark",
 )

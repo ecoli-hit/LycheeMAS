@@ -14,8 +14,11 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 # 依次 import 各子包以触发组件注册（side-effect import；放进 __all__ 以避免被判为未使用）。
-from . import eval, layers, runtime
+# 顶层研究子包（与 layers 同级）：memory(CDM)、trace(归因/信用+TraceStore)、train(RL/提示优化)。
+# attribute_train 已拆成 trace+train；stores 并入 memory(MemoryStore)/trace(TraceStore) 后删除。
+from . import eval, layers, memory, runtime, trace, train
 from .core.registry import REGISTRY  # 暴露注册表
 from .pipeline import Orchestrator
 
-__all__ = ["__version__", "REGISTRY", "Orchestrator", "layers", "runtime", "eval"]
+__all__ = ["__version__", "REGISTRY", "Orchestrator", "layers", "memory",
+           "trace", "train", "runtime", "eval"]

@@ -1,10 +1,10 @@
 # LycheeMAS 开发文档
 
-> 版本 v1.0 · 2026-06 · 配合根目录 `CLAUDE.md`（工程约束/黄金法则）阅读。本文聚焦**新 `src/lychee_mas/` 包**的架构、目录职责、运行方式、扩展配方、CDM 数据流、迁移映射、测试与各层扩展点。
+> 版本 v1.1 · 2026-07 · 配合根目录 `CLAUDE.md`（工程约束/黄金法则）阅读。本文聚焦 `src/lychee_mas/` 包的架构、目录职责、运行方式、扩展配方、CDM 数据流、测试与各层扩展点。
 >
-> **状态**：重构已落地并离线自验证通过——`import lychee_mas` 零重依赖；`pytest` 24 passed；`ruff` All checks passed；example 可跑；autogen 仅存在于 `runtime/backends/autogen_*.py`。旧代码完整保留在 `src/LycheeMAS/`（参照，未删改）。
+> **状态**：框架端到端可跑，离线自验证通过——`import lychee_mas` 零重依赖；`pytest` 30 passed；`ruff` All checks passed；example 可跑；autogen 仅存在于 `runtime/backends/autogen_*.py`。**包布局**：`memory`（L3 CDM 主线）、`trace`（L5 归因/信用 + TraceStore）、`train`（L5 RL/提示优化）已是顶层子包；原 `stores` 拆入 `memory`/`trace`。CDM latent 通道已支持 `soft_token` 与 `c2c`（Cache-to-Cache）两策略。旧代码保留在 `src/LycheeMAS/`（参照）。
 >
-> **30 秒上手**：`make demo`（离线端到端）→ `make test`（24 测试）→ 读 §5「六步配方」加你的组件。
+> **30 秒上手**：`make demo`（离线端到端）→ `make test`（30 测试）→ 读 §5「六步配方」加你的组件。
 
 ---
 
@@ -13,11 +13,11 @@
 LycheeMAS 把整个 MAS 表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**（V 节点=智能体，E 边=通信信道，W 边权，T 多轮时序，M 记忆状态）。每一层是对 G（或其执行轨迹 τ）的一次变换：
 
 ```
-TaskQuery ──▶ [construct] ──▶ MASGraph ──▶ [Runtime.run] ──▶ Trajectory ──▶ [aggregate] ──▶ Answer
+TaskQuery ──▶ [construct] ──▶ MASGraph ──▶ [Runtime.run] ──▶ Trajectory ──▶ [processing] ──▶ Answer
                                  │                │                              │
-                            [prune]         intercept(Message)         [attribute_train: 归因→信用→训练]
+                            [prune]         intercept(Message)      [trace: 归因→信用] ─▶ [train: 训练]
                                                   │
-                                          TraceStore / [memory 抽取]
+                                       trace.TraceStore / [memory 抽取]
 ```
 
 四个设计原则：
@@ -55,15 +55,13 @@ src/lychee_mas/
 │       ├── autogen_injection_client.py model_client/injection（注入+路由的 ChatCompletionClient 工厂）
 │       ├── hf_backend.py              HFBackend（生成 + latent 注入；torch/transformers 惰性导入）
 │       └── vllm_client.py             model_client/vllm（桩）
-├── stores/
-│   ├── trace_store.py     TraceStore：消息级落点 + 决策日志（可选 JSONL）
-│   └── memory_store.py    MemoryStore：key→value 缓存接缝（FIFO 容量上限）
+├── memory/            ★ L3 CDM（顶层包）：manager 接缝 + router 接缝 + 通道（NL/Latent）+ RoutingContext + store.py（MemoryStore）
+├── trace/             ★ L5-读（顶层包）：FailureAttributor + CreditAssigner（桩）+ store.py（TraceStore：消息级落点 + 决策日志）
+├── train/             ★ L5-写（顶层包）：Trainer + trainer/maspo（桩）；RL 库放 extra [train]
 ├── layers/
 │   ├── construct/      AgentSelector + TopologyGenerator；templates.py（Role/TEAMS）；topology_generator/static
 │   ├── prune/          GraphPruner + VocabAdapter（桩）
-│   ├── memory/         记忆方法接缝（manager）+ 触发接缝（router）+ 通道（NL/Latent）+ RoutingContext
-│   ├── aggregate/      TrajectoryAggregator；self_consistency（可跑）+ dynamicagg（桩）
-│   └── attribute_train/ FailureAttributor + CreditAssigner + Trainer（桩）
+│   └── processing/     决定跑几次 MAS：serial/（processor/serial 跑 1 次）+ parallel/（processor/parallel 并发 K 次 + aggregator 聚合：self_consistency 可跑 / dynamicagg 桩）
 ├── pipeline.py            Orchestrator.run（端到端编排，按 config 从 REGISTRY 取组件）
 └── eval/
     ├── benchmarks/        数据 loaders + benchmark/<task> 注册（惰性加载，不在 import 读盘）
@@ -116,18 +114,18 @@ export LYCHEE_HF_MODEL=/path/to/Qwen3-4B
 
 以「新增一个聚合器」为例，其它层同理：
 
-1. **读接口**：`layers/aggregate/base.py` 确认 `TrajectoryAggregator` 协议（输入 `list[Trajectory]`，输出 `Answer`）。
-2. **写实现**：`layers/aggregate/aggregators/my_agg.py`
+1. **读接口**：`layers/processing/base.py` 确认 `TrajectoryAggregator`（并行）/ `SerialProcessor`（串行）协议（输入 `list[Trajectory]`，输出 `Answer`）。
+2. **写实现**：`layers/processing/parallel/my_agg.py`（串行处理器则写 `layers/processing/serial/`）
    ```python
    from lychee_mas.core.registry import REGISTRY
    from lychee_mas.core.types import Answer, Trajectory
 
-   @REGISTRY.register("aggregator", "my_agg")
+   @REGISTRY.register("aggregator", "my_agg")   # 并行归约策略；处理器本身用 register("processor", ...)
    class MyAgg:
        def __init__(self, k: int = 5): self.k = k
        def aggregate(self, trajectories: list[Trajectory]) -> Answer: ...
    ```
-3. **触发注册**：在 `layers/aggregate/aggregators/__init__.py` 里 import 该模块（包 `__init__` 会被 `lychee_mas/__init__` 链式 import）。
+3. **触发注册**：在 `layers/processing/parallel/__init__.py`（或 `serial/__init__.py`）里 import 该模块（包 `__init__` 会被 `lychee_mas/__init__` 链式 import）。
 4. **加配置**：`configs/aggregator/my_agg.yaml`（含超参与默认值）。
 5. **加测试**：`tests/test_my_agg.py`，用 mock runtime 断言行为与「性能/降本」指标。
 6. **验证**：`make lint && make test`，再 `make demo` 看端到端不回归。
@@ -152,27 +150,31 @@ LLMMessage 历史 ─_to_chat─▶ [{role,content}]
   ① memory.observe(chat)                        更新记忆库（transcript 去重 + 失效 latent 缓存）
   ② router.decide(RouterInputs(role,task,turn,sender,availability,same_model_pair)) ─▶ RouteDecision(channel,P)
        └ _enforce_availability：latent 不可用 / 异构（非同模型）对 ⇒ 回退 nl（both 丢 latent 留 nl）
-  ③ memory.recall(decision, query) ─▶ MemoryBundle(nl_text?, latent_prefix?)
+  ③ memory.recall(decision, query) ─▶ MemoryBundle(nl_text?, latent_prefix?, latent_c2c?)
        ├ channel none   → 空 bundle
        ├ channel nl     → nl_text = NLMemory.recall(query)（上一个 agent 输出，加 PREV_OUTPUT_HEADER，不截断）
-       ├ channel latent → latent_prefix = LatentMemory.build_prefix(source, P)
-       └ channel both   → 两者都产
-  ④ 注入：nl_text 作 system 消息插在开头 system 之后；latent_prefix 在 backend embedding 层拼接
-  ⑤ 生成：有 latent → generate_chat_with_prefix；否则 generate_chat
-  ⑥ 记账：bump_turn + RequestUsage + ctx.log_decision（成本/输入/输出，可选写 TraceStore）
+       ├ channel latent → 按 memory.latent_strategy：
+       │                    soft_token ⇒ latent_prefix = LatentMemory.build_prefix(source, P)
+       │                    c2c        ⇒ latent_c2c    = C2CLatentChannel.get_projectors()（懒加载 projector 栈）
+       └ channel both   → nl_text + 上面 latent 分量
+  ④/⑤ 注入 + 生成（injection client 三分支，优先级 latent_c2c > latent_prefix > 无）：
+       ├ latent_c2c   → source = 上一个 agent 的(输入+输出)（从 ctx.decisions[-1] 组装）→ backend.generate_chat_with_c2c
+       ├ latent_prefix→ prefix 在 backend embedding 层拼接 → backend.generate_chat_with_prefix
+       └ 都无         → backend.generate_chat（none / nl_only）
+  ⑥ 记账：bump_turn + RequestUsage + ctx.log_decision（成本/输入/输出/prefix_len，可选写 trace.TraceStore）
 ```
 
-**latent 通道**（`memory/channels/latent.py`，torch 惰性导入）：把源文本经 HF 后端编码成末层 hidden `(1,T,2560)`，再压成 `(1,P,2560)` 的 soft prefix：
+**latent 通道两种物化策略**（`memory.latent_strategy` 选，对上层接口一致）：
 
-- `soft_token`（默认，正确）：`softmax(h @ E^T / tau) @ E` 投回**输入嵌入空间**，再 `segment_mean` 到 P。修了「直接拿末层 hidden 当 prefix 是表示空间不匹配」的坑。
-- `segment_mean` / `stride` / `tail`：naive 对照路径（直接在末层 hidden 上压缩）。
+- **`soft_token`**（`memory/channels/latent.py`，**免训练**，torch 惰性）：源文本经 HF 后端编码成末层 hidden `(1,T,2560)`，`softmax(h @ E^T / tau) @ E` 投回**输入嵌入空间**再 `segment_mean` 到 P → `(1,P,2560)` prefix（修了「直接拿末层 hidden 当 prefix 是表示空间不匹配」的坑；`segment_mean`/`stride`/`tail` 为 naive 对照）。
+- **`c2c`**（`memory/channels/c2c_channel.py` + `c2c_projector.py`，**训练好的 Cache-to-Cache 融合器**）：`C2CLatentChannel` 从 ckpt 懒加载逐层 `C2CProjector` 栈；`generate_chat_with_c2c` 把上一个 agent 的 KV 与本 agent 的 KV 按**最长公共 token 块**（`longest_common_block`）对齐后，用 `generate_chat_with_cache_fusion`（prefill 逐层替换 post-RoPE K,V）融合；无对齐/首个 agent → 回退普通生成。训练/评测：`scripts/train_c2c_projector.py`（冻结 base 只训 projector）/ `scripts/eval_c2c_aime.py`。
 
 **硬约束**（原样保留）：
 
-- prefix 形状必须 `(1,P,H)` 且 `H==2560`（`hf_backend` 运行期 `assert`）。
-- latent 只能在**同模型对**（hidden 对齐）且 latent 可用时跨 agent 传，否则路由器回退 NL（`_enforce_availability` + `RoutingContext.same_model_pair`）。
+- `soft_token`：prefix 形状必须 `(1,P,H)` 且 `H==2560`（`hf_backend` 运行期 `assert`）；单次对话内按 `(len(source), P)` 缓存 prefix，source 一变即失效。
+- `c2c`：projector 栈 build 维度须与 `backend.kv_dims()` 一致（同模型 src==tgt）。
+- 两种策略下 latent 都只能在**同模型对**（hidden 对齐）且可用时跨 agent 传，否则路由器回退 NL（`_enforce_availability` + `RoutingContext.same_model_pair`）。
 - `PREV_OUTPUT_HEADER`（"## Input from the previous agent"）**集中定义在** `memory/channels/nl.py`，`construct/templates.py` import 复用（消除重复字符串）。
-- 单次对话内按 `(len(source), P)` 缓存 latent prefix，source 一变即失效。
 
 ## 8. 测试说明
 
@@ -184,6 +186,7 @@ LLMMessage 历史 ─_to_chat─▶ [{role,content}]
 - `test_trace_store.py`：TraceStore 消息 hook + 决策日志 + reset；MemoryStore FIFO。
 - `test_mock_runtime.py`：MockRuntime 与 Orchestrator 离线跑出 Trajectory。
 - `test_self_consistency.py`：多数投票（对 list[Answer]/list[Trajectory] 取众数）。
+- `test_processing.py`：processing 层 `processor/{serial,parallel}`——serial 只调 runner 1 次、parallel 并发 K 次 + `aggregator` 聚合（asyncio.run 驱动）。
 
 `pyproject.toml` 的 `[tool.pytest.ini_options]` 用 `testpaths=["tests"]` + `pythonpath=["src"]`，**只收集本框架测试**，避免触碰 vendored `src/autogen` 的测试（它们需 autogen 才能 collect）。
 
