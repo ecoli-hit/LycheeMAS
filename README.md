@@ -1,5 +1,12 @@
 # LycheeMAS
 
+<div align="center">
+    <img src="images/logo.png" width=250></img>
+    <p class="image-caption">LycheeMAS</p>
+</div>
+
+---
+
 基于 **AutoGen** 的五层多智能体系统（MAS）研究框架。主线是把整个 MAS 统一表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**，每一层都是对 G（或其执行轨迹 τ）的一次变换：
 
 | 层 | 模块                                  | 职责                                         |

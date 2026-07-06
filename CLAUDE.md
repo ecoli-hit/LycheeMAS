@@ -142,7 +142,7 @@ REGISTRY.list("aggregator"); REGISTRY.snapshot()
 | `memory_router` | `static`, `fixed`（always-X） | `learned`, `soft_gate`（占位 fallback，论文目标） |
 | `aggregator` | `self_consistency`（多数投票，纯标准库） | `dynamicagg`（在研） |
 | `topology_generator` | `static`（按 team 模板产 AgentSpec） | — |
-| `agent_selector` | — | `agentinit` |
+| `agent_selector` | **`agentinit`**（pool 离线 + generate LLM 生成，已接入 Orchestrator） | — |
 | `graph_pruner` | — | `agentdropout`, `agentdropout_v2`, `agentprune` |
 | `vocab_adapter` | — | `agentvocab` |
 | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |

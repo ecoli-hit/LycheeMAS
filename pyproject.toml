@@ -25,6 +25,8 @@ runtime = [
 ]
 numeric = ["numpy"]
 config = ["pyyaml", "hydra-core"]
+# L1 construct / AgentInit 选择器：多目标 Pareto 选择（官方同款 vendi_score，不自实现）。
+construct = ["numpy", "vendi_score"]
 dev = ["pytest", "ruff", "mypy"]
 # 全量：上面所有 + 数据/数学评分依赖（datasets / sympy 等供 eval 真实跑分）
 all = [
@@ -34,6 +36,8 @@ all = [
     "torch",
     "transformers",
     "numpy",
+    "vendi_score",
+    "tenacity",
     "pyyaml",
     "hydra-core",
     "datasets",
@@ -63,6 +67,8 @@ select = ["E", "F", "I", "W"]
 # math_parsing_util.py 是 Qwen2.5-Math 的逐字借用，保留原样不强制风格。
 [tool.ruff.lint.per-file-ignores]
 "src/lychee_mas/eval/math_parsing_util.py" = ["E", "F", "W", "I"]
+# _generate.py 的 prompt 常量逐字移植自官方 AgentInit（保留原措辞，不折行）；只豁免行长。
+"src/lychee_mas/layers/construct/selectors/_generate.py" = ["E501"]
 
 [tool.pytest.ini_options]
 # 只收集本框架测试，避免触碰 vendored src/autogen 的测试（它们需 autogen 才能 collect）。

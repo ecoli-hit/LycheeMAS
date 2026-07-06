@@ -7,6 +7,47 @@
 
 ---
 
+## 0. 实现状态（2026-07，M1–M3 已完成）—— 以此节为准
+
+`agent_selector/agentinit` 已从桩接成真实组件并接入 Orchestrator。**下文 §1–§12 是最初的规划稿，部分
+假设与最终实现不符**（对照官方源码核实后修正），以本节为准：
+
+**与规划稿的关键出入（已按官方源码修正）**：
+- **不是 NSGA-II 进化**：官方 `Manager` 用 `itertools.combinations` 枚举角色子集当种群，只做**非支配
+  排序**取第一前沿（`Optimizer.fast_non_dominated_sort`），无交叉/变异/代数。故无 `generations/pop_size`。
+- **角色是按 query 用 LLM 现场生成**（CreateRoles→CheckRoles↔CheckPlans 共识→SelectGroup），非固定池。
+  框架另提供 `pool` 模式（固定候选池 + 确定性嵌入）作离线/消融替身。
+- **diversity = Vendi 分数**（官方同款 `vendi_score`，角色相似度子矩阵），**relevance = 与 query 的
+  平均余弦**；两目标取负 → 非支配排序同时最大化。
+- **团队规模 k 不固定**：由 `min_roles/max_roles`(1..5) + 前沿 + SelectGroup 涌现，无 `team_size`。
+- **budget**：官方无此概念。本实现仅 `generate` 模式 + **仅 token 单位**，用于给「角色生成多轮迭代」封顶；
+  pool 模式与 calls/usd 一律忽略（见 `AgentInitSelector.select` docstring）。
+
+**两种模式（同一 `select()`）**：
+- `pool`：固定候选池 + 确定性 hash 嵌入 + `_pareto` + 确定性挑选。零 GPU/API，可复现，兼作消融基线。
+- `generate`：忠实官方 —— 注入的 chat_fn（env 驱动 OpenAI 兼容）现场生成角色 + HF embedder
+  (`LYCHEE_EMBED_MODEL`) + LLM SelectGroup。含 RoleFeedback/PlanFeedback 双向反馈（并修了官方
+  `history_plan` 误用 `suggestions_roles` 的 bug）。
+
+**落点文件**：`src/lychee_mas/layers/construct/selectors/`
+`agentinit.py`(选择器) · `_pareto.py`(非支配排序+双目标) · `pool.py`(候选池) · `_generate.py`(生成状态机)
+· `_llm.py`(chat helper，tenacity 重试) · `embedder.py`(HF embedder)；配置 `configs/agents/agentinit.yaml`；
+测试 `tests/test_agentinit*.py` + `tests/test_orchestrator_selector.py`。
+
+**用法**：
+```bash
+# 离线（pool，mock runtime）
+PYTHONPATH=src python scripts/run_experiment.py --runtime mock --selector agentinit --selector-mode pool \
+    --questions "..."
+# 真实（generate）：需 env LYCHEE_LLM_MODEL / LYCHEE_LLM_API_KEY / LYCHEE_LLM_BASE_URL + 编码器路径
+python scripts/run_experiment.py --runtime autogen --selector agentinit --selector-mode generate \
+    --selector-embedder /path/to/encoder --benchmark mmlu --n 5
+```
+`--selector` 给出时由 selector 决定成员，`--team` 的角色被覆盖、仅余 `meta` 标签（rounds 由 `--rounds`
+决定，与 team 无关，会打 warning）；不给 `--selector` 时零回归。
+
+---
+
 ## 1. 论文与方法核心
 
 AgentInit 解决"如何**初始化/组建**一支高效 MAS 团队"：在候选 agent 池上做**多目标平衡选择**，兼顾团队**多样性**与任务**相关性/专长**，选出小而互补的团队（降冗余、降 token、保性能）。
