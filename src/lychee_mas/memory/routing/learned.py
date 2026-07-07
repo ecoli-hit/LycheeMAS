@@ -1,4 +1,4 @@
-"""L1 学习式路由器 —— 在 RouterInputs 特征上做轻量分类 -> channel。
+"""学习式路由器 —— 在 RouterInputs 特征上做轻量分类 -> channel。
 
 TODO：把 RouterInputs 特征化（role/task one-hot、turn、query embedding、收发对），
 训一个小 MLP，用【反事实蒸馏】监督（离线两通道各跑一遍，按下游结果标更优者）。

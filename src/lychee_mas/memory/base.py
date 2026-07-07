@@ -1,17 +1,17 @@
-"""MemoryManager = 记忆「方法」接缝（CLAUDE.md §5，L3 主战场）。
+"""MemoryManager = 记忆「方法」接缝（CLAUDE.md §5，主战场）。
 
 一个 manager 负责：存储 + 召回 + 各通道如何被物化：
   - observe(messages): 从目前的对话历史更新内部记忆库
   - recall(decision, query): 按路由器选的通道 + 成本旋钮，产出一个 MemoryBundle
-    （nl_text 和/或 latent_prefix）
+    （NL_Channel / Latent_Channel 及各自的 strategy）
   - reset(): 清空单次对话的状态
 
 要加一种新记忆方法（mem0 / AMA / LatentMem），继承 MemoryManager +
 `@REGISTRY.register("memory_manager", name)`。
 注入 client 与 MAS 消费的是 MemoryBundle，不需任何改动（接缝隔离）。
 
-⚠️ 惰性导入：本文件不在 import 时触发 torch；`latent_prefix` 类型注解用字符串前向引用，
-torch 张量只在运行期出现（黄金法则 4：核心骨架零运行依赖）。
+⚠️ 惰性导入：本文件不在 import 时触发 torch；`Latent_Channel` 只携带运行期对象（torch 张量 /
+projector 栈），核心骨架零运行依赖（黄金法则 4）。
 """
 from __future__ import annotations
 
@@ -24,20 +24,19 @@ from .routing.base import RouteDecision
 
 @dataclass
 class MemoryBundle:
-    """本轮要注入的东西。按通道不同，两个字段可各自为 None（none 通道则都为 None）。"""
+    """本轮要注入的东西：每个通道一对 (Channel=内容, strategy=方法)；空通道则该对为 None。
 
-    nl_text: Optional[str] = None  # 注入进 prompt 的文本（NL 通道）
-    # (1,P,H) 的 embedding 层 prefix（latent 通道-soft_token，torch.Tensor）
-    latent_prefix: Optional[Any] = None
-    # C2C latent 通道：训练好的逐层 projector 栈（nn.ModuleList）。非空 = 走 KV-cache 融合而非
-    # prefix；source（上一个 agent 的输入+输出）由注入 client 从 ctx 组装，此处只携带 projector。
-    latent_c2c: Optional[Any] = None
-    meta: dict = field(default_factory=dict)  # 附带元信息（如所选 channel、是否空 source）
+    - NL_Channel / NL_strategy         : NL 通道注入文本 + 方法（prev_output / simplemem）
+    - Latent_Channel / Latent_strategy : latent 载荷（soft prefix 张量 或 projector 栈）+ 方法
+      （soft_token / c2c）；注入 client 据 Latent_strategy 决定注入方式（prefix 拼接 vs KV 融合）。
+    - meta                             : 附带元信息（所选 channel、latent_kind 等）
+    """
 
-    @property
-    def prefix_len(self) -> int:
-        # latent prefix 的位置数 P（无 latent 则为 0）；用于成本记账
-        return 0 if self.latent_prefix is None else int(self.latent_prefix.shape[1])
+    NL_Channel: Optional[str] = None  # NL 通道要注入的文本
+    NL_strategy: Optional[str] = None  # 产出它的 NL 方法（prev_output / simplemem …）
+    Latent_Channel: Optional[Any] = None  # latent 载荷：soft prefix 张量 或 projector 栈
+    Latent_strategy: Optional[str] = None  # 产出它的 latent 方法（soft_token / c2c），决定注入方式
+    meta: dict = field(default_factory=dict)  # 附带元信息（如所选 channel、latent_kind）
 
 
 class MemoryManager(ABC):

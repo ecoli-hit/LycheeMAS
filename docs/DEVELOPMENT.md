@@ -1,11 +1,5 @@
 # LycheeMAS 开发文档
 
-> 版本 v1.1 · 2026-07 · 配合根目录 `CLAUDE.md`（工程约束/黄金法则）阅读。本文聚焦 `src/lychee_mas/` 包的架构、目录职责、运行方式、扩展配方、CDM 数据流、测试与各层扩展点。
->
-> **状态**：框架端到端可跑，离线自验证通过——`import lychee_mas` 零重依赖；`pytest` 30 passed；`ruff` All checks passed；example 可跑；autogen 仅存在于 `runtime/backends/autogen_*.py`。**包布局**：`memory`（L3 CDM 主线）、`trace`（L5 归因/信用 + TraceStore）、`train`（L5 RL/提示优化）已是顶层子包；原 `stores` 拆入 `memory`/`trace`。CDM latent 通道已支持 `soft_token` 与 `c2c`（Cache-to-Cache）两策略。旧代码保留在 `src/LycheeMAS/`（参照）。
->
-> **30 秒上手**：`make demo`（离线端到端）→ `make test`（30 测试）→ 读 §5「六步配方」加你的组件。
-
 ---
 
 ## 1. 架构总览
@@ -55,9 +49,9 @@ src/lychee_mas/
 │       ├── autogen_injection_client.py model_client/injection（注入+路由的 ChatCompletionClient 工厂）
 │       ├── hf_backend.py              HFBackend（生成 + latent 注入；torch/transformers 惰性导入）
 │       └── vllm_client.py             model_client/vllm（桩）
-├── memory/            ★ L3 CDM（顶层包）：manager 接缝 + router 接缝 + 通道（NL/Latent）+ RoutingContext + store.py（MemoryStore）
-├── trace/             ★ L5-读（顶层包）：FailureAttributor + CreditAssigner（桩）+ store.py（TraceStore：消息级落点 + 决策日志）
-├── train/             ★ L5-写（顶层包）：Trainer + trainer/maspo（桩）；RL 库放 extra [train]
+├── memory/            ★ CDM（顶层包）：manager 接缝 + router 接缝 + 通道（NL/Latent）+ context.py（RoutingContext）+ store.py（MemoryStore）
+├── trace/             ★ 归因/信用（读侧，顶层包）：FailureAttributor + CreditAssigner（桩）+ store.py（TraceStore：消息级落点 + 决策日志）
+├── train/             ★ 训练（写侧，顶层包）：Trainer + trainer/maspo（桩）；RL 库放 extra [train]
 ├── layers/
 │   ├── construct/      AgentSelector + TopologyGenerator；templates.py（Role/TEAMS）；topology_generator/static
 │   ├── prune/          GraphPruner + VocabAdapter（桩）
@@ -69,10 +63,6 @@ src/lychee_mas/
     ├── math_parsing_util.py  Qwen2.5-Math 借用的数学解析（逐字保留；heavy 依赖，仅 score_aime 内惰性 import）
     └── task_config.py     每个 task 的默认队伍 + 答案提取策略
 ```
-
-仓库根还包含：`pyproject.toml`（零核心依赖 + extras）、`Makefile`、`.gitignore`、`README.md`、`configs/`、`scripts/run_experiment.py`、`examples/01_static_chain_e2e.py`、`tests/`。
-
-> 旧自有代码保留在 `src/LycheeMAS/`（参照，未删改）；`src/autogen/` 是 vendored 的 AutoGen 源码（忽略，不打包/不 lint）。
 
 ---
 
@@ -104,8 +94,8 @@ export LYCHEE_HF_MODEL=/path/to/Qwen3-4B
 
 ## 4. 核心抽象（先读这些再写）
 
-- **`core/types.py`**（所有层共享，纯 dataclass）：`AgentSpec`（图节点）/`Message`（边上一次传输，`.tokens`）/`Answer`（L4 融合单元）/`Trajectory`（一次执行 τ，`.add/.total_tokens/.num_rounds`）/`TaskQuery`（`gold` 供评测）/`Budget`+`BudgetUnit`。
-- **`core/registry.py`**：`REGISTRY.register / get / create / list / snapshot`。`CATEGORIES` 已登记：`runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, attributor, credit_assigner, trainer, benchmark`。新增类别须在此同步登记。
+- **`core/types.py`**（所有层共享，纯 dataclass）：`AgentSpec`（图节点）/`Message`（边上一次传输，`.tokens`）/`Answer`（融合单元）/`Trajectory`（一次执行 τ，`.add/.total_tokens/.num_rounds`）/`TaskQuery`（`gold` 供评测）/`Budget`+`BudgetUnit`。
+- **`core/registry.py`**：`REGISTRY.register / get / create / list / snapshot`。`CATEGORIES` 已登记：`runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, processor, attributor, credit_assigner, trainer, benchmark`。新增类别须在此同步登记。
 - **`runtime/base.py`**：`Runtime` 协议（`async run(team, query)->Trajectory`、`intercept(hook)`）；`MASGraph`（节点=AgentSpec，边=邻接/顺序链，`rounds`）；`BaseRuntime`（实现 `intercept` 的样板 + `_emit` 逐消息回调）。
 
 ---
@@ -148,7 +138,7 @@ CDM = **双通道记忆**：用**单一** source（seed 基础上下文 + 运行
 ```
 LLMMessage 历史 ─_to_chat─▶ [{role,content}]
   ① memory.observe(chat)                        更新记忆库（transcript 去重 + 失效 latent 缓存）
-  ② router.decide(RouterInputs(role,task,turn,sender,availability,same_model_pair)) ─▶ RouteDecision(channel,P)
+  ② router.decide(RouterInputs(role,task,turn,sender,availability,same_model_pair)) ─▶ RouteDecision(channel)
        └ _enforce_availability：latent 不可用 / 异构（非同模型）对 ⇒ 回退 nl（both 丢 latent 留 nl）
   ③ memory.recall(decision, query) ─▶ MemoryBundle(nl_text?, latent_prefix?, latent_c2c?)
        ├ channel none   → 空 bundle
@@ -197,13 +187,13 @@ make lint     # ruff check src 通过（line-length 100；math_parsing_util 逐�
 
 ---
 
-## 9. L2 / L4 / L5 扩展点（为后续研究留口）
+## 9. 剪枝 / 处理 / 归因训练 扩展点（为后续研究留口）
 
 各层 `base.py` 已定义协议；注册的占位实现（`raise NotImplementedError("<name>: not wired yet (TODO)")`）可被 `REGISTRY.list` 看到，方便消融矩阵在代码里可见：
 
-- **L2**：`graph_pruner/{agentdropout, agentdropout_v2, agentprune}`、`vocab_adapter/agentvocab`（均桩）。迁移已发表逻辑时实现 `prune(graph, context)` / `adapt(agent, context)`，保留原始引用与许可证。
-- **L4**：`aggregator/self_consistency`（**纯标准库可跑**多数投票）+ `aggregator/dynamicagg`（在研，桩）。
-- **L5**：`attributor/{all_at_once, step_by_step, binary_search}`、`credit_assigner/attribution_guided`（核心贡献）、`trainer/maspo`（提示级优化，廉价基线/暖启动）。`topology_rl/marl` 接 RL 库时再加（放 optional extra `[train]`，只在 `trainer/*` 实现里依赖，不污染基座）。
+- **剪枝**：`graph_pruner/{agentdropout, agentdropout_v2, agentprune}`、`vocab_adapter/agentvocab`（均桩）。迁移已发表逻辑时实现 `prune(graph, context)` / `adapt(agent, context)`，保留原始引用与许可证。
+- **处理**：`aggregator/self_consistency`（**纯标准库可跑**多数投票）+ `aggregator/dynamicagg`（在研，桩）。
+- **归因训练**：`attributor/{all_at_once, step_by_step, binary_search}`、`credit_assigner/attribution_guided`（核心贡献）、`trainer/maspo`（提示级优化，廉价基线/暖启动）。`topology_rl/marl` 接 RL 库时再加（放 optional extra `[train]`，只在 `trainer/*` 实现里依赖，不污染基座）。
 
 闭环路线：`attributor` 归因 → `credit_assigner/attribution_guided` 转 per-agent 稠密信用 → `trainer.train` → 反哺。
 
@@ -212,7 +202,7 @@ make lint     # ruff check src 通过（line-length 100；math_parsing_util 逐�
 ## 10. AutoGen / torch 惰性导入约定（务必遵守）
 
 1. **不要在业务代码里 `import autogen_*`**。一切运行时能力只通过 `lychee_mas.runtime` 的 `Runtime` 协议使用。**唯一允许 import autogen 的位置：`src/lychee_mas/runtime/backends/autogen_*.py`**，且其中的 `import autogen_*` 也惰性化到函数/工厂内部（保证 import 这些模块、触发注册时不需要 autogen）。
-2. **torch / transformers**：只在 `hf_backend.py`、`memory/channels/latent.py`、`autogen_injection_client.py` 的**方法内部**导入。注册 `memory_manager/cdm` 的 `cdm.py` import 时不触发 torch。
+2. **torch / transformers**：只在 `hf_backend.py`、`memory/channels/latent.py`、`autogen_injection_client.py` 的**方法内部**导入。注册 `memory_manager/cdm` 的 `DualChannelMemory.py` import 时不触发 torch。
 3. **yaml / sympy / datasets / numpy**：分别在 `metrics._dump_config` / `metrics.score_aime`（经 `math_parsing_util`）/ `benchmarks._parquet` 等函数内部惰性导入。
 4. **MAF 迁移**：未来只需新增 `runtime/backends/maf_runtime.py` 并注册，业务层零改动。
 

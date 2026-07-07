@@ -27,7 +27,7 @@ class _NotImplementedManager(MemoryManager):
 
 @REGISTRY.register("memory_manager", "mem0")
 class Mem0Manager(_NotImplementedManager):
-    name = "mem0"  # TODO: 包 mem0 存储；NL 召回 -> bundle.nl_text
+    name = "mem0"  # TODO: 包 mem0 存储；NL 召回 -> bundle.NL_Channel
 
 
 @REGISTRY.register("memory_manager", "ama")

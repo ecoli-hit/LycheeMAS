@@ -1,4 +1,4 @@
-"""L3 软门控 —— MoE 式的通道混合权重（论文主菜）。
+"""软门控 —— MoE 式的通道混合权重（论文主菜）。
 
 TODO：产出连续门控权重 g = softmax(W·features)，在 {none,nl,latent,both} 上分布；
 注入端（runtime/backends/autogen_injection_client.py）按 g 混合通道（缩放 latent prefix 和/或 NL
@@ -18,7 +18,7 @@ class SoftGateRouter(MemoryRouter):
     name = "soft_gate"
 
     def __init__(self, fallback: MemoryRouter | None = None):
-        # 桩阶段兜底用 both（L3 目标是软混合，default=both 最接近其行为）
+        # 桩阶段兜底用 both（目标是软混合，default=both 最接近其行为）
         self.fallback = fallback or StaticRouter(default="both")
         self.gate = None  # TODO: 训练好的门控；为 None 时走 fallback
 

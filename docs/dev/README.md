@@ -11,10 +11,10 @@
 
 | 文档 | 论文 | 会议 | 层 · 类别/注册名 | 当前桩位置 | 把握度 |
 |---|---|---|---|---|---|
-| [01-agentinit.md](01-agentinit.md) | **AgentInit** — Diversity & Expertise Orchestration | EMNLP'25 Findings (CCF-B) | L1 · `agent_selector/agentinit` | `layers/construct/selectors/__init__.py:14` | 🟡 |
-| [02-agentdropout.md](02-agentdropout.md) | **AgentDropout** — Dynamic Agent Elimination | ACL'25 (CCF-A) | L2 · `graph_pruner/agentdropout` | `layers/prune/pruners/__init__.py:27` | 🟢 |
-| [03-agentvocab.md](03-agentvocab.md) | **AgentVocab** — Structure-Aware Vocabulary Adaptation | ICML'26 (CCF-A) | L2 · `vocab_adapter/agentvocab` | `layers/prune/vocab/__init__.py:13` | 🔴 |
-| [04-maspo.md](04-maspo.md) | **MASPO** — Joint Prompt Optimization | ICML'26 (CCF-A) | L5 · `trainer/maspo` | `train/__init__.py:63` | 🟢 |
+| [01-agentinit.md](01-agentinit.md) | **AgentInit** — Diversity & Expertise Orchestration | EMNLP'25 Findings (CCF-B) | 构建 · `agent_selector/agentinit` | `layers/construct/selectors/__init__.py:14` | 🟡 |
+| [02-agentdropout.md](02-agentdropout.md) | **AgentDropout** — Dynamic Agent Elimination | ACL'25 (CCF-A) | 剪枝 · `graph_pruner/agentdropout` | `layers/prune/pruners/__init__.py:27` | 🟢 |
+| [03-agentvocab.md](03-agentvocab.md) | **AgentVocab** — Structure-Aware Vocabulary Adaptation | ICML'26 (CCF-A) | 剪枝 · `vocab_adapter/agentvocab` | `layers/prune/vocab/__init__.py:13` | 🔴 |
+| [04-maspo.md](04-maspo.md) | **MASPO** — Joint Prompt Optimization | ICML'26 (CCF-A) | 归因训练 · `trainer/maspo` | `train/__init__.py:63` | 🟢 |
 
 > 把握度：🟢 据官方仓库 + arXiv 写实 / 🟡 arXiv 在但部分算法细节待核验 / 🔴 公开信息有限、需对照论文 PDF 回填。
 >
@@ -67,24 +67,24 @@ build_graph()                       # 只调 topology_generator/static（按 tea
   → (可选) aggregator.aggregate([trajectory])
 ```
 
-它**不调用** `agent_selector`（L1 选择）、`graph_pruner`（L2 剪枝）、`vocab_adapter`（L2 词表）、`attributor/credit_assigner/trainer`（L5）。
+它**不调用** `agent_selector`（选择）、`graph_pruner`（剪枝）、`vocab_adapter`（词表）、`attributor/credit_assigner/trainer`（归因训练）。
 → **每篇文档都包含"把组件接进编排/运行时"的改动**：在 `Orchestrator` 增加一个**可选 step**（按名字从 REGISTRY 取，给 `None` 则跳过），**不硬编码任何实现**（黄金法则 3）。
 
 接入位置约定：
-- **L1 selector**：在 `build_graph()` 内，topology 之前——`agents = selector.select(query, budget)` → `StaticTopology.build(agents=agents)`（`StaticTopology.build` **已支持显式传入 agents**，见 `construct/templates.py:222`）。
-- **L2 graph_pruner**：在 `build_graph()` 出图之后——`graph = pruner.prune(graph, ctx)`。
-- **L2 vocab_adapter**：模型级，在 runtime 后端装配 agent/model 时应用（`hf_backend` / `model_client`），不在 `build_graph`。
-- **L5 trainer**：是离线训练闭环，不进 `run()`，走独立驱动脚本（见 04-maspo）。
+- **selector**：在 `build_graph()` 内，topology 之前——`agents = selector.select(query, budget)` → `StaticTopology.build(agents=agents)`（`StaticTopology.build` **已支持显式传入 agents**，见 `construct/templates.py:222`）。
+- **graph_pruner**：在 `build_graph()` 出图之后——`graph = pruner.prune(graph, ctx)`。
+- **vocab_adapter**：模型级，在 runtime 后端装配 agent/model 时应用（`hf_backend` / `model_client`），不在 `build_graph`。
+- **trainer**：是离线训练闭环，不进 `run()`，走独立驱动脚本（见 04-maspo）。
 
 ### 3.2 CLI 缺开关
 
 `scripts/run_experiment.py` 现有参数：`--runtime --team --aggregator --benchmark --questions --n --rounds --seed --model-tag --results-root --no-save`。
 **没有** `--selector / --pruner / --vocab`。要让组件"由 CLI 选择"（黄金法则 3），需新增对应 flag 并透传给 `Orchestrator(...)`。
 
-### 3.3 MASGraph 邻接前置（L2 公共依赖）
+### 3.3 MASGraph 邻接前置（公共依赖）
 
 `StaticTopology.build()` 产出的是"**顺序链**"，`runtime/base.py` 的 `MASGraph` 节点齐全但**边/邻接目前留空**（`meta={"team": …}`，无邻接矩阵）。
-**AgentDropout 必须作用在真实邻接/边权上** → 存在 L2 公共前置：
+**AgentDropout 必须作用在真实邻接/边权上** → 存在 公共前置：
 
 - 给 `MASGraph` 补 `adjacency`（初始全连接或角色图）+ 边权容器；
 - 让 runtime 按邻接路由消息（哪个 agent 能看到哪个 agent 的输出）。
@@ -115,21 +115,21 @@ build_graph()                       # 只调 topology_generator/static（按 tea
 ## 4. 路线图与依赖
 
 ```
-L1 AgentInit ───────────────► 选成员 → StaticTopology.build(agents)
+AgentInit ───────────────► 选成员 → StaticTopology.build(agents)
                                          │
-L2 AgentDropout ──(需 MASGraph 邻接前置)──► 剪稀疏拓扑（评测前离线优化）
-L2 AgentVocab ──(模型级，改 hf_backend 生成)──► 每 agent 词表降本
+AgentDropout ──(需 MASGraph 邻接前置)──► 剪稀疏拓扑（评测前离线优化）
+AgentVocab ──(模型级，改 hf_backend 生成)──► 每 agent 词表降本
                                          │
-L5 MASPO ──(独立训练驱动: 采样→评分→三维信用→改 prompt→反哺)──► 暖启动各 agent system_prompt
+MASPO ──(独立训练驱动: 采样→评分→三维信用→改 prompt→反哺)──► 暖启动各 agent system_prompt
 ```
 
-**建议落地顺序**：AgentDropout（落地 L2 邻接前置，确证最足）→ MASPO → AgentInit → AgentVocab。
+**建议落地顺序**：AgentDropout（落地 邻接前置，确证最足）→ MASPO → AgentInit → AgentVocab。
 
 ### 工程量汇总（实现该方法的估算，非写文档）
 
 | 论文 | 把握度 | 人天 | 关键依赖 |
 |---|---|---|---|
-| AgentDropout（+L2 邻接前置） | 🟢 | 8–12 | MASGraph 邻接；torch |
-| MASPO | 🟢 | 10–15 | L5 闭环；LLM 调用；`[train]` extra |
+| AgentDropout（+邻接前置） | 🟢 | 8–12 | MASGraph 邻接；torch |
+| MASPO | 🟢 | 10–15 | 闭环；LLM 调用；`[train]` extra |
 | AgentInit | 🟡 | 5–8 | 候选池；算法核验 |
 | AgentVocab | 🔴 | 8–12 | hf_backend 生成期；公开信息缺口 |

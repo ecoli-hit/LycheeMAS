@@ -1,4 +1,4 @@
-"""L4 processing 层：serial（跑 1 次）+ parallel（并发跑 K 次 + 聚合）两子模块。"""
+"""processing 层：serial（跑 1 次）+ parallel（并发跑 K 次 + 聚合）两子模块。"""
 from __future__ import annotations
 
 import asyncio

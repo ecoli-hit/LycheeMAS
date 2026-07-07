@@ -1,4 +1,4 @@
-"""L4 处理层协议（Processing，CLAUDE.md §5）—— 决定「跑几次 MAS + 如何得到最终 Answer」。
+"""处理层协议（Processing，CLAUDE.md §5）—— 决定「跑几次 MAS + 如何得到最终 Answer」。
 
 给定一个 **runner**（`async () -> Trajectory`：把 MAS 在当前 query 上跑一次、产一条轨迹），
 `Processor` 决定调用它几次、以及如何把结果归约成一个 `Answer`。两种模式 = processing 的两个子模块：

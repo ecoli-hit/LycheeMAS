@@ -1,6 +1,6 @@
 """TraceStore —— 执行轨迹的消息级落点（CLAUDE.md §8）。
 
-Runtime 的 `intercept` 把每条 Message 写入 TraceStore，并喂给 L3 做记忆抽取——这是 L3/L4/L5 的数据
+Runtime 的 `intercept` 把每条 Message 写入 TraceStore，并喂给 做记忆抽取——这是 记忆/处理/训练 的数据
 来源。
 本实现纯标准库：内存累积 + 可选 JSONL 落盘。决策日志（RoutingContext）也可选地写到这里。
 """

@@ -1,4 +1,4 @@
-"""MemoryRouter 抽象基类 + 决策/输入契约。这就是 L3「触发算法接缝」（CLAUDE.md §5）。
+"""MemoryRouter 抽象基类 + 决策/输入契约。这就是 「触发算法接缝」（CLAUDE.md §5）。
 
 要加新触发算法：继承 MemoryRouter 实现 decide() + `@REGISTRY.register("memory_router", name)`。
 其余一切（MAS / 注入 client / 评测）消费的是 RouteDecision，不需任何改动。
@@ -30,8 +30,7 @@ class RouterInputs:
 
 @dataclass
 class RouteDecision:
-    channel: Channel = "nl"  # 选定的通道
-    P: int = 16  # latent prefix 长度（latent/both 时用）—— latent 成本旋钮
+    channel: Channel = "nl"  # 选定的通道（路由器只决定用哪个通道）
     reason: str = ""  # 决策理由（落盘日志 / 可解释性用）
 
     def uses_latent(self) -> bool:

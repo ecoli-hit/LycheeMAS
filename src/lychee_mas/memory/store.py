@@ -1,4 +1,4 @@
-"""MemoryStore —— L3 记忆方法的简单持久化/缓存接缝（原 stores/ 迁入 memory 包）。
+"""MemoryStore —— 记忆方法的简单持久化/缓存接缝（原 stores/ 迁入 memory 包）。
 
 P0 阶段提供一个纯标准库的 key->value 内存存储，供记忆管理器缓存物化结果（如 latent prefix 缓存的
 框架级落点）。具体记忆方法（DualChannel 等）目前自带缓存；本 store 是统一接口，便于后续替换为

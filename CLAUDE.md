@@ -6,9 +6,9 @@
 
 ## 0. 框架是什么（先建立全局认知）
 
-**LycheeMAS** 是基于 **AutoGen** 的**五层多智能体系统（MAS）研究框架**。核心思想：把整个 MAS 统一表示成一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**（V=智能体节点、E=通信边、W=边权、T=多轮时序、M=记忆状态），每一层都是对 G（或其执行轨迹 τ）的一次变换。这样所有层共享同一套类型与运行时，组件可插拔、可消融。
+**LycheeMAS** 是基于 **AutoGen** 的**多智能体系统（MAS）研究框架**。核心思想：把整个 MAS 统一表示成一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**（V=智能体节点、E=通信边、W=边权、T=多轮时序、M=记忆状态），每一层都是对 G（或其执行轨迹 τ）的一次变换。这样所有层共享同一套类型与运行时，组件可插拔、可消融。
 
-五个**概念层**（命名对应 **Construct · Prune · Memory · Processing · Attribute-and-Train**）。**物理布局**：Memory 与 Attribute-and-Train 已提升为顶层子包（后者拆成 `trace` 归因/信用 + `train` 训练两包）；L4 由 `aggregate` 改名 `processing`（内分 `serial` 单次执行 + `parallel` 并发 K 次并聚合两子模块）；其余仍在 `layers/`：
+各变换阶段（命名对应 **Construct · Prune · Memory · Processing · Attribute-and-Train**）。**物理布局**：Memory 与 Attribute-and-Train 已提升为顶层子包（后者拆成 `trace` 归因/信用 + `train` 训练两包）；处理阶段由 `aggregate` 改名 `processing`（内分 `serial` 单次执行 + `parallel` 并发 K 次并聚合两子模块）；其余仍在 `layers/`：
 
 | 层 | 模块 | 职责 | 状态 |
 |----|------|------|------|
@@ -92,10 +92,10 @@ current_code/                     # 仓库根（= 服务器上的项目根）
     ├── lychee_mas/               # ★ 框架本体（开发都在这里）
     │   ├── core/{registry.py, types.py}
     │   ├── runtime/{base.py, backends/{mock_runtime, autogen_runtime, autogen_injection_client, hf_backend, vllm_client}.py}
-    │   ├── memory/               # ★ L3 记忆层 CDM（主线，顶层包）：base.py · store.py(MemoryStore) ·
-    │   │                         #   channels/{nl, latent(soft_token), c2c_channel, c2c_projector} · managers/{cdm, external} · routing/{base, context, static, learned, soft_gate}
-    │   ├── trace/               # ★ L5-读（顶层包）：归因/信用（attributor + credit_assigner 桩）+ store.py（TraceStore）
-    │   ├── train/               # ★ L5-写（顶层包）：RL/提示优化（trainer/maspo 桩）；RL 库放 extra [train]
+    │   ├── memory/               # ★ 记忆层 CDM（主线，顶层包）：base.py · context.py(RoutingContext) · store.py(MemoryStore) ·
+    │   │                         #   channels/{nl, latent(soft_token), c2c_channel, c2c_projector} · managers/{DualChannelMemory, external} · routing/{base, static, learned, soft_gate}
+    │   ├── trace/               # ★ 归因/信用（读侧，顶层包）：归因/信用（attributor + credit_assigner 桩）+ store.py（TraceStore）
+    │   ├── train/               # ★ 训练（写侧，顶层包）：RL/提示优化（trainer/maspo 桩）；RL 库放 extra [train]
     │   ├── layers/{construct, prune, processing/{parallel,serial}}/   # 其余各层 base.py + 实现
     │   ├── pipeline.py           # Orchestrator
     │   └── eval/{benchmarks/, metrics.py, math_parsing_util.py, task_config.py}
@@ -122,8 +122,8 @@ class MyAgg: ...
 agg = REGISTRY.create("aggregator", "my_agg", k=5)
 REGISTRY.list("aggregator"); REGISTRY.snapshot()
 ```
-已登记 **CATEGORIES（13 个，新增类别须在此同步登记）**：
-`runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, attributor, credit_assigner, trainer, benchmark`。
+已登记 **CATEGORIES（14 个，新增类别须在此同步登记）**：
+`runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, processor, attributor, credit_assigner, trainer, benchmark`。
 
 **`runtime/base.py`**：`Runtime` 协议（`async run(team, query) -> Trajectory`、`intercept(hook)`）+ 轻量 `MASGraph/MASTeam` 容器 + `BaseRuntime`（逐消息回调样板）。
 
@@ -159,6 +159,8 @@ REGISTRY.list("aggregator"); REGISTRY.snapshot()
 > 桩能被 `REGISTRY.list` 看到，是**有意为之**：让消融矩阵在代码里可见、占好名字。把某个桩接成真实实现是后续研究的标准动作（见 §6）。
 
 > **latent 通道有两种物化策略**（`memory.latent_strategy` 配置项，属 `cdm` manager 的内部选项，非注册类别）：`soft_token`（免训练自压缩，默认）与 `c2c`（训练好的逐层 KV-cache 融合器，Cache-to-Cache）。详见 §7。
+
+> **nl 通道有两种方法**（`memory.nl_strategy`）：`prev_output`（默认，把上一个 agent 输出原样转发）与 `simplemem`（接外部 **SimpleMem** 长时对话记忆——observe 喂 `add_dialogue`、recall 用 `finalize`+`ask` 检索问答）。SimpleMem 是**可选重依赖**（LLM+向量库+嵌入，需 `pip install -e ../SimpleMem` + LLM API/模型），在 `channels/nl.py` 内**惰性 import**，未装不影响 selfcheck / prev_output；可选 `memory.nl_simplemem` 传其构造参数。
 
 ---
 
@@ -221,7 +223,7 @@ CDM = **双通道记忆 + 动态通道选择**。用**单一 source**（seed + �
 一次 agent 发言（在 `model_client/injection` 的 `create()` 里汇合）：
 ```
 ① memory.observe(chat)                          # 更新记忆库（transcript 去重 + 失效 latent 缓存）
-② router.decide(RouterInputs) -> RouteDecision(channel, P)
+② router.decide(RouterInputs) -> RouteDecision(channel)  # P 已移出，归 LatentMemory
      └ _enforce_availability：latent 不可用 / 非同模型对 ⇒ 回退 nl（both 丢 latent 留 nl）
 ③ memory.recall(decision, query) -> MemoryBundle(nl_text?, latent_prefix?, latent_c2c?)
      none   → 空
@@ -250,8 +252,8 @@ CDM = **双通道记忆 + 动态通道选择**。用**单一 source**（seed + �
 ## 8. 惰性导入约定（最容易踩的坑）
 
 - `autogen_*`：只在 `runtime/backends/autogen_*.py` 的**函数内部**导入。
-- `torch/transformers`：只在 `hf_backend.py`、`channels/latent.py`、`autogen_injection_client.py` 的**方法内部**导入。注册 `memory_manager/cdm` 的 `managers/cdm.py` 被 import 时**不得**触发 torch。
-- `channels/c2c_projector.py` 模块**顶层 import torch**（数值端到端保真），因此**不得**在注册路径被顶层 import——`channels/c2c_channel.py`（供 `managers/cdm.py` 顶层 import，本身零重依赖）只在 `_load()` 内惰性 import 它；`hf_backend`、`scripts/*_c2c_*` 同样惰性 import。校验仍以 `make selfcheck` 打印 `HEAVY LOADED: NONE` 为准。
+- `torch/transformers`：只在 `hf_backend.py`、`channels/latent.py`、`autogen_injection_client.py` 的**方法内部**导入。注册 `memory_manager/cdm` 的 `managers/DualChannelMemory.py` 被 import 时**不得**触发 torch。
+- `channels/c2c_projector.py` 模块**顶层 import torch**（数值端到端保真），因此**不得**在注册路径被顶层 import——`channels/c2c_channel.py`（供 `managers/DualChannelMemory.py` 顶层 import，本身零重依赖）只在 `_load()` 内惰性 import 它；`hf_backend`、`scripts/*_c2c_*` 同样惰性 import。校验仍以 `make selfcheck` 打印 `HEAVY LOADED: NONE` 为准。
 - `yaml/sympy/datasets/numpy`：在各自使用函数内部惰性导入。
 - 自检命令（应输出 `HEAVY LOADED: NONE`）见 §2。
 - **MAF 迁移**：未来只需新增 `runtime/backends/maf_runtime.py` 并注册，业务层零改动。

@@ -1,4 +1,4 @@
-"""L1 构建层协议（CLAUDE.md §5）。
+"""构建层协议（CLAUDE.md §5）。
 
 - AgentSelector       团队组建（多样性×专长 Pareto）：从候选池选出一组 AgentSpec。
 - TopologyGenerator   静态/动态图：产出节点（AgentSpec 列表）+ 边（邻接），封装成 MASGraph。

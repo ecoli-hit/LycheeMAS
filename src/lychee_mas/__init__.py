@@ -1,7 +1,7 @@
-"""LycheeMAS —— 基于 AutoGen 的五层多智能体系统研究框架（CLAUDE.md §0）。
+"""LycheeMAS —— 基于 AutoGen 的多智能体系统研究框架（CLAUDE.md §0）。
 
 把整个 MAS 统一表示为带时序/记忆状态的有向图 G=(V,E,W,T,M)；每层是对 G（或其执行轨迹 τ）的一次变换：
-  L1 Construct / L2 Prune / L3 Memory / L4 Aggregate / L5 Attribute-and-Train。
+  Construct / Prune / Memory / Processing / Attribute-and-Train。
 
 设计四原则：可插拔可消融（registry + config）、Runtime 抽象隔离 AutoGen、性能-成本联合度量、可复现。
 

@@ -80,14 +80,59 @@ def soft_token_prefix(hidden: Any, embed_weight: Any, P: int,
 
 
 class LatentMemory:
-    """通过 backend 编码源文本，并压成长度 P 的 prefix。"""
+    """latent 通道的**统一接口**：把源上下文物化成注入所需的 latent 表示。
+
+    两种策略（`strategy`）：
+    - `soft_token`（默认，免训练）/ `segment_mean` / `stride` / `tail`：把源文本压成 (1,P,H) soft
+      prefix（`build_prefix`）。
+    - `c2c`：训练好的 Cache-to-Cache 融合器——**内部调** `c2c_channel`（懒加载 projector 栈），
+      不物化 prefix；source 的组装/对齐由注入 client 用 ctx 完成。
+
+    「其它方法」（`c2c_channel`/`c2c_projector`）都在本类内部按需调用；manager 只依赖 nl/latent
+    两个主接口，**不直接 import** c2c。
+    """
+
+    # 走「KV-cache 融合」注入的 latent 策略（Latent_Channel=projector 栈，而非 (1,P,H) soft
+    # prefix）。后续新增此类方法在此登记即可，无需改 materialize 的分支逻辑。
+    FUSION_STRATEGIES = frozenset({"c2c"})
 
     def __init__(self, backend, strategy: str = "segment_mean", max_encode_tokens: int = 4096,
-                 tau: float = 1.0):
+                 tau: float = 1.0, P: int = 16, c2c_ckpt: str | None = None,
+                 c2c_gate: str = "soft"):
         self.backend = backend  # HF 后端（提供 encode_hidden 与 embed）
-        self.strategy = strategy  # 压缩策略；DualChannel 默认传 "soft_token"
+        self.strategy = strategy  # 压缩策略；DualChannel 默认传 "soft_token"，或 "c2c"
         self.max_encode_tokens = max_encode_tokens  # 编码时源文本最多取多少 token（防过长）
         self.tau = tau  # soft_token 的温度
+        self.P = P  # prefix 长度（latent 成本旋钮）；原在 RouteDecision，现归 latent 通道自身
+        self.c2c_ckpt = c2c_ckpt  # strategy=c2c 时的 projector ckpt 路径
+        self.c2c_gate = c2c_gate  # c2c 门控 soft/hard
+        self._c2c: Any = None  # 懒建的 C2CLatentChannel（内部调用）
+        self._prefix_cache: dict = {}  # (len(source), P) -> soft prefix 缓存
+
+    def reset(self) -> None:
+        # source 变了 / 换样本时清 prefix 缓存（manager 在 reset/seed/observe 里调）
+        self._prefix_cache = {}
+
+    def materialize(self, bundle, source: str) -> None:
+        """把 latent 通道物化进 bundle.Latent_Channel（+ Latent_strategy=本方法名）：
+        融合类策略 ⇒ projector 栈；prefix 类 ⇒ (1,P,H) soft prefix（P=self.P，按 source 缓存）。"""
+        bundle.Latent_strategy = self.strategy  # 注入 client 据此决定注入方式
+        if self.strategy in self.FUSION_STRATEGIES:
+            bundle.Latent_Channel = self._c2c_channel().get_projectors()
+            bundle.meta["latent_kind"] = self.strategy
+            return
+        if source:
+            key = (len(source), self.P)  # 同 source 同 P 复用缓存，省重复编码
+            if key not in self._prefix_cache:
+                self._prefix_cache[key] = self.build_prefix(source, self.P)
+            bundle.Latent_Channel = self._prefix_cache[key]
+
+    def _c2c_channel(self):
+        # 懒加载 C2C 融合器；**在 latent 内部 import**，使 manager 无需 import c2c_channel
+        if self._c2c is None:
+            from .c2c_channel import C2CLatentChannel
+            self._c2c = C2CLatentChannel(self.backend, self.c2c_ckpt, gate=self.c2c_gate)
+        return self._c2c
 
     def build_prefix(self, source_text: str, P: int) -> Any:
         # 先把源文本编码成末层 hidden (1,T,H)

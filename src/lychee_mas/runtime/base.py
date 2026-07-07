@@ -48,7 +48,7 @@ class Runtime(Protocol):
     """运行时协议（最小集）。
 
     - run(team, query) -> Trajectory：把图/团队跑一遍，产出执行轨迹 τ。
-    - intercept(hook)：消息级拦截——把每条 Message 喂给 hook（写 TraceStore + L3 记忆抽取）。
+    - intercept(hook)：消息级拦截——把每条 Message 喂给 hook（写 TraceStore + 记忆抽取）。
     """
 
     async def run(self, team: MASGraph, query: TaskQuery) -> Trajectory: ...
@@ -66,7 +66,7 @@ class BaseRuntime:
         self._hooks.append(hook)
 
     def _emit(self, message: Message) -> None:
-        # 逐条 Message 回调所有 hook（CLAUDE.md §8：L3/L4/L5 的数据来源）
+        # 逐条 Message 回调所有 hook（CLAUDE.md §8：记忆/处理/训练 的数据来源）
         for hook in self._hooks:
             hook(message)
 

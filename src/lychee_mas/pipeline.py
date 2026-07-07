@@ -4,7 +4,7 @@
 默认 runtime=mock，可完全离线跑通：构建一张静态 MASGraph + 一个 TaskQuery -> Runtime.run ->
 Trajectory。
 
-闭环（后续）：在 run 之后接 L4 聚合 / L5 归因→信用→训练→反哺；当前 P0 先打通 construct + runtime。
+闭环（后续）：在 run 之后接处理层聚合 / 归因→信用→训练→反哺；当前 P0 先打通 construct + runtime。
 """
 from __future__ import annotations
 

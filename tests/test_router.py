@@ -12,9 +12,9 @@ def _inputs(**kw):
 
 
 def test_static_table_lookup():
-    r = StaticRouter(table={("worker", "*"): "both"}, default="nl", P=16)
+    r = StaticRouter(table={("worker", "*"): "both"}, default="nl")
     d = r.decide(_inputs(role="worker"))
-    assert d.channel == "both" and d.P == 16
+    assert d.channel == "both"
 
 
 def test_static_default_when_unmatched():
@@ -25,7 +25,7 @@ def test_static_default_when_unmatched():
 
 def test_latent_falls_back_to_nl_when_unavailable():
     # latent 通道被标为不可用 -> latent 应降级为 nl
-    r = fixed_channel_router("latent", P=8)
+    r = fixed_channel_router("latent")
     d = r.decide(_inputs(availability={"latent": False}, same_model_pair=True))
     assert d.channel == "nl"
     assert "latent->nl" in d.reason
@@ -33,19 +33,19 @@ def test_latent_falls_back_to_nl_when_unavailable():
 
 def test_latent_falls_back_on_heterogeneous_pair():
     # 收发为异构（非同模型）对 -> latent 应降级为 nl
-    r = fixed_channel_router("latent", P=8)
+    r = fixed_channel_router("latent")
     d = r.decide(_inputs(availability={"latent": True}, same_model_pair=False))
     assert d.channel == "nl"
 
 
 def test_both_drops_latent_keeps_nl_when_unavailable():
     # both 在 latent 不可用时应保留 nl 分量（降级为 nl）
-    r = fixed_channel_router("both", P=8)
+    r = fixed_channel_router("both")
     d = r.decide(_inputs(availability={"latent": False}))
     assert d.channel == "nl"
 
 
 def test_latent_kept_when_available_and_same_model():
-    r = fixed_channel_router("latent", P=8)
+    r = fixed_channel_router("latent")
     d = r.decide(_inputs(availability={"latent": True}, same_model_pair=True))
     assert d.channel == "latent"

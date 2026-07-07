@@ -1,4 +1,4 @@
-"""L1 团队组建（AgentSelector 接缝）。
+"""团队组建（AgentSelector 接缝）。
 
 注册 `agent_selector/agentinit`（团队组建·多样性×专长 Pareto，本组已发表，当前为接口桩）。
 后续把已发表的 AgentInit 选择逻辑迁移进来：实现 select() -> list[AgentSpec]。

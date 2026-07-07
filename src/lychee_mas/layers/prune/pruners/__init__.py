@@ -1,4 +1,4 @@
-"""L2 图剪枝（GraphPruner 接缝）。
+"""图剪枝（GraphPruner 接缝）。
 
 注册占位实现（统一报错文案 `<name>: not wired yet (TODO)`），但能被 REGISTRY.list 看到：
   graph_pruner/agentdropout      逐轮邻接淘汰（本组已发表）

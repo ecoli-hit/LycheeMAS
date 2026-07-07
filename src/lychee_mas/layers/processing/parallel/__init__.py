@@ -1,4 +1,4 @@
-"""L4 处理层 · **并行子模块**——并发跑 K 次 MAS，再用 aggregator 聚合成一个 Answer。
+"""处理层 · **并行子模块**——并发跑 K 次 MAS，再用 aggregator 聚合成一个 Answer。
 
 - processor/parallel           并行处理器：并发 K 次 → K 条轨迹 → aggregator 聚合（子模块入口）
 - aggregator/self_consistency  纯标准库多数投票（真实可测组件，CLAUDE.md §5 要求至少一个可跑）

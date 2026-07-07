@@ -7,7 +7,7 @@
 路由器（fixed 固定通道，对应 none/nl_only/latent_only/both 四种消融）、RoutingContext（跨 agent
 共享状态）、AutoGenRuntime 拼起来。逻辑对齐旧原型 src-bak/LycheeMAS/run_mas.py。
 
-**跑几次由 L4 处理层决定**：本驱动把「跑一次 MAS 产一条轨迹」封成 runner 交给 processor——
+**跑几次由 处理层决定**：本驱动把「跑一次 MAS 产一条轨迹」封成 runner 交给 processor——
 K=1 用 `processor/serial`（跑 1 次），K>1 用 `processor/parallel`（并发跑 K 次 + aggregator 聚合）。
 pass@1 仍对每条轨迹单独评分；parallel 的聚合答案在配了 aggregator 时作为 vote_acc 上报。
 
@@ -57,8 +57,8 @@ async def run_one(cfg: dict, args) -> dict:
     from lychee_mas.eval.benchmarks import load as load_task
     from lychee_mas.eval.task_config import team_name_for_task
     from lychee_mas.layers.construct.templates import StaticTopology
-    from lychee_mas.memory.managers.cdm import DualChannelMemoryManager
-    from lychee_mas.memory.routing.context import RoutingContext
+    from lychee_mas.memory.context import RoutingContext
+    from lychee_mas.memory.managers.DualChannelMemory import DualChannelMemoryManager
     from lychee_mas.memory.routing.static import fixed_channel_router
     from lychee_mas.runtime.backends.autogen_runtime import AutoGenRuntime
     from lychee_mas.runtime.backends.hf_backend import HFBackend
@@ -82,13 +82,15 @@ async def run_one(cfg: dict, args) -> dict:
     temperature = float(_get(cfg, "backend.temperature", 0.7))
     top_p = float(_get(cfg, "backend.top_p", 0.8))
     seed = int(_get(cfg, "backend.seed", 0))
-    P = args.P if args.P is not None else int(_get(cfg, "router.P", 16))
+    # P（latent prefix 长度）现归 latent 通道：优先 memory.P，回退旧位置 router.P（向后兼容）
+    P = args.P if args.P is not None else int(_get(cfg, "memory.P", _get(cfg, "router.P", 16)))
     latent_strategy = _get(cfg, "memory.latent_strategy", "soft_token")
     nl_strategy = _get(cfg, "memory.nl_strategy", "prev_output")
     max_encode_tokens = int(_get(cfg, "memory.max_encode_tokens", 4096))
     include_transcript = bool(_get(cfg, "memory.include_transcript", True))
     c2c_ckpt = args.c2c_ckpt or _get(cfg, "memory.c2c_ckpt")  # latent_strategy=c2c 时必填
     c2c_gate = _get(cfg, "memory.c2c_gate", "soft")
+    nl_simplemem = _get(cfg, "memory.nl_simplemem")  # simplemem 策略传给 SimpleMem(...) 的 kwargs
     raw_n = args.n if args.n is not None else _get(cfg, "run.n", "all")
     n_samples = None if str(raw_n) in ("None", "all", "full", "0") else int(raw_n)
     max_rounds = int(_get(cfg, "run.max_rounds", 2))
@@ -106,8 +108,9 @@ async def run_one(cfg: dict, args) -> dict:
                                       nl_strategy=nl_strategy,
                                       max_encode_tokens=max_encode_tokens,
                                       include_transcript=include_transcript,
-                                      c2c_ckpt=c2c_ckpt, c2c_gate=c2c_gate)
-    router = fixed_channel_router(FIXED[method], P=P)
+                                      P=P, c2c_ckpt=c2c_ckpt, c2c_gate=c2c_gate,
+                                      nl_simplemem=nl_simplemem)
+    router = fixed_channel_router(FIXED[method])
     # ---- 数据 + 拓扑（按 team）----
     data = load_task(task, n=n_samples)
     kind = data[0]["kind"]
@@ -117,7 +120,7 @@ async def run_one(cfg: dict, args) -> dict:
     ctx = RoutingContext(task=task, router=router, memory=memory, team=team_profile)
     runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
                              max_rounds=max_rounds, model_id=model_tag)
-    # 处理层（L4）：串/并行由采样数 K 决定——
+    # 处理层：串/并行由采样数 K 决定——
     #   K=1 → processor/serial   ：跑 1 次、产 1 条轨迹（无聚合）。
     #   K>1 → processor/parallel ：并发跑 K 次、产 K 条轨迹，用 aggregator 聚合出 res.answer。
     # pass@1 仍对**每条轨迹单独评分**（不投票）；res.answer（并行聚合答案）仅当配置了 aggregator

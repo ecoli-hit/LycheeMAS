@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lychee-mas"
 version = "0.1.0"
-description = "LycheeMAS — 基于 AutoGen 的五层多智能体系统研究框架（统一图抽象 G=(V,E,W,T,M)）"
+description = "LycheeMAS — 基于 AutoGen 的多智能体系统研究框架（统一图抽象 G=(V,E,W,T,M)）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -26,6 +26,17 @@ runtime = [
 numeric = ["numpy"]
 config = ["pyyaml", "hydra-core"]
 dev = ["pytest", "ruff", "mypy"]
+# 文档站（MkDocs Material + mkdocstrings，griffe 静态解析源码，纯 Python 无 CUDA 冲突）。
+# 构建文档不 import lychee_mas，故不需要 torch/autogen；`make docs` 本地预览。
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+    "mkdocs-gen-files>=0.5",
+    "mkdocs-literate-nav>=0.6",
+    "mkdocs-section-index>=0.3",
+    "mkdocs-include-markdown-plugin>=6.0",
+]
 # 全量：上面所有 + 数据/数学评分依赖（datasets / sympy 等供 eval 真实跑分）
 all = [
     "autogen-agentchat>=0.7,<0.8",

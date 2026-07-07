@@ -14,10 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from .base import MemoryRouter, RouteDecision
+from .routing.base import MemoryRouter, RouteDecision
 
 if TYPE_CHECKING:  # 仅类型检查期需要；避免与 memory.base 形成 import 环
-    from ..base import MemoryManager
+    from .base import MemoryManager
 
 
 @dataclass
@@ -57,7 +57,7 @@ class RoutingContext:
         # 追加进日志；落盘为每样本的 routing_trace（供核查 / MAST judge / 反事实蒸馏复用）
         record = {
             "role": role, "turn": turn, "sender": sender,
-            "channel": decision.channel, "P": decision.P,
+            "channel": decision.channel,  # P 已移出 RouteDecision（归 latent 通道）
             "reason": decision.reason, **extra}
         self.decisions.append(record)
         if self.trace_store is not None:

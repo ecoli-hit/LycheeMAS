@@ -1,8 +1,8 @@
-# 04 · MASPO 开发文档（L5 归因训练）
+# 04 · MASPO 开发文档（归因训练）
 
 > 论文：**MASPO: Joint Prompt Optimization for LLM-based Multi-Agent Systems**（ICML 2026, CCF-A）
 > arXiv [2605.06623](https://arxiv.org/abs/2605.06623) · ICML [poster 62219](https://icml.cc/virtual/2026/poster/62219) · 代码 [github.com/wangzx1219/MASPO](https://github.com/wangzx1219/MASPO)
-> 目标：把 `trainer/maspo` 从桩接成真实组件，并搭最小 L5 训练闭环。
+> 目标：把 `trainer/maspo` 从桩接成真实组件，并搭最小 训练闭环。
 > 把握度 🟢（官方仓库 + arXiv 确证）。先读 [README.md](README.md) §3 共性事实。
 
 ---
@@ -60,7 +60,7 @@ score    = win_rate − 0.5
 
 ## 2. 在框架中的定位
 
-- **层**：L5 归因训练（`train/`）。
+- **层**：归因训练（`train/`）。
 - **类别 / 注册名**：`trainer` / `maspo`（提示级、无权重更新，定位为廉价基线 / 暖启动）。
 - **协议**：`train/base.py::Trainer`（+ 复用 `trace` 包的 `CreditAssigner`/`FailureAttributor`/`Attribution`）。
 - **当前桩**：`src/lychee_mas/train/__init__.py:63`（`MASPOTrainer`，`credits()`/`train()` 抛 `NotImplementedError`）。
@@ -170,7 +170,7 @@ scripts/train_maspo.py:
 ## 8. 配置 `configs/trainer/maspo.yaml`
 
 ```yaml
-# L5 trainer/maspo 超参（对齐论文默认）
+# trainer/maspo 超参（对齐论文默认）
 beam_width: 2
 max_total_depth: 9
 rounds_per_turn: 3
@@ -229,5 +229,5 @@ judge:
 ## 12. 预期时间 + 风险依赖
 
 - **预期时间**：10–15 人天（M1 2d + M2 2d + M3 3–4d + M4 3–5d）。仅"骨架 + 三维信用 + mock 闭环"则 ~5–6 人天。
-- **依赖**：L5 闭环此前完全未接（本篇搭最小驱动）；LLM 调用（generator/judge）→ `[train]` extra；`MASGraph.edges` 取前驱/后继（若已由 02 落地则直接复用）。
+- **依赖**：闭环此前完全未接（本篇搭最小驱动）；LLM 调用（generator/judge）→ `[train]` extra；`MASGraph.edges` 取前驱/后继（若已由 02 落地则直接复用）。
 - **风险**：① 真 LLM 优化成本高（k=50 × beam × depth × rounds 次重跑），先用 mock + 小 k 打通；② 三维评分需"重跑单节点取输出"，要把官方 `arun_single_node_only` 正确映射到我们的 `Runtime`（最小子图重跑）；③ 优化产物回填路径（写回 templates vs config vs selector）需与团队约定统一。

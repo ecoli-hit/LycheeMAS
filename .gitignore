@@ -23,6 +23,10 @@ data/processed/
 .ruff_cache/
 .mypy_cache/
 
+# 文档站构建产物（MkDocs）
+site/
+.cache/
+
 # OS
 .DS_Store
 
