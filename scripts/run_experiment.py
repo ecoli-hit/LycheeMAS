@@ -68,13 +68,28 @@ def _score(query: TaskQuery, trajectory: Trajectory) -> Optional[float]:
         return None
 
 
+def _selector_kwargs(args) -> Optional[dict]:
+    """从 CLI 组装 selector 构造参数。mode 只此一个来源（--selector-mode），无歧义。"""
+    if not args.selector:
+        return None
+    kw = {"mode": args.selector_mode, "critique_rounds": args.selector_critique_rounds}
+    if args.selector_embedder:
+        kw["embedder_model"] = args.selector_embedder
+    if args.selector_min_roles is not None:
+        kw["min_roles"] = args.selector_min_roles
+    if args.selector_max_roles is not None:
+        kw["max_roles"] = args.selector_max_roles
+    return kw
+
+
 async def _run(args) -> dict:
     trace = TraceStore()
     orch = Orchestrator(runtime=args.runtime, team=args.team,
-                        aggregator=args.aggregator, trace_store=trace, rounds=args.rounds)
+                        aggregator=args.aggregator, trace_store=trace, rounds=args.rounds,
+                        selector=args.selector, selector_kwargs=_selector_kwargs(args))
 
     queries = _load_questions(args)
-    samples, q_sum, scored, tok_sum = [], 0.0, 0, 0
+    samples, q_sum, scored, tok_sum, team_sum = [], 0.0, 0, 0, 0
     for i, q in enumerate(queries):
         trace.reset()
         traj = await orch.run(q)
@@ -83,26 +98,32 @@ async def _run(args) -> dict:
             else getattr(traj, "content", "")
         s = _score(q, traj) if isinstance(traj, Trajectory) else None
         tok = traj.total_tokens if isinstance(traj, Trajectory) else 0
+        # 团队规模 = 该轨迹里出现过的不同发言者数（对齐论文消融的 team size 指标）
+        team = len({m.sender for m in traj.messages}) if isinstance(traj, Trajectory) else 0
         tok_sum += tok
+        team_sum += team
         if s is not None:
             q_sum += s
             scored += 1
         samples.append({"question": q.question[:300], "final_answer": final,
-                        "gold": q.gold, "correct": s, "total_tokens": tok})
-        print(f"  [{i + 1}/{len(queries)}] correct={s} tokens={tok} ans={final[:50]!r}")
+                        "gold": q.gold, "correct": s, "total_tokens": tok, "team_size": team})
+        print(f"  [{i + 1}/{len(queries)}] correct={s} tokens={tok} team={team} ans={final[:50]!r}")
 
     metrics = {
         "runtime": args.runtime, "team": args.team, "aggregator": args.aggregator,
+        "selector": args.selector, "selector_mode": args.selector_mode if args.selector else None,
         "benchmark": args.benchmark, "n": len(queries),
         "quality": round(q_sum / scored, 4) if scored else None,
         "total_tokens_mean": round(tok_sum / len(queries), 1) if queries else 0,
+        "team_size_mean": round(team_sum / len(queries), 2) if queries else 0,
         "git_sha": _git_sha(), "seed": args.seed,
     }
     return {"samples": samples, "metrics": metrics}
 
 
 def _persist(args, result: dict) -> str:
-    method = args.aggregator or args.team
+    method = (f"{args.selector}-{args.selector_mode}" if args.selector
+              else args.aggregator or args.team)
     bench = args.benchmark or "adhoc"
     from lychee_mas.eval.metrics import result_dir, write_results
 
@@ -117,6 +138,19 @@ def main() -> None:
     ap.add_argument("--runtime", default="mock", help="runtime 名（mock|autogen|...）")
     ap.add_argument("--team", default="default", help="静态拓扑队伍 profile")
     ap.add_argument("--aggregator", default=None, help="可选聚合器名（如 self_consistency）")
+    # --- L1 团队组建 selector（给出则由 selector 决定成员，覆盖 --team 的角色）---
+    ap.add_argument("--selector", default=None,
+                    help="agent_selector 名（如 agentinit）；不给=沿用 --team 模板")
+    ap.add_argument("--selector-mode", dest="selector_mode", default="pool",
+                    choices=["pool", "generate"], help="agentinit 模式（mode 的唯一来源）")
+    ap.add_argument("--selector-embedder", dest="selector_embedder", default=None,
+                    help="generate 模式的句向量编码器路径（覆盖 config）")
+    ap.add_argument("--selector-critique-rounds", dest="selector_critique_rounds",
+                    type=int, default=3, help="generate 模式 CreateRoles↔Check 迭代上限")
+    ap.add_argument("--selector-min-roles", dest="selector_min_roles", type=int, default=None,
+                    help="团队规模下界（消融/扫描用；默认走 selector 默认 1）")
+    ap.add_argument("--selector-max-roles", dest="selector_max_roles", type=int, default=None,
+                    help="团队规模上界（消融/扫描用；默认走 selector 默认 5）")
     ap.add_argument("--benchmark", default=None, help="benchmark 名（gsm8k|aime2024|...）")
     ap.add_argument("--questions", nargs="*", default=None, help="离线自检：直接给若干问题")
     ap.add_argument("--n", type=int, default=5, help="样本数上限")
@@ -128,7 +162,8 @@ def main() -> None:
     ap.add_argument("--no-save", action="store_true", help="不落盘（仅打印）")
     args = ap.parse_args()
 
-    print(f"[LycheeMAS] runtime={args.runtime} team={args.team} "
+    _sel = f"{args.selector}({args.selector_mode})" if args.selector else None
+    print(f"[LycheeMAS] runtime={args.runtime} team={args.team} selector={_sel} "
           f"aggregator={args.aggregator} benchmark={args.benchmark}")
     result = asyncio.run(_run(args))
     print("[metrics]", result["metrics"])

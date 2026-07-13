@@ -148,7 +148,7 @@ REGISTRY.list("aggregator"); REGISTRY.snapshot()
 | `processor`（processing） | `serial`（跑 1 次 → 1 轨迹）、`parallel`（并发 K 次 + 聚合） | — |
 | `aggregator`（parallel 的归约策略） | `self_consistency`（多数投票，纯标准库） | `dynamicagg`（在研） |
 | `topology_generator` | `static`（按 team 模板产 AgentSpec） | — |
-| `agent_selector` | — | `agentinit` |
+| `agent_selector` | **`agentinit`**（pool 离线 + generate LLM 生成，已接入 Orchestrator） | — |
 | `graph_pruner` | — | `agentdropout`, `agentdropout_v2`, `agentprune` |
 | `vocab_adapter` | — | `agentvocab` |
 | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |
