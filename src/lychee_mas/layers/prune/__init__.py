@@ -1,4 +1,4 @@
-"""L2 网络剪枝与优化（Prune，CLAUDE.md §0）。
+"""网络剪枝与优化（Prune，CLAUDE.md §0）。
 
 - GraphPruner   graph_pruner/{agentdropout, agentdropout_v2, agentprune}（桩）
 - VocabAdapter  vocab_adapter/agentvocab（桩）

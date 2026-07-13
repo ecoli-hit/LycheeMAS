@@ -1,4 +1,4 @@
-"""L1 团队组建（AgentSelector 接缝）。
+"""团队组建（AgentSelector 接缝）。
 
 注册 `agent_selector/agentinit`：AgentInit（EMNLP 2025 Findings）的多样性×相关性 Pareto 选择。
 - `mode="pool"`   已实现（M1）：固定候选池 + 确定性嵌入 + 非支配排序（离线/消融，零 GPU/API）。

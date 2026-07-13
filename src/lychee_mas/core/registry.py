@@ -1,7 +1,7 @@
 """组件注册表（插件机制核心，CLAUDE.md §4）。
 
 每个算法 = 注册一个类 + 由配置选择，绝不硬编码实现。新增方法即 `@REGISTRY.register(cat, name)`，
-不改编排器。`memory_router` 类别承接 L3 的「触发接缝」（路由决策），与 `memory_manager`（方法接缝
+不改编排器。`memory_router` 类别承接「触发接缝」（路由决策），与 `memory_manager`（方法接缝
 ）对称。
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ CATEGORIES = (
     "agent_selector", "topology_generator",
     "graph_pruner", "vocab_adapter",
     "memory_manager", "memory_router",
-    "aggregator",
+    "aggregator", "processor",
     "attributor", "credit_assigner", "trainer",
     "benchmark",
 )

@@ -7,7 +7,7 @@ from lychee_mas.core.types import AgentSpec, TaskQuery
 from lychee_mas.pipeline import Orchestrator
 from lychee_mas.runtime.backends.mock_runtime import MockRuntime
 from lychee_mas.runtime.base import MASGraph
-from lychee_mas.stores import TraceStore
+from lychee_mas.trace import TraceStore
 
 
 def test_mock_runtime_direct():

@@ -47,12 +47,42 @@ def load_gsm8k(n: int):
     return list(zip(df["question"].tolist(), df["answer"].tolist()))
 
 
+_OPENHERMES = ("/data/mxy/Project/CDM/Data/raw/c2c/teknium__OpenHermes-2.5/"
+               "c2c_pairs.jsonl")
+
+
+def load_openhermes(n: int, path: str = _OPENHERMES):
+    """OpenHermes-2.5（C2C 论文原始训练语料），预处理成 {q,a} 的 jsonl。"""
+    import json
+    pairs = []
+    with open(path) as fh:
+        for line in fh:
+            if n and len(pairs) >= n:
+                break
+            d = json.loads(line)
+            q, a = d.get("q"), d.get("a")
+            if q and a:
+                pairs.append((q, a))
+    return pairs
+
+
+def load_data(name: str, n: int, path: str | None):
+    if name == "gsm8k":
+        return load_gsm8k(n)
+    if name == "openhermes":
+        return load_openhermes(n, path or _OPENHERMES)
+    raise ValueError(f"unknown --data {name!r} (gsm8k|openhermes)")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="训练 C2C 投影器（跨模型 / 同模型对齐修复）")
     ap.add_argument("--model-path", default=os.environ.get("LYCHEE_HF_MODEL",
                     "/data/mxy/Models/Qwen/Qwen3-4B"), help="target/receiver 模型")
     ap.add_argument("--source-model", default=None,
                     help="给定则跨模型（source/sharer）；不给则同模型角色条件")
+    ap.add_argument("--data", default="gsm8k", choices=["gsm8k", "openhermes"],
+                    help="训练语料：gsm8k(易) 或 openhermes(C2C 原始语料, 更难更杂)")
+    ap.add_argument("--data-path", default=None, help="覆盖 openhermes jsonl 路径")
     ap.add_argument("--n", type=int, default=2000)
     ap.add_argument("--steps", type=int, default=400)
     ap.add_argument("--lr", type=float, default=1e-4)
@@ -68,7 +98,7 @@ def main() -> None:
     args = ap.parse_args()
 
     import torch
-    from lychee_mas.layers.memory.channels.c2c_projector import (
+    from lychee_mas.memory.channels.c2c_projector import (
         build_projector_stack,
         map_source_to_target_layers,
     )
@@ -139,9 +169,9 @@ def main() -> None:
         solver_sys = SOLVER_SYS
 
     opt = AdamW(list(projectors.parameters()), lr=args.lr, weight_decay=0.01)
-    data = load_gsm8k(args.n)
-    print(f"[train] gsm8k={len(data)} steps={args.steps} ga={args.grad_accum} cross={cross}",
-          flush=True)
+    data = load_data(args.data, args.n, args.data_path)
+    print(f"[train] data={args.data}({len(data)}) steps={args.steps} ga={args.grad_accum} "
+          f"cross={cross}", flush=True)
 
     def build_example(problem, answer):
         """返回 (tgt_full_ids, labels, mapped_src_layers, src_span, tgt_span) 或 None（跳过）。"""
@@ -204,7 +234,8 @@ def _save(projectors, args, nL, nKV, hd, nKV_s, hd_s, cross, out_dir):
                   "src_num_kv_heads": nKV_s, "src_head_dim": hd_s,
                   "hidden_dim": args.proj_hidden, "intermediate_dim": args.proj_intermediate,
                   "num_layers": args.proj_layers},
-        "meta": {"cross": cross, "source_model": args.source_model, "model_path": args.model_path}},
+        "meta": {"cross": cross, "source_model": args.source_model, "model_path": args.model_path,
+                 "data": args.data, "n": args.n, "steps": args.steps}},
         os.path.join(out_dir, "projectors.pt"))
 
 

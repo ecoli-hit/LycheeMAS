@@ -1,4 +1,4 @@
-"""L2 剪枝层协议（CLAUDE.md §5）。
+"""剪枝层协议（CLAUDE.md §5）。
 
 - GraphPruner   网络剪枝（逐轮邻接淘汰等）：输入一张图 + 上下文，输出剪枝后的图（或 mask）。
 - VocabAdapter  模型级词表降本（结构感知词表适配）：把 agent 模型词表收窄以降成本。

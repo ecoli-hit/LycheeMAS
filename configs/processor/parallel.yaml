@@ -1,0 +1,5 @@
+# processor=parallel：并行——并发执行 K 次产 K 条轨迹，再用 aggregator 聚合成一个 Answer。
+# processing 层 parallel 子模块。
+name: parallel
+k: 5                     # 并发执行次数（产 K 条轨迹）
+aggregator: self_consistency   # 归约策略（aggregator 类别；默认多数投票）

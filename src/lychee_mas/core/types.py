@@ -3,10 +3,10 @@
 把整个 MAS 表示为带时序/记忆状态的有向图 G=(V,E,W,T,M)：
 - AgentSpec  = 图节点（智能体画像）
 - Message    = 一条通信消息（执行轨迹与记忆抽取的基本单元）
-- Answer     = 候选答案（L4 融合单元）
+- Answer     = 候选答案（融合单元）
 - Trajectory = 一次执行 τ（有序 messages + candidates + final_answer）
 - TaskQuery  = 输入查询（gold 供可验证奖励/评测）
-- Budget     = 预算约束（tokens/calls/usd，供 L1 预算感知拓扑与 L2 剪枝）
+- Budget     = 预算约束（tokens/calls/usd，供预算感知拓扑（construct）与剪枝（prune））
 
 纯标准库 dataclass，零重依赖（黄金法则 4：核心骨架零运行依赖）。
 """
@@ -25,7 +25,7 @@ def _new_id() -> str:
 
 @dataclass
 class AgentSpec:
-    """图节点 = 智能体画像。`profile` 放专长向量/多样性特征，供 L1 的 AgentInit 用。"""
+    """图节点 = 智能体画像。`profile` 放专长向量/多样性特征，供 construct 的 AgentInit 用。"""
 
     id: str = field(default_factory=_new_id)
     name: str = ""
@@ -59,7 +59,7 @@ class Message:
 
 @dataclass
 class Answer:
-    """候选答案（L4 融合单元）。"""
+    """候选答案（融合单元）。"""
 
     content: str = ""
     source: Optional[str] = None
@@ -113,7 +113,7 @@ class BudgetUnit(str, Enum):
 
 @dataclass
 class Budget:
-    """预算约束（供 L1 预算感知拓扑与 L2 剪枝）。"""
+    """预算约束（供预算感知拓扑（construct）与剪枝（prune））。"""
 
     limit: float = 0.0
     unit: BudgetUnit = BudgetUnit.TOKENS

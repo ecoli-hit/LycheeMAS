@@ -1,8 +1,8 @@
-# 02 · AgentDropout 开发文档（L2 图剪枝）
+# 02 · AgentDropout 开发文档（图剪枝）
 
 > 论文：**AgentDropout: Dynamic Agent Elimination for Token-Efficient and High-Performance LLM-Based Multi-Agent Collaboration**（ACL 2025, CCF-A）
 > arXiv [2503.18891](https://arxiv.org/abs/2503.18891) · [ACL 2025.acl-long.1170](https://aclanthology.org/2025.acl-long.1170/) · 代码 [github.com/wangzx1219/AgentDropout](https://github.com/wangzx1219/AgentDropout)
-> 目标：把 `graph_pruner/agentdropout` 从桩接成真实组件。**本篇同时落地 L2 公共前置「MASGraph 邻接 + 边权」**，后续 AgentPrune / AgentDropout v2 复用。
+> 目标：把 `graph_pruner/agentdropout` 从桩接成真实组件。**本篇同时落地 公共前置「MASGraph 邻接 + 边权」**，后续 AgentPrune / AgentDropout v2 复用。
 > 把握度 🟢（官方仓库 + arXiv 确证）。先读 [README.md](README.md) §3 共性事实。
 
 ---
@@ -55,7 +55,7 @@ total = loss_s + loss_t + relu(‖W_s·mask_s‖_F − delta) + relu(‖W_t·mas
 
 ## 2. 在框架中的定位
 
-- **层**：L2 剪枝（`layers/prune/`）。
+- **层**：剪枝（`layers/prune/`）。
 - **类别 / 注册名**：`graph_pruner` / `agentdropout`。
 - **协议**：`prune/base.py::GraphPruner`。
 - **当前桩**：`src/lychee_mas/layers/prune/pruners/__init__.py:27`（`AgentDropout(_StubPruner)`，`prune()` 抛 `NotImplementedError`）。
@@ -100,7 +100,7 @@ class MASGraph:
 |---|---|---|
 | **实现类** | `src/lychee_mas/layers/prune/pruners/agentdropout.py`（新建） | `class AgentDropout(GraphPruner)`，`@REGISTRY.register("graph_pruner","agentdropout")`；torch 惰性导入 |
 | 替桩 + 触发注册 | `src/lychee_mas/layers/prune/pruners/__init__.py` | 删 `agentdropout` 桩，改为 `from .agentdropout import AgentDropout`；保留 `agentprune`/`agentdropout_v2` 桩 |
-| **L2 公共前置** | `src/lychee_mas/runtime/base.py` | `MASGraph` 加 `weights: dict[str,dict[str,float]]`（边权 W）+ `apply_mask(mask)`/`sparsity()` 辅助；不破坏现有顺序链默认 |
+| **公共前置** | `src/lychee_mas/runtime/base.py` | `MASGraph` 加 `weights: dict[str,dict[str,float]]`（边权 W）+ `apply_mask(mask)`/`sparsity()` 辅助；不破坏现有顺序链默认 |
 | 初始邻接 | `src/lychee_mas/layers/construct/templates.py` | `StaticTopology` 增 `topology="chain"\|"full"\|"star"` 选项，填充 `edges`（首版给 `full` 全连接，供剪枝有东西可剪） |
 | runtime 按边路由 | `src/lychee_mas/runtime/backends/mock_runtime.py`（+ autogen 后端） | 让"某 agent 能看到哪些上游输出"由 `graph.edges` 决定（无边时退回顺序链，保持现有行为） |
 | 配置 | `configs/pruner/agentdropout.yaml`（新建） | 超参（见 §8） |
@@ -130,7 +130,7 @@ class MASGraph:
 
 ## 6. 编排接入（集成）
 
-见 [README.md](README.md) §3.1/§3.3。AgentDropout 依赖 **L2 邻接前置**（本篇落地）：
+见 [README.md](README.md) §3.1/§3.3。AgentDropout 依赖 **邻接前置**（本篇落地）：
 
 1. `StaticTopology.build(topology="full")` 产出带 `edges` 的稠密 `MASGraph`。
 2. `Orchestrator.run()` 在 `build_graph()` 之后插可选剪枝：
@@ -166,7 +166,7 @@ async def run(self, query, hook=None):
 ## 8. 配置 `configs/pruner/agentdropout.yaml`
 
 ```yaml
-# L2 graph_pruner/agentdropout 超参（对齐论文默认）
+# graph_pruner/agentdropout 超参（对齐论文默认）
 mode: edge            # edge | node | both（edge=update_masks；node=update_masks_dec）
 pruning_rate: 0.25    # 每次剪边比例
 init_topology: full   # 优化起点拓扑：full | star | chain
@@ -225,5 +225,5 @@ rounds: 1
 ## 12. 预期时间 + 风险依赖
 
 - **预期时间**：8–12 人天（M1 前置 2d + M2 启发式 2d + M3 忠实端口 3–5d + M4 实验 2d）。仅要"可跑 + 接口 + 启发式"则 ~4–5 人天。
-- **依赖**：L2 MASGraph 邻接前置（本篇 M1，后续 AgentPrune/v2 复用）；torch（路线 A）。
+- **依赖**：MASGraph 邻接前置（本篇 M1，后续 AgentPrune/v2 复用）；torch（路线 A）。
 - **风险**：① 路线 A 需要"按 mask 跑 MAS 得 utility"的可微/采样代理，与论文一致性需对齐官方 `run_gsm8k.py`；② runtime 按 `edges` 路由要兼容现有顺序链默认（无边时行为不变），务必加回归测试；③ token 统计口径要与论文一致（prompt vs completion 分别报）。

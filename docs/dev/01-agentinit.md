@@ -1,4 +1,4 @@
-# 01 · AgentInit 开发文档（L1 构建层）
+# 01 · AgentInit 开发文档（构建层）
 
 > 论文：**AgentInit: Initializing LLM-based Multi-Agent Systems via Diversity and Expertise Orchestration for Effective and Efficient Collaboration**（EMNLP 2025 Findings, CCF-B）
 > arXiv [2509.19236](https://arxiv.org/abs/2509.19236) · [ACL 2025.findings-emnlp.636](https://aclanthology.org/2025.findings-emnlp.636/) · 代码 [github.com/1737423697/AgentInit](https://github.com/1737423697/AgentInit)
@@ -75,7 +75,7 @@ AgentInit 解决"如何**初始化/组建**一支高效 MAS 团队"：在候选 
 
 ## 2. 在框架中的定位
 
-- **层**：L1 构建（`layers/construct/`）。
+- **层**：构建（`layers/construct/`）。
 - **类别 / 注册名**：`agent_selector` / `agentinit`。
 - **协议**：`construct/base.py::AgentSelector`。
 - **当前桩**：`src/lychee_mas/layers/construct/selectors/__init__.py:14`（`AgentInitSelector.select` 抛 `NotImplementedError`）。
@@ -174,7 +174,7 @@ CLI：`--selector agentinit`。不带 `--selector` 时行为与现在完全一�
 ## 8. 配置 `configs/agents/agentinit.yaml`
 
 ```yaml
-# L1 agent_selector/agentinit 超参
+# agent_selector/agentinit 超参
 team_size: 5              # 目标团队规模 k（待核验：固定 or 自适应）
 generations: 30          # NSGA-II 迭代代数
 pop_size: 50             # 候选池/种群大小
@@ -224,5 +224,5 @@ seed: 0                  # 可复现
 ## 12. 预期时间 + 风险依赖
 
 - **预期时间**：5–8 人天（M0 0.5d + M1 1d + M2 2–3d + M3 1.5–2d）。
-- **依赖**：候选池定义（`templates.py`）；可选嵌入模型（diversity/expertise 用语义相似度时）。**不依赖** L2 MASGraph 邻接前置。
+- **依赖**：候选池定义（`templates.py`）；可选嵌入模型（diversity/expertise 用语义相似度时）。**不依赖** MASGraph 邻接前置。
 - **风险**：① diversity/expertise 精确定义未确证（M0 必须先回填，否则实现可能偏离论文）；② 若论文实际**同时优化拓扑**，则需把选择产物也写入 `MASGraph.edges`，接入点要扩展（当前假设仅选成员）；③ 候选池质量直接决定上限，需覆盖任务所需角色谱。

@@ -8,7 +8,7 @@ round-robin）；
 
 路由信号经共享 RoutingContext 流动——每个 agent 的 InjectionClient 都读它。答案提取按任务可定制
 （见 eval/task_config.extractor_for_task）。`run` 返回统一的 `Trajectory`，并把每条消息 + 决策喂给
-intercept hook（写 TraceStore / L3 抽取）。
+intercept hook（写 TraceStore / 抽取）。
 
 ⚠️ 这是【唯一允许 import autogen 的文件之一】（CLAUDE.md 黄金法则 1：runtime/backends/autogen_*.py
 ）。

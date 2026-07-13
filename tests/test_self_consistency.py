@@ -1,4 +1,4 @@
-"""L4 self_consistency：多数投票（纯标准库可跑组件）。"""
+"""self_consistency：多数投票（纯标准库可跑组件）。"""
 from __future__ import annotations
 
 from lychee_mas.core.registry import REGISTRY

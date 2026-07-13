@@ -1,4 +1,4 @@
-# 03 · AgentVocab 开发文档（L2 词表降本）
+# 03 · AgentVocab 开发文档（词表降本）
 
 > 论文：**AgentVocab: Structure-Aware Vocabulary Adaptation for Efficient LLM Agents**（ICML 2026, CCF-A）
 > ICML [poster 61748](https://icml.cc/virtual/2026/poster/61748)（暂无公开 arXiv） · 代码（匿名，计划发布）：anonymous.4open.science/r/AgentVocab-28CC
@@ -34,7 +34,7 @@ AgentVocab 针对"通用 tokenizer 对 agent 的**结构化工具调用**分词�
 
 ## 2. 在框架中的定位
 
-- **层**：L2 剪枝（模型级降本，`layers/prune/`）。
+- **层**：剪枝（模型级降本，`layers/prune/`）。
 - **类别 / 注册名**：`vocab_adapter` / `agentvocab`。
 - **协议**：`prune/base.py::VocabAdapter`。
 - **当前桩**：`src/lychee_mas/layers/prune/vocab/__init__.py:13`（`AgentVocab.adapt` 抛 `NotImplementedError`）。
@@ -135,7 +135,7 @@ class VocabPlan:
 ## 8. 配置 `configs/vocab/agentvocab.yaml`
 
 ```yaml
-# L2 vocab_adapter/agentvocab 超参（部分待 PDF 核验）
+# vocab_adapter/agentvocab 超参（部分待 PDF 核验）
 top_k: 500               # 新增词条上限
 min_freq: 5              # 片段入选最小频次
 min_fragment_tokens: 3   # 当前分词 >此值才考虑合并（token 节省阈值）
@@ -183,5 +183,5 @@ apply_at_generation: true     # mock 下自动 no-op
 ## 12. 预期时间 + 风险依赖
 
 - **预期时间**：8–12 人天（M0 1d + M1 2–3d + M2 3–4d + M3 2d）。仅离线 (a) 部分则 ~3–4 人天。
-- **依赖**：`hf_backend` 生成期改造（扩 tokenizer/embedding）；torch/transformers（生成期）；τ-bench 适配。**不依赖** L2 MASGraph 邻接前置。
+- **依赖**：`hf_backend` 生成期改造（扩 tokenizer/embedding）；torch/transformers（生成期）；τ-bench 适配。**不依赖** MASGraph 邻接前置。
 - **风险**：① **公开信息缺口最大**（M0 前算法细节未定，离线挖词条可先做，但选择目标函数/初始化需 PDF 确证，否则可能偏离论文）；② 扩词表后 embedding/lm_head 一致性与生成稳定性需仔细验证（"正交于微调"意味着初始化不训练，质量风险更高）；③ 匿名代码 403，发布前无法对照实现细节；④ τ-bench 不在现有 `eval/benchmarks`，需新增 loader 或换近似任务。

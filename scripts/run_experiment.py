@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(_ROOT, "src"))
 from lychee_mas import REGISTRY  # noqa: E402
 from lychee_mas.core.types import TaskQuery, Trajectory  # noqa: E402
 from lychee_mas.pipeline import Orchestrator  # noqa: E402
-from lychee_mas.stores import TraceStore  # noqa: E402
+from lychee_mas.trace import TraceStore  # noqa: E402
 
 
 def _git_sha() -> str:

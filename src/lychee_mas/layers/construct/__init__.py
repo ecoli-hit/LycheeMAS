@@ -1,4 +1,4 @@
-"""L1 多智能体网络构建（Construct，CLAUDE.md §0）。
+"""多智能体网络构建（Construct，CLAUDE.md §0）。
 
 - AgentSelector       团队组建（agent_selector/agentinit，桩）
 - TopologyGenerator   静态/动态图（topology_generator/static，已实现按 team 产 AgentSpec）

@@ -1,4 +1,4 @@
-"""按任务定制的 MAS 队伍模板（L1 网络定义，迁移自 agents/roles.py）。
+"""按任务定制的 MAS 队伍模板（网络定义，迁移自 agents/roles.py）。
 
 设计：
 - Role  = 一个角色（agent 名 + system prompt + 可选 model_id）。纯数据，不依赖 backend/runtime。
@@ -22,7 +22,7 @@ from typing import List, Optional
 
 from ...core.registry import REGISTRY
 from ...core.types import AgentSpec
-from ..memory.channels.nl import PREV_OUTPUT_HEADER  # 来源标志的唯一来源（消除重复字符串）
+from ...memory.channels.nl import PREV_OUTPUT_HEADER  # 来源标志的唯一来源（memory 已提升为顶层包）
 
 
 @dataclass
@@ -210,7 +210,7 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
 
 @REGISTRY.register("topology_generator", "static")
 class StaticTopology:
-    """按 team 名产出 AgentSpec 列表，封装成顺序链 MASGraph（L1 静态拓扑，必做 baseline）。"""
+    """按 team 名产出 AgentSpec 列表，封装成顺序链 MASGraph（静态拓扑，必做 baseline）。"""
 
     name = "static"
 

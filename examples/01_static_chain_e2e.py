@@ -13,7 +13,7 @@ import pprint
 from lychee_mas import REGISTRY
 from lychee_mas.core.types import TaskQuery
 from lychee_mas.pipeline import Orchestrator
-from lychee_mas.stores import TraceStore
+from lychee_mas.trace import TraceStore
 
 
 async def main() -> None:
@@ -23,7 +23,7 @@ async def main() -> None:
         gold="8",
     )
 
-    # TraceStore 接到 runtime.intercept 的每条 Message（L3/L4/L5 的数据来源）
+    # TraceStore 接到 runtime.intercept 的每条 Message（记忆/处理/训练 的数据来源）
     trace = TraceStore()
 
     # Orchestrator：runtime=mock（离线确定性）+ 静态 default 团队（manager->worker->verifier）
@@ -40,10 +40,10 @@ async def main() -> None:
     for m in trajectory.messages:
         print(f"  [{m.round}] {m.sender}: {m.content[:60]}")
 
-    # 顺带演示一个真实可跑的 L4 聚合器（多数投票）
+    # 顺带演示一个真实可跑的聚合器（多数投票）
     agg = REGISTRY.create("aggregator", "self_consistency")
     voted = agg.aggregate([trajectory, trajectory])
-    print("\n=== L4 self_consistency 多数投票 ===")
+    print("\n=== self_consistency 多数投票 ===")
     print("voted answer :", voted.content, "| confidence:", round(voted.confidence, 3))
 
     print("\n=== REGISTRY.snapshot() ===")

@@ -23,8 +23,13 @@ data/processed/
 .ruff_cache/
 .mypy_cache/
 
+# 文档站构建产物（MkDocs）
+site/
+.cache/
+
 # OS
 .DS_Store
 
-# Claude Code 本地配置（不共享）
+# Claude Code 本地状态（会话/worktrees/本地配置，不共享）
+.claude/
 **/.claude/settings.local.json

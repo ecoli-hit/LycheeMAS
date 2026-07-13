@@ -4,7 +4,7 @@
 默认 runtime=mock，可完全离线跑通：构建一张静态 MASGraph + 一个 TaskQuery -> Runtime.run ->
 Trajectory。
 
-闭环（后续）：在 run 之后接 L4 聚合 / L5 归因→信用→训练→反哺；当前 P0 先打通 construct + runtime。
+闭环（后续）：在 run 之后接处理层聚合 / 归因→信用→训练→反哺；当前 P0 先打通 construct + runtime。
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class Orchestrator:
       - runtime: 运行时名（REGISTRY "runtime" 类别），默认 "mock"（离线确定性）。
       - team:    静态拓扑的队伍 profile 名（topology_generator/static），默认 "default"。
       - aggregator: 可选聚合器名（REGISTRY "aggregator"）；给出则对 [trajectory] 聚合出最终 Answer。
-      - trace_store: 可选 stores.TraceStore；给出则把每条 Message 通过 runtime.intercept 写入。
+      - trace_store: 可选 trace.TraceStore；给出则把每条 Message 通过 runtime.intercept 写入。
       - runtime_kwargs: 透传给 runtime 构造（如 autogen 后端的 backend/ctx）。
       - selector: 可选 agent_selector 名（如 "agentinit"）。给出时**由 selector 决定团队成员**，
         `team` 的角色被覆盖、仅余 `meta["team"]` 标签（rounds 由 `--rounds` 决定，与 team 无关），

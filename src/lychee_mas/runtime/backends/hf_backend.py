@@ -174,6 +174,29 @@ class HFBackend:
             out = self.model(input_ids=t, use_cache=True)
             return [(lyr.keys.detach(), lyr.values.detach()) for lyr in out.past_key_values.layers]
 
+    # ---- C2C latent 通道（MAS 内）：把上一个 agent 的 KV 融进本 agent 生成 ----
+    def generate_chat_with_c2c(self, messages: List[Dict], source_messages: List[Dict],
+                               projectors, max_new_tokens: int = 256,
+                               min_align: int = 8) -> GenResult:
+        """source_messages = 上一个 agent 的完整输入(+输出)；messages = 本 agent 的 prompt。
+
+        两者各自套 chat 模板分词，按**最长公共 token 块**对齐（= 共享的问题/上文区段，token 一致），
+        只在该跨度上做逐层 KV 融合（projector 把 source-KV 融进 target-KV）。公共块过短(<min_align)
+        说明没有可对齐的共享上下文 ⇒ 退回普通生成（不融合）。成本：prefix_len 记为 source 长度。
+        """
+        src_ids = self._chat_ids(source_messages)[0].tolist()
+        tgt_ids = self._chat_ids(messages)[0].tolist()
+        si, ti, L = longest_common_block(src_ids, tgt_ids)
+        if L < min_align:
+            return self.generate_chat(messages, max_new_tokens)  # 无共享跨度 -> 不融合
+        source_layers = self.encode_kv_cache_ids(src_ids)
+        g = self.generate_chat_with_cache_fusion(
+            messages, source_layers, projectors, max_new_tokens=max_new_tokens,
+            src_span=(si, L), tgt_span=(ti, L))
+        # 把 source 编码开销计入成本轴；prefix_len 记 source 长度（≈latent 载荷大小）
+        return GenResult(g.text, g.n_prompt_pos + len(src_ids), g.n_gen_tokens, g.latency_s,
+                         prefix_len=len(src_ids))
+
     # ---- C2C 原语：prefill 时逐层把 source KV 经 projector 融合进 target KV，再生成 ----
     def generate_chat_with_cache_fusion(self, messages: List[Dict], source_layers, projectors,
                                         max_new_tokens: int = 256,
@@ -208,6 +231,32 @@ def common_suffix_len(a, b) -> int:
     while k < len(a) and k < len(b) and a[-1 - k] == b[-1 - k]:
         k += 1
     return k
+
+
+def longest_common_block(a, b):
+    """两个 token id 序列的**最长公共连续子串**，返回 (a_start, b_start, length)。
+
+    用于 MAS 内 C2C 对齐：source/target 都套了各自的 chat 模板，但共享的「问题/上文」区段 token
+    完全一致；取最长公共连续块即为可融合跨度（两边绝对位置可不同）。滚动 DP，O(len(a)*len(b))。
+    """
+    a = list(a)
+    b = list(b)
+    n, m = len(a), len(b)
+    if n == 0 or m == 0:
+        return (0, 0, 0)
+    prev = [0] * (m + 1)
+    best = end_i = end_j = 0
+    for i in range(1, n + 1):
+        cur = [0] * (m + 1)
+        ai = a[i - 1]
+        for j in range(1, m + 1):
+            if ai == b[j - 1]:
+                v = prev[j - 1] + 1
+                cur[j] = v
+                if v > best:
+                    best, end_i, end_j = v, i, j
+        prev = cur
+    return (end_i - best, end_j - best, best)
 
 
 def make_fusion_cache(source_layers, projectors, config, src_span=None, tgt_span=None):

@@ -7,6 +7,10 @@
 路由器（fixed 固定通道，对应 none/nl_only/latent_only/both 四种消融）、RoutingContext（跨 agent
 共享状态）、AutoGenRuntime 拼起来。逻辑对齐旧原型 src-bak/LycheeMAS/run_mas.py。
 
+**跑几次由 处理层决定**：本驱动把「跑一次 MAS 产一条轨迹」封成 runner 交给 processor——
+K=1 用 `processor/serial`（跑 1 次），K>1 用 `processor/parallel`（并发跑 K 次 + aggregator 聚合）。
+pass@1 仍对每条轨迹单独评分；parallel 的聚合答案在配了 aggregator 时作为 vote_acc 上报。
+
 跑法（需 extras：autogen + torch + transformers；数据走 CDM_DATA_ROOT）：
   CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
       python scripts/run_mas.py --config configs/aime_both.yaml
@@ -53,9 +57,9 @@ async def run_one(cfg: dict, args) -> dict:
     from lychee_mas.eval.benchmarks import load as load_task
     from lychee_mas.eval.task_config import team_name_for_task
     from lychee_mas.layers.construct.templates import StaticTopology
-    from lychee_mas.layers.memory.managers.cdm import DualChannelMemoryManager
-    from lychee_mas.layers.memory.routing.context import RoutingContext
-    from lychee_mas.layers.memory.routing.static import fixed_channel_router
+    from lychee_mas.memory.context import RoutingContext
+    from lychee_mas.memory.managers.DualChannelMemory import DualChannelMemoryManager
+    from lychee_mas.memory.routing.static import fixed_channel_router
     from lychee_mas.runtime.backends.autogen_runtime import AutoGenRuntime
     from lychee_mas.runtime.backends.hf_backend import HFBackend
 
@@ -78,11 +82,15 @@ async def run_one(cfg: dict, args) -> dict:
     temperature = float(_get(cfg, "backend.temperature", 0.7))
     top_p = float(_get(cfg, "backend.top_p", 0.8))
     seed = int(_get(cfg, "backend.seed", 0))
-    P = args.P if args.P is not None else int(_get(cfg, "router.P", 16))
+    # P（latent prefix 长度）现归 latent 通道：优先 memory.P，回退旧位置 router.P（向后兼容）
+    P = args.P if args.P is not None else int(_get(cfg, "memory.P", _get(cfg, "router.P", 16)))
     latent_strategy = _get(cfg, "memory.latent_strategy", "soft_token")
     nl_strategy = _get(cfg, "memory.nl_strategy", "prev_output")
     max_encode_tokens = int(_get(cfg, "memory.max_encode_tokens", 4096))
     include_transcript = bool(_get(cfg, "memory.include_transcript", True))
+    c2c_ckpt = args.c2c_ckpt or _get(cfg, "memory.c2c_ckpt")  # latent_strategy=c2c 时必填
+    c2c_gate = _get(cfg, "memory.c2c_gate", "soft")
+    nl_simplemem = _get(cfg, "memory.nl_simplemem")  # simplemem 策略传给 SimpleMem(...) 的 kwargs
     raw_n = args.n if args.n is not None else _get(cfg, "run.n", "all")
     n_samples = None if str(raw_n) in ("None", "all", "full", "0") else int(raw_n)
     max_rounds = int(_get(cfg, "run.max_rounds", 2))
@@ -99,23 +107,35 @@ async def run_one(cfg: dict, args) -> dict:
     memory = DualChannelMemoryManager(backend, latent_strategy=latent_strategy,
                                       nl_strategy=nl_strategy,
                                       max_encode_tokens=max_encode_tokens,
-                                      include_transcript=include_transcript)
-    router = fixed_channel_router(FIXED[method], P=P)
+                                      include_transcript=include_transcript,
+                                      P=P, c2c_ckpt=c2c_ckpt, c2c_gate=c2c_gate,
+                                      nl_simplemem=nl_simplemem)
+    router = fixed_channel_router(FIXED[method])
     # ---- 数据 + 拓扑（按 team）----
     data = load_task(task, n=n_samples)
     kind = data[0]["kind"]
     profile = team_profile or team_name_for_task(task)
     graph = StaticTopology(team=profile, model=None, rounds=max_rounds).build()
-    # ---- 共享 ctx + runtime（每样本 ctx.reset；同一 backend/graph 复用）----
+    # ---- 共享 ctx + runtime（每次 run 在 runner 内 ctx.reset；同一 backend/graph 复用）----
     ctx = RoutingContext(task=task, router=router, memory=memory, team=team_profile)
     runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
                              max_rounds=max_rounds, model_id=model_tag)
-    # pass@1：K>1 时每题采样 K 条轨迹，**对每条单独评分**；pass@1 = 平均单样本准确率（不投票）。
-    # aggregator 可选：给出则额外报投票准确率 vote_acc，但主指标恒为 pass@1。
-    aggregator = REGISTRY.create("aggregator", agg_name) if (n_runs > 1 and agg_name) else None
+    # 处理层：串/并行由采样数 K 决定——
+    #   K=1 → processor/serial   ：跑 1 次、产 1 条轨迹（无聚合）。
+    #   K>1 → processor/parallel ：并发跑 K 次、产 K 条轨迹，用 aggregator 聚合出 res.answer。
+    # pass@1 仍对**每条轨迹单独评分**（不投票）；res.answer（并行聚合答案）仅当配置了 aggregator
+    # 时作为 vote_acc 上报。
+    if n_runs > 1:
+        processor = REGISTRY.create("processor", "parallel",
+                                    k=n_runs, aggregator=agg_name or "self_consistency")
+    else:
+        processor = REGISTRY.create("processor", "serial")
     if n_runs > 1 and not do_sample:
         print("[warn] samples>1 但 backend.do_sample=false，多次采样会相同；建议开 do_sample",
               flush=True)
+    # 共享 ctx/memory/backend（单模型）非并发安全：用锁把每次 reset→run 变成原子临界区
+    # （parallel 处理器 gather 下由此串行化；单 GPU 生成本就串行，正确性优先）。
+    run_lock = asyncio.Lock()
     # 落盘标签：多采样加 _passK 避免与贪心结果撞目录
     base_label = f"{team_profile}_{method}" if team_profile else method
     run_label = f"{base_label}_pass{n_runs}" if n_runs > 1 else base_label
@@ -129,22 +149,25 @@ async def run_one(cfg: dict, args) -> dict:
     for i, it in enumerate(data):
         q = TaskQuery(question=it["question"], context=it.get("context"),
                       gold=it["gold"], meta={"kind": kind})
-        trajs, per_correct = [], []
-        for _k in range(n_runs):
-            ctx.reset()  # 每条轨迹清 turn/决策/记忆库
-            if it.get("context") and hasattr(memory, "seed"):
-                memory.seed(it["context"])  # 长程记忆任务预载（AIME 无 context 不触发）
-            t = await runtime.run(graph, q)
-            trajs.append(t)
-            pk = t.final_answer.content if t.final_answer else ""
-            per_correct.append(M.score(kind, pk, it["gold"]))
+        async def _runner(it=it, q=q):
+            # 跑一次 MAS 产一条轨迹；reset→run 在锁内原子完成（清 turn/决策/记忆库 + 可选 seed）
+            async with run_lock:
+                ctx.reset()
+                if it.get("context") and hasattr(memory, "seed"):
+                    memory.seed(it["context"])  # 长程记忆任务预载（AIME 无 context 不触发）
+                return await runtime.run(graph, q)
+        # 交给处理层执行：serial 调 1 次 / parallel 并发调 K 次并聚合
+        res = await processor.run(_runner)
+        trajs = res.trajectories
+        per_correct = [M.score(kind, (t.final_answer.content if t.final_answer else ""),
+                               it["gold"]) for t in trajs]
         answers = [(t.final_answer.content if t.final_answer else "") for t in trajs]
         n_ok = sum(per_correct)
         correct_samples += n_ok
         total_samples += len(per_correct)
         passk_hits += int(n_ok > 0)
-        if aggregator is not None:
-            vote_correct += M.score(kind, aggregator.aggregate(trajs).content, it["gold"])
+        if agg_name and n_runs > 1:  # 并行聚合答案（res.answer）作为可选投票准确率
+            vote_correct += M.score(kind, res.answer.content, it["gold"])
         for t in trajs:  # 成本：K 条轨迹所有 agent 轮次决策求和
             decs = t.meta.get("decisions", [])
             pos_sum += sum(int(d.get("prompt_pos", 0)) for d in decs)
@@ -172,7 +195,7 @@ async def run_one(cfg: dict, args) -> dict:
         "gen_tokens_mean": round(gen_sum / ts, 1),
         "latency_s_mean": round(lat_sum / ts, 3),
         "messages_mean": round(msg_sum / ts, 2)}
-    if aggregator is not None:
+    if agg_name and n_runs > 1:
         metrics["vote_acc"] = round(vote_correct / n, 4) if n else None
     out_dir = M.result_dir(model_tag, run_label, task, root=results_root)
     snapshot = {"config_file": args.config, "config": cfg,
@@ -193,6 +216,8 @@ def main() -> None:
     ap.add_argument("--team", default=None, help="覆盖 run.team（如 single）")
     ap.add_argument("--n", default=None, help="样本数；all/0=全量")
     ap.add_argument("--P", type=int, default=None, help="latent prefix 长度")
+    ap.add_argument("--c2c-ckpt", dest="c2c_ckpt", default=None,
+                    help="latent_strategy=c2c 的 projector ckpt（覆盖 memory.c2c_ckpt）")
     ap.add_argument("--samples", type=int, default=None, help="每题采样轨迹数 K（自一致性，>1）")
     ap.add_argument("--aggregator", default=None, help="K>1 时聚合器名（如 self_consistency）")
     ap.add_argument("--model-path", dest="model_path", default=None)

@@ -1,7 +1,8 @@
 # LycheeMAS Makefile —— recipe 前缀用 '>'（CLAUDE.md §2 的 .RECIPEPREFIX 约定）。
 # 环境约定：先 `conda activate LycheeMAS && source .venv/bin/activate`（uv 管理的 venv），再跑 install/install-all。
 .RECIPEPREFIX := >
-.PHONY: venv install install-all demo test lint format typecheck clean snapshot selfcheck
+.PHONY: venv install install-all demo test lint format typecheck clean snapshot selfcheck \
+        docs-install docs docs-remote docs-build
 
 # 用 uv 创建项目 .venv（Python 3.12）；之后 `source .venv/bin/activate` 再 make install-all
 venv:
@@ -45,3 +46,20 @@ snapshot:
 # 验证零重依赖：import 框架后不应加载 torch/autogen 等（应输出 HEAVY LOADED: NONE）
 selfcheck:
 > PYTHONPATH=src python -c "import sys, lychee_mas; print('HEAVY LOADED:', [m for m in ('torch','transformers','autogen_core','autogen_agentchat','numpy','yaml','sympy','datasets') if m in sys.modules] or 'NONE')"
+
+# ---- 文档站（MkDocs Material + mkdocstrings；griffe 静态解析，构建不 import 框架，无需 torch/autogen）----
+# DISABLE_MKDOCS_2_WARNING：屏蔽 gen-files/literate-nav/section-index 依赖的 properdocs 打的推广横幅。
+docs-install:
+> uv pip install -e ".[docs]"
+
+# 本机热更新预览：改 docstring/页面即刷新。打开 http://127.0.0.1:8000
+docs:
+> DISABLE_MKDOCS_2_WARNING=true mkdocs serve -a 127.0.0.1:8000
+
+# 远程服务器：绑 0.0.0.0，从本地浏览器访问 http://<服务器IP>:8000
+docs-remote:
+> DISABLE_MKDOCS_2_WARNING=true mkdocs serve -a 0.0.0.0:8000
+
+# 生成静态站点到 site/（--strict：断链/坏引用即失败）
+docs-build:
+> DISABLE_MKDOCS_2_WARNING=true mkdocs build --strict

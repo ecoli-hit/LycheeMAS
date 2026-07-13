@@ -53,7 +53,7 @@ class MockRuntime(BaseRuntime):
                     meta={"mock": True},
                 )
                 traj.add(msg)
-                self._emit(msg)  # 逐消息回调（写 TraceStore / L3 抽取）
+                self._emit(msg)  # 逐消息回调（写 TraceStore / 抽取）
                 prev = content
                 round_idx += 1
 

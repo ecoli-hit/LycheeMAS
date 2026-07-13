@@ -1,8 +1,8 @@
-# 04 · MASPO 开发文档（L5 归因训练）
+# 04 · MASPO 开发文档（归因训练）
 
 > 论文：**MASPO: Joint Prompt Optimization for LLM-based Multi-Agent Systems**（ICML 2026, CCF-A）
 > arXiv [2605.06623](https://arxiv.org/abs/2605.06623) · ICML [poster 62219](https://icml.cc/virtual/2026/poster/62219) · 代码 [github.com/wangzx1219/MASPO](https://github.com/wangzx1219/MASPO)
-> 目标：把 `trainer/maspo` 从桩接成真实组件，并搭最小 L5 训练闭环。
+> 目标：把 `trainer/maspo` 从桩接成真实组件，并搭最小 训练闭环。
 > 把握度 🟢（官方仓库 + arXiv 确证）。先读 [README.md](README.md) §3 共性事实。
 
 ---
@@ -60,10 +60,10 @@ score    = win_rate − 0.5
 
 ## 2. 在框架中的定位
 
-- **层**：L5 归因训练（`layers/attribute_train/`）。
+- **层**：归因训练（`train/`）。
 - **类别 / 注册名**：`trainer` / `maspo`（提示级、无权重更新，定位为廉价基线 / 暖启动）。
-- **协议**：`attribute_train/base.py::Trainer`（+ 复用 `CreditAssigner`/`FailureAttributor`/`Attribution`）。
-- **当前桩**：`src/lychee_mas/layers/attribute_train/__init__.py:63`（`MASPOTrainer`，`credits()`/`train()` 抛 `NotImplementedError`）。
+- **协议**：`train/base.py::Trainer`（+ 复用 `trace` 包的 `CreditAssigner`/`FailureAttributor`/`Attribution`）。
+- **当前桩**：`src/lychee_mas/train/__init__.py:63`（`MASPOTrainer`，`credits()`/`train()` 抛 `NotImplementedError`）。
 
 **关键定位判断**：MASPO 是**离线训练闭环**，不进 `Orchestrator.run()`。它需要一个**独立训练驱动**（采样→评分→信用→改 prompt→反哺）。MASPO 自带 MAS/优化器机器，迁移时**借优化逻辑，跑 MAS 用我们的 `Runtime`**。
 
@@ -71,7 +71,7 @@ score    = win_rate − 0.5
 
 ## 3. 接口函数（签名对齐）
 
-`attribute_train/base.py`（原样）：
+`train/base.py`（原样）：
 
 ```python
 @dataclass
@@ -104,8 +104,8 @@ MASPO 语义映射到该接口：
 
 | 动作 | 文件 | 说明 |
 |---|---|---|
-| **实现类** | `src/lychee_mas/layers/attribute_train/trainers/maspo.py`（新建子包） | `class MASPOTrainer(Trainer)`，`@REGISTRY.register("trainer","maspo")`；重依赖惰性 import |
-| 替桩 + 触发注册 | `src/lychee_mas/layers/attribute_train/__init__.py` | 删 `MASPOTrainer` 桩，改为 `from .trainers.maspo import MASPOTrainer`；建 `trainers/__init__.py` import 之 |
+| **实现类** | `src/lychee_mas/train/trainers/maspo.py`（新建子包） | `class MASPOTrainer(Trainer)`，`@REGISTRY.register("trainer","maspo")`；重依赖惰性 import |
+| 替桩 + 触发注册 | `src/lychee_mas/train/__init__.py` | 删 `MASPOTrainer` 桩，改为 `from .trainers.maspo import MASPOTrainer`；建 `trainers/__init__.py` import 之 |
 | 三维信用 | 同 `maspo.py` 或 `credit_assigner/attribution_guided` | `_evaluate_candidate` → `credits(attrs, reward)`；可顺带把 `credit_assigner/attribution_guided` 一起接（核心贡献） |
 | **训练驱动** | `scripts/train_maspo.py`（新建） | 采样(`Orchestrator`+`TraceStore`)→评分(`eval.metrics`)→`trainer.train`→把新 prompt 写回 `configs/agents/*` 或 `runs/` |
 | Judge/reward | 复用 `src/lychee_mas/eval/metrics.py::score` | 数学/选择题用现成评分；代码任务再加 `CodeJudge`（惰性） |
@@ -113,7 +113,7 @@ MASPO 语义映射到该接口：
 | 测试 | `tests/test_maspo.py`（新建） | 离线 mock generator/judge，测束搜索 + 三维评分逻辑（不调真 LLM） |
 | 依赖 | `pyproject.toml` | 加 optional extra `[train]`（litellm/openai/dspy/datasets 等） |
 
-> `attribute_train/__init__.py` 与 `trainers/__init__.py` 被 import 时**不得触发** litellm/openai/torch（`make selfcheck` 须仍 `HEAVY LOADED: NONE`）；重依赖只在 `train()`/`generator` 调用路径内惰性 import。
+> `train/__init__.py` 与 `trainers/__init__.py` 被 import 时**不得触发** litellm/openai/torch（`make selfcheck` 须仍 `HEAVY LOADED: NONE`）；重依赖只在 `train()`/`generator` 调用路径内惰性 import。
 
 ---
 
@@ -163,14 +163,14 @@ scripts/train_maspo.py:
 - **M3（束搜索 + 驱动, ~3–4d）**：`process_single_node` 等价的束搜索；`scripts/train_maspo.py` 采样→评分→改 prompt→反哺；接 `Runtime`（mock 先行）。
 - **M4（接真 LLM + 实验, ~3–5d）**：`[train]` extra + 真 generator/judge；在 GSM8K/MATH 等复现 +2.9 量级提升；落 `runs/`。
 
-六步对齐：①读 `attribute_train/base.py`（已确认）→②写 `trainers/maspo.py`+注册 →③`__init__` 触发 →④`configs/trainer/maspo.yaml` →⑤`tests/test_maspo.py` →⑥`make lint/test/selfcheck`。
+六步对齐：①读 `train/base.py`（已确认）→②写 `trainers/maspo.py`+注册 →③`__init__` 触发 →④`configs/trainer/maspo.yaml` →⑤`tests/test_maspo.py` →⑥`make lint/test/selfcheck`。
 
 ---
 
 ## 8. 配置 `configs/trainer/maspo.yaml`
 
 ```yaml
-# L5 trainer/maspo 超参（对齐论文默认）
+# trainer/maspo 超参（对齐论文默认）
 beam_width: 2
 max_total_depth: 9
 rounds_per_turn: 3
@@ -219,7 +219,7 @@ judge:
 
 ## 11. 验收标准
 
-- `make lint && make test && make selfcheck` 全绿（`HEAVY LOADED: NONE`；`attribute_train` import 不触发 litellm/torch）。
+- `make lint && make test && make selfcheck` 全绿（`HEAVY LOADED: NONE`；`train` import 不触发 litellm/torch）。
 - 离线 `tests/test_maspo.py` 全过（mock generator/judge）。
 - `scripts/train_maspo.py --runtime mock --team aime --n 5 --no-llm`（或等价 dry-run）能跑通闭环、产出更新后的 prompt 文件。
 - 条件允许：接真 LLM 在小样本上跑 1 round，prompt 被合理改写、acc 不下降。
@@ -229,5 +229,5 @@ judge:
 ## 12. 预期时间 + 风险依赖
 
 - **预期时间**：10–15 人天（M1 2d + M2 2d + M3 3–4d + M4 3–5d）。仅"骨架 + 三维信用 + mock 闭环"则 ~5–6 人天。
-- **依赖**：L5 闭环此前完全未接（本篇搭最小驱动）；LLM 调用（generator/judge）→ `[train]` extra；`MASGraph.edges` 取前驱/后继（若已由 02 落地则直接复用）。
+- **依赖**：闭环此前完全未接（本篇搭最小驱动）；LLM 调用（generator/judge）→ `[train]` extra；`MASGraph.edges` 取前驱/后继（若已由 02 落地则直接复用）。
 - **风险**：① 真 LLM 优化成本高（k=50 × beam × depth × rounds 次重跑），先用 mock + 小 k 打通；② 三维评分需"重跑单节点取输出"，要把官方 `arun_single_node_only` 正确映射到我们的 `Runtime`（最小子图重跑）；③ 优化产物回填路径（写回 templates vs config vs selector）需与团队约定统一。
