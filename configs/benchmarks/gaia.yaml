@@ -1,0 +1,48 @@
+backend:
+  provider: api
+  model: qwen-vl-plus
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key_env: DASHSCOPE_API_KEY
+  temperature: 0.0
+  top_p: 1.0
+  seed: 0
+  enable_thinking: false
+  do_sample: false
+  # HF-only guards: keep local greedy decoding reproducible while avoiding
+  # runaway repeated-token generations and overlong accumulated contexts.
+  max_input_tokens: 28672
+  max_repeated_token_run: 128
+  repetition_penalty: 1.05
+  timeout: 180
+  model_info:
+    # Magentic-One/WebSurfer needs function calling and usually benefits from a
+    # vision-capable model. If the selected API model is text-only, set a
+    # DashScope VL model here and keep these capabilities truthful.
+    vision: true
+    function_calling: true
+    json_output: true
+    structured_output: false
+    family: unknown
+
+runtime:
+  name: autogen
+  max_turns: 20
+  max_stalls: 3
+  code_executor: docker
+  docker_image: lychee-gaia:local
+  code_timeout: 120
+  web_headless: true
+  save_screenshots: false
+  work_root: runs/benchmarks/workspaces/gaia
+
+router:
+  method: none
+  P: 0
+
+run:
+  task: gaia_validation_level_1
+  n: 1
+  max_new_tokens: 16384
+
+eval:
+  runs_root: runs/benchmarks

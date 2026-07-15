@@ -17,11 +17,18 @@ runs/
 checkpoints/
 data/raw/
 data/processed/
+data/benchmarks/
 
 # 工具缓存
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# 本地/内部 benchmark 交接与汇报材料（公开提交只保留 BENCHMARK_HANDOFF_PUBLIC.md）
+docs/BENCHMARK_HANDOFF_PRIVATE.md
+docs/BENCHMARK_FIVE_PAGE_REPORT.md
+docs/BENCHMARK_ONE_PAGE_REPORT.md
+docs/assets/benchmark-structure.svg
 
 # OS
 .DS_Store

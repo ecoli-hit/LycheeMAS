@@ -85,5 +85,4 @@ tests/           pytest（离线、零重依赖）
 docs/            开发文档（见 docs/DEVELOPMENT.md）
 ```
 
-> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、迁移映射表）见 `docs/DEVELOPMENT.md`。
-
+> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、迁移映射表）见 `docs/DEVELOPMENT.md`；benchmark 接入交接见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。

@@ -3,20 +3,37 @@ The logic in this file largely borrows from Qwen2.5-Math codebase at https://git
 """
 
 import re
+from functools import lru_cache
 from math import isclose
 
-import regex
-from latex2sympy2 import latex2sympy
-# from latex2sympy2_extended import latex2sympy
-from sympy import N, simplify
-from sympy.parsing.latex import parse_latex
-from sympy.parsing.sympy_parser import parse_expr
-from word2number import w2n
+
+@lru_cache(maxsize=1)
+def _regex():
+    import regex
+
+    return regex
+
+
+@lru_cache(maxsize=1)
+def _word2number():
+    from word2number import w2n
+
+    return w2n
+
+
+@lru_cache(maxsize=1)
+def _symbolic_tools():
+    from latex2sympy2_extended import latex2sympy
+    from sympy import N, simplify
+    from sympy.parsing.latex import parse_latex
+    from sympy.parsing.sympy_parser import parse_expr
+
+    return parse_latex, parse_expr, latex2sympy, simplify, N
 
 
 def convert_word_number(text: str) -> str:
     try:
-        text = str(w2n.word_to_num(text))
+        text = str(_word2number().word_to_num(text))
     except Exception:
         pass
     return text
@@ -349,7 +366,7 @@ def choice_answer_clean(pred: str):
 
 
 def parse_digits(num):
-    num = regex.sub(",", "", str(num))
+    num = _regex().sub(",", "", str(num))
     try:
         return float(num)
     except Exception:
@@ -459,8 +476,8 @@ def math_equal(
 
     ## [a, b] vs. [c, d], return a==c and b==d
     if (
-        regex.match(r"(\(|\[).+(\)|\])", prediction) is not None
-        and regex.match(r"(\(|\[).+(\)|\])", reference) is not None
+        _regex().match(r"(\(|\[).+(\)|\])", prediction) is not None
+        and _regex().match(r"(\(|\[).+(\)|\])", reference) is not None
     ):
         pred_parts = prediction[1:-1].split(",")
         ref_parts = reference[1:-1].split(",")
@@ -570,6 +587,8 @@ def numeric_equal(prediction: float, reference: float):
 
 
 def symbolic_equal(a, b):
+    parse_latex, parse_expr, latex2sympy, simplify, N = _symbolic_tools()
+
     def _parse(s):
         for f in [parse_latex, parse_expr, latex2sympy]:
             try:

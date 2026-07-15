@@ -26,6 +26,9 @@ autogen_core 的导入与 ChatCompletionClient 子类的「构造」都被惰性
 """
 from __future__ import annotations
 
+import json
+import re
+import uuid
 from typing import Any, Mapping, Optional, Sequence
 
 from ...core.registry import REGISTRY
@@ -33,6 +36,32 @@ from ...core.registry import REGISTRY
 # 注：NL 注入内容的来源标志由 NLMemory.recall 产出（见 memory/channels/nl.py 的
 # PREV_OUTPUT_HEADER），
 # 本文件把 bundle.nl_text 原样作为 system 消息插入。
+
+
+def _content_to_text(content: Any) -> str:
+    """Best-effort conversion for AutoGen message content.
+
+    Tool and multimodal messages may carry pydantic objects/lists. The HF/API
+    backends currently consume text chat messages, so preserve structured
+    content as compact JSON when possible instead of dropping it.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(_content_to_text(item) for item in content)
+    if hasattr(content, "model_dump"):
+        try:
+            return json.dumps(content.model_dump(mode="json"), ensure_ascii=False)
+        except Exception:
+            return str(content)
+    if hasattr(content, "__dict__"):
+        try:
+            return json.dumps(vars(content), ensure_ascii=False, default=str)
+        except Exception:
+            return str(content)
+    return str(content)
 
 
 def _to_chat(messages: Sequence[Any]):
@@ -51,14 +80,331 @@ def _to_chat(messages: Sequence[Any]):
         if isinstance(m, SystemMessage):
             out.append({"role": "system", "content": m.content})
         elif isinstance(m, AssistantMessage):
-            c = m.content if isinstance(m.content, str) else str(m.content)
+            c = _content_to_text(m.content)
             out.append({"role": "assistant", "content": c, "source": m.source})
         elif isinstance(m, UserMessage):
-            c = m.content if isinstance(m.content, str) else str(m.content)
+            c = _content_to_text(m.content)
             out.append({"role": "user", "content": c, "source": getattr(m, "source", "user")})
         else:  # FunctionExecutionResultMessage 等 -> 压平成 user 文本
-            out.append({"role": "user", "content": str(getattr(m, "content", ""))})
+            source = getattr(m, "source", type(m).__name__)
+            content = _content_to_text(getattr(m, "content", ""))
+            out.append({"role": "user", "content": f"[{source}]\n{content}", "source": source})
     return out
+
+
+def _tool_schema(tool: Any) -> dict[str, Any]:
+    if isinstance(tool, Mapping):
+        schema = dict(tool)
+        function = schema.get("function")
+        if isinstance(function, Mapping):
+            return {
+                "name": function.get("name"),
+                "description": function.get("description", ""),
+                "parameters": function.get("parameters", {}),
+            }
+        return schema
+    schema = getattr(tool, "schema", None)
+    if isinstance(schema, Mapping):
+        return dict(schema)
+    if hasattr(tool, "model_dump"):
+        try:
+            dumped = tool.model_dump(mode="json")
+            if isinstance(dumped, Mapping):
+                return dict(dumped)
+        except Exception:
+            pass
+    return {
+        "name": getattr(tool, "name", type(tool).__name__),
+        "description": getattr(tool, "description", getattr(tool, "__doc__", "") or ""),
+    }
+
+
+def _tool_prompt(tools: Sequence[Any]) -> str:
+    schemas = [_tool_schema(tool) for tool in tools]
+    return (
+        "You may call tools when needed. If you need a tool, respond with ONLY a JSON "
+        "object in one of these forms:\n"
+        '{"tool": "<tool_name>", "arguments": {...}}\n'
+        '{"tool_calls": [{"name": "<tool_name>", "arguments": {...}}]}\n'
+        "Do not wrap tool-call JSON in markdown. Available tools:\n"
+        f"{json.dumps(schemas, ensure_ascii=False, indent=2)}"
+    )
+
+
+def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r"\s*```$", "", stripped)
+    candidates = [stripped]
+    match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+    if match:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _extract_balanced_json(text: str) -> Optional[Any]:
+    """Extract the first balanced JSON value without treating markdown fences
+    inside JSON strings as delimiters.
+
+    AutoGen's Magentic-One ledger parser accepts fenced JSON, but its helper
+    uses a simple markdown-code-block regex. If the model writes a Python code
+    fence inside ``instruction_or_question.answer``, that regex truncates the
+    outer JSON block. Scanning braces while respecting string escapes avoids
+    that failure mode.
+    """
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        ch = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                candidate = text[start:index + 1]
+                try:
+                    return json.loads(candidate)
+                except Exception:
+                    return None
+    return None
+
+
+def _normalise_json_response(text: str) -> tuple[str, bool]:
+    """Return a parser-friendly JSON string when the model was asked for JSON."""
+    stripped = text.strip()
+    candidates = [stripped]
+    if stripped.startswith("```"):
+        unfenced = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+        unfenced = re.sub(r"\s*```$", "", unfenced)
+        candidates.append(unfenced)
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except Exception:
+            continue
+        return json.dumps(value, ensure_ascii=False), candidate != stripped
+    value = _extract_balanced_json(stripped)
+    if value is not None:
+        return json.dumps(value, ensure_ascii=False), True
+    return text, False
+
+
+def _extract_magentic_one_names(messages: Sequence[dict[str, Any]]) -> list[str]:
+    for msg in reversed(messages):
+        text = str(msg.get("content", ""))
+        match = re.search(r"Who should speak next\?\s*\(select from:\s*([^)]+)\)", text)
+        if not match:
+            continue
+        names = [part.strip() for part in match.group(1).split(",") if part.strip()]
+        if names:
+            return names
+    return []
+
+
+def _coerce_bool_answer(entry: Any) -> None:
+    if not isinstance(entry, dict):
+        return
+    value = entry.get("answer")
+    if isinstance(value, bool):
+        return
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes"}:
+            entry["answer"] = True
+        elif lowered in {"false", "no"}:
+            entry["answer"] = False
+
+
+def _choose_next_speaker(ledger: dict[str, Any], names: list[str]) -> str | None:
+    if not names:
+        return None
+    lower_to_name = {name.lower(): name for name in names}
+    raw_next = str((ledger.get("next_speaker") or {}).get("answer") or "").strip()
+    if raw_next.lower() in lower_to_name:
+        return lower_to_name[raw_next.lower()]
+
+    text = json.dumps(ledger, ensure_ascii=False).lower()
+    preferences = [
+        ("file", ["file", "spreadsheet", "xlsx", "csv", "pdf", "image", "attachment"]),
+        ("web", ["web", "search", "look up", "lookup", "website", "internet", "zip code", "verify"]),
+        ("coder", ["code", "python", "compute", "calculate", "script", "program"]),
+        ("computer", ["terminal", "execute", "run command", "shell"]),
+    ]
+    for prefix, needles in preferences:
+        if any(needle in text for needle in needles):
+            for name in names:
+                if name.lower().startswith(prefix):
+                    return name
+    return names[0]
+
+
+def _ledger_indicates_no_more_work(ledger: dict[str, Any]) -> bool:
+    text = json.dumps(ledger, ensure_ascii=False).lower()
+    markers = [
+        "no additional action",
+        "no further action",
+        "no further search",
+        "further search or analysis is unnecessary",
+        "no additional work",
+        "no more work",
+        "not required",
+        "not needed",
+        "final answer",
+        "the answer is",
+        "therefore, the answer",
+    ]
+    return any(marker in text for marker in markers)
+
+
+def _repair_magentic_one_ledger(text: str, messages: Sequence[dict[str, Any]]) -> tuple[str, bool, str]:
+    try:
+        ledger = json.loads(text)
+    except Exception:
+        return text, False, ""
+    if not isinstance(ledger, dict):
+        return text, False, ""
+    required = [
+        "is_request_satisfied",
+        "is_progress_being_made",
+        "is_in_loop",
+        "instruction_or_question",
+        "next_speaker",
+    ]
+    if not all(isinstance(ledger.get(key), dict) for key in required):
+        return text, False, ""
+
+    repaired_reasons: list[str] = []
+    for key in ("is_request_satisfied", "is_progress_being_made", "is_in_loop"):
+        before = (ledger.get(key) or {}).get("answer")
+        _coerce_bool_answer(ledger.get(key))
+        after = (ledger.get(key) or {}).get("answer")
+        if before != after:
+            repaired_reasons.append(f"coerced {key}.answer to boolean")
+
+    names = _extract_magentic_one_names(messages)
+    satisfied = bool((ledger.get("is_request_satisfied") or {}).get("answer"))
+    next_entry = ledger.get("next_speaker") or {}
+    next_answer = str(next_entry.get("answer") or "").strip()
+    if not satisfied:
+        valid_names = {name.lower() for name in names}
+        if not next_answer or next_answer.lower() not in valid_names:
+            instruction = ledger.get("instruction_or_question") or {}
+            if _ledger_indicates_no_more_work(ledger):
+                satisfied_entry = ledger.get("is_request_satisfied") or {}
+                satisfied_entry["answer"] = True
+                satisfied_entry["reason"] = (
+                    str(satisfied_entry.get("reason") or "").strip()
+                    or str(instruction.get("reason") or "").strip()
+                    or str(next_entry.get("reason") or "").strip()
+                    or "The ledger indicates no further action is needed."
+                )
+                ledger["is_request_satisfied"] = satisfied_entry
+                if not next_answer:
+                    next_entry["answer"] = names[0] if names else ""
+                    next_entry["reason"] = (
+                        str(next_entry.get("reason") or "").strip()
+                        or "The task is being marked complete; next speaker will not be used."
+                    )
+                    ledger["next_speaker"] = next_entry
+                if not str(instruction.get("answer") or "").strip():
+                    instruction["answer"] = "Prepare the final answer based on the completed investigation."
+                    instruction["reason"] = (
+                        str(instruction.get("reason") or "").strip()
+                        or "The ledger indicates no further action is needed."
+                    )
+                    ledger["instruction_or_question"] = instruction
+                repaired_reasons.append("marked request satisfied because ledger indicates no further action")
+                return json.dumps(ledger, ensure_ascii=False), True, "; ".join(repaired_reasons)
+
+            speaker = _choose_next_speaker(ledger, names)
+            if speaker:
+                next_entry["answer"] = speaker
+                next_entry["reason"] = (
+                    str(next_entry.get("reason") or "").strip()
+                    or "The previous ledger did not name a valid next speaker."
+                )
+                ledger["next_speaker"] = next_entry
+                repaired_reasons.append(
+                    f"replaced invalid next_speaker {next_answer!r} with {speaker!r}"
+                )
+                if not str(instruction.get("answer") or "").strip():
+                    instruction["answer"] = (
+                        "Continue investigating the original request using your available capabilities, "
+                        "then report concise findings needed for the final answer."
+                    )
+                    instruction["reason"] = (
+                        str(instruction.get("reason") or "").strip()
+                        or "The previous ledger left the instruction empty."
+                    )
+                    ledger["instruction_or_question"] = instruction
+                    repaired_reasons.append("filled empty instruction_or_question.answer")
+
+    if not repaired_reasons:
+        return text, False, ""
+    return json.dumps(ledger, ensure_ascii=False), True, "; ".join(repaired_reasons)
+
+
+def _parse_tool_calls(text: str, tools: Sequence[Any]):
+    if not tools:
+        return None
+    data = _extract_json_object(text)
+    if not data:
+        return None
+    available = {_tool_schema(tool).get("name") for tool in tools}
+    raw_calls: list[dict[str, Any]] = []
+    if isinstance(data.get("tool_calls"), list):
+        raw_calls = [call for call in data["tool_calls"] if isinstance(call, dict)]
+    elif data.get("tool") or data.get("name"):
+        raw_calls = [data]
+    calls = []
+    from autogen_core import FunctionCall
+
+    for raw in raw_calls:
+        function = raw.get("function")
+        if isinstance(function, Mapping):
+            name = function.get("name")
+            args = function.get("arguments", raw.get("arguments", raw.get("args", {})))
+        else:
+            name = raw.get("name") or raw.get("tool") or raw.get("function")
+            args = raw.get("arguments", raw.get("args", {}))
+        if not name or name not in available:
+            continue
+        if isinstance(args, str):
+            args_text = args
+        else:
+            args_text = json.dumps(args or {}, ensure_ascii=False)
+        calls.append(FunctionCall(id=raw.get("id") or f"call_{uuid.uuid4().hex[:12]}",
+                                  name=str(name), arguments=args_text))
+    return calls or None
+
+
+def _preview_text(text: str, head: int = 60, tail: int = 60) -> str:
+    compact = text.replace("\n", "\\n")
+    if len(compact) <= head + tail + 5:
+        return compact
+    return f"{compact[:head]} ... {compact[-tail:]}"
 
 
 def _build_injection_client_class():
@@ -116,6 +462,25 @@ def _build_injection_client_class():
 
             # ---- 注入 ----
             send_msgs = list(chat)
+            if json_output:
+                insert_at = 0
+                while insert_at < len(send_msgs) and send_msgs[insert_at]["role"] == "system":
+                    insert_at += 1
+                send_msgs.insert(insert_at, {
+                    "role": "system",
+                    "content": (
+                        "Return exactly one valid JSON object and nothing else. "
+                        "Do not wrap JSON in markdown fences. If a JSON string "
+                        "needs to mention code, do not use triple-backtick code fences."
+                    ),
+                })
+
+            if tools:
+                insert_at = 0
+                while insert_at < len(send_msgs) and send_msgs[insert_at]["role"] == "system":
+                    insert_at += 1
+                send_msgs.insert(insert_at, {"role": "system", "content": _tool_prompt(tools)})
+
             if bundle.nl_text:
                 # NL 通道：把记忆作为一条 system 消息，插在开头 system 提示之后、对话之前
                 insert_at = 0
@@ -123,28 +488,143 @@ def _build_injection_client_class():
                     insert_at += 1
                 send_msgs.insert(insert_at, {"role": "system", "content": bundle.nl_text})
 
-            if bundle.latent_prefix is not None:
-                # latent 通道：把 prefix 张量拼到 token embedding 前（在 backend 的 embedding 层注
-                # 入）
-                g = self.backend.generate_chat_with_prefix(send_msgs, bundle.latent_prefix,
-                                                           max_new_tokens=self.max_new_tokens)
-            else:
-                # 无 latent：走普通文本生成（none / nl_only 都走这里）
-                g = self.backend.generate_chat(send_msgs, max_new_tokens=self.max_new_tokens)
-
+            trace_model_calls = bool(getattr(self.ctx, "trace_model_calls", True))
+            input_chars = sum(len(str(m.get("content", ""))) for m in send_msgs)
             input_messages = [{"role": m["role"], "content": m["content"]} for m in send_msgs]
+            span_id = self.ctx.log_span(
+                "model_call_start",
+                role=self.role,
+                turn=turn,
+                sender=sender,
+                message_count=len(send_msgs),
+                input_chars=input_chars,
+                tool_count=len(tools),
+                tool_choice=tool_choice,
+                json_output_requested=bool(json_output),
+                max_new_tokens=self.max_new_tokens,
+                memory_channel=decision.channel,
+                latent_prefix_requested=decision.P,
+                routing_reason=decision.reason,
+                nl_memory_chars=len(bundle.nl_text or ""),
+                input_messages=input_messages,
+            )
+            if trace_model_calls:
+                print(
+                    f"[model:{self.role}] start turn={turn} sender={sender or '-'} "
+                    f"messages={len(send_msgs)} chars={input_chars} tools={len(tools)} "
+                    f"max_new_tokens={self.max_new_tokens}",
+                    flush=True,
+                )
+
+            try:
+                if bundle.latent_prefix is not None:
+                    # latent 通道：把 prefix 张量拼到 token embedding 前（在 backend 的 embedding 层注
+                    # 入）
+                    g = self.backend.generate_chat_with_prefix(send_msgs, bundle.latent_prefix,
+                                                               max_new_tokens=self.max_new_tokens)
+                else:
+                    # 无 latent：走普通文本生成（none / nl_only 都走这里）
+                    g = self.backend.generate_chat(send_msgs, max_new_tokens=self.max_new_tokens)
+            except Exception as exc:
+                from ...runtime.spans import exception_record
+
+                self.ctx.log_span(
+                    "model_call_error",
+                    parent_span_id=span_id,
+                    role=self.role,
+                    turn=turn,
+                    sender=sender,
+                    **exception_record(exc),
+                )
+                raise
+
+            output_text = g.text
+            json_output_normalized = False
+            json_output_repaired = False
+            json_output_repair_reason = ""
+            if json_output:
+                output_text, json_output_normalized = _normalise_json_response(g.text)
+                output_text, json_output_repaired, json_output_repair_reason = (
+                    _repair_magentic_one_ledger(output_text, send_msgs)
+                )
 
             # ④ 记账与记录
             self.ctx.bump_turn(self.role)
+            latent_prefix_positions = int(bundle.prefix_len or 0)
+            input_positions = int(g.n_prompt_pos)
+            output_tokens = int(g.n_gen_tokens)
+            generation_latency_s = round(g.latency_s, 3)
             self._usage = RequestUsage(
-                prompt_tokens=g.n_prompt_pos, completion_tokens=g.n_gen_tokens)
+                prompt_tokens=input_positions, completion_tokens=output_tokens)
             self.ctx.log_decision(self.role, turn, sender, decision, {
-                "prompt_pos": g.n_prompt_pos, "gen_tokens": g.n_gen_tokens,
-                "prefix_len": bundle.prefix_len, "nl_chars": len(bundle.nl_text or ""),
-                "latency_s": round(g.latency_s, 3),
+                "input_positions": input_positions,
+                "text_input_tokens": max(0, input_positions - latent_prefix_positions),
+                "latent_prefix_positions": latent_prefix_positions,
+                "output_tokens": output_tokens,
+                "model_generation_latency_s": generation_latency_s,
+                "original_prompt_positions": int(getattr(g, "original_prompt_pos", None) or input_positions),
+                "prompt_truncated": bool(getattr(g, "prompt_truncated", False)),
+                "dropped_messages": int(getattr(g, "dropped_messages", 0)),
+                "nl_memory_chars": len(bundle.nl_text or ""),
+                "input_chat_messages": input_messages,
+                "output_text": output_text,
+                "json_output_normalized": json_output_normalized,
+                "json_output_repaired": json_output_repaired,
+                "json_output_repair_reason": json_output_repair_reason,
+                # Backward-compatible aliases for older analysis scripts.
+                "prompt_pos": input_positions, "gen_tokens": output_tokens,
+                "prefix_len": latent_prefix_positions, "nl_chars": len(bundle.nl_text or ""),
+                "latency_s": generation_latency_s,
                 "input_messages": input_messages,
-                "output": g.text})
-            return CreateResult(finish_reason="stop", content=g.text, usage=self._usage,
+                "output": output_text,
+                **({"raw_output_text": g.text} if (json_output_normalized or json_output_repaired) else {})})
+            tool_calls = _parse_tool_calls(output_text, tools)
+            self.ctx.log_span(
+                "model_call_end",
+                parent_span_id=span_id,
+                role=self.role,
+                turn=turn,
+                sender=sender,
+                input_total_positions=input_positions,
+                input_text_tokens=max(0, input_positions - latent_prefix_positions),
+                input_latent_positions=latent_prefix_positions,
+                output_text_tokens=output_tokens,
+                model_latency_s=generation_latency_s,
+                original_prompt_positions=int(getattr(g, "original_prompt_pos", None) or input_positions),
+                prompt_truncated=bool(getattr(g, "prompt_truncated", False)),
+                dropped_messages=int(getattr(g, "dropped_messages", 0)),
+                tool_call_count=len(tool_calls or []),
+                tool_call_request=[
+                    {"id": call.id, "name": call.name, "arguments": call.arguments}
+                    for call in (tool_calls or [])
+                ],
+                json_output_requested=bool(json_output),
+                json_output_normalized=json_output_normalized,
+                json_output_repaired=json_output_repaired,
+                json_output_repair_reason=json_output_repair_reason,
+                output_text=output_text,
+                **({"raw_output_text": g.text} if (json_output_normalized or json_output_repaired) else {}),
+            )
+            if trace_model_calls:
+                preview = _preview_text(output_text)
+                print(
+                    f"[model:{self.role}] done turn={turn} input_pos={input_positions} "
+                    f"output_tokens={output_tokens} latency_s={generation_latency_s} "
+                    f"truncated={bool(getattr(g, 'prompt_truncated', False))} "
+                    f"dropped_messages={int(getattr(g, 'dropped_messages', 0))} "
+                    f"tool_calls={len(tool_calls or [])} "
+                    f"json_normalized={json_output_normalized} "
+                    f"json_repaired={json_output_repaired} preview={preview!r}",
+                    flush=True,
+                )
+            if tool_calls:
+                self.ctx.decisions[-1]["tool_call_request"] = [
+                    {"id": call.id, "name": call.name, "arguments": call.arguments}
+                    for call in tool_calls
+                ]
+                return CreateResult(finish_reason="function_calls", content=tool_calls,
+                                    usage=self._usage, cached=False)
+            return CreateResult(finish_reason="stop", content=output_text, usage=self._usage,
                                 cached=False)
 
         async def create_stream(self, messages, *, tools=[], tool_choice="auto",
@@ -182,8 +662,14 @@ def _build_injection_client_class():
 
         @property
         def model_info(self) -> ModelInfo:
-            return ModelInfo(vision=False, function_calling=False, json_output=False,
-                             family=ModelFamily.UNKNOWN, structured_output=False)
+            configured = getattr(self.backend, "model_info", {}) or {}
+            return ModelInfo(
+                vision=bool(configured.get("vision", True)),
+                function_calling=bool(configured.get("function_calling", True)),
+                json_output=bool(configured.get("json_output", True)),
+                family=ModelFamily.UNKNOWN,
+                structured_output=bool(configured.get("structured_output", False)),
+            )
 
     class PlainClient(InjectionClient):
         """SelectorGroupChat 选下一个发言者用的「无编排/无注入」客户端：直接喂对话给 backend 生成

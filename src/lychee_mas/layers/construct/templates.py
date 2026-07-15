@@ -32,6 +32,9 @@ class Role:
     model_id: Optional[str] = None  # 可选：异构模型时给不同 model_id；None=用队伍统一 model_id
     # 可选：给 selector 选发言者用的一句话简介；None=从 system 取首句
     description: Optional[str] = None
+    agent_type: str = "assistant"  # assistant/coder/file_surfer/web_surfer/computer_terminal
+    tools: Optional[list[str]] = None  # 普通 AssistantAgent function tools（字符串由 runtime 解析）
+    meta: Optional[dict] = None
 
 
 # ---- 基础通用三件套（默认队伍用；其它队伍也可复用这些文本）----
@@ -178,6 +181,34 @@ TEAMS: dict[str, List[Role]] = {
              "retrieved memory facts. If correct, reply exactly 'APPROVE: <final answer>'. "
              "Otherwise correct it in one line."),
     ],
+
+    # 代码工具链：Coder 生成代码，ComputerTerminal 在隔离 workspace 中执行。
+    "human_eval": [
+        Role("Coder", "", agent_type="coder",
+             description="Writes and revises code for the programming task."),
+        Role("ComputerTerminal", "", agent_type="computer_terminal",
+             description="Executes code produced by Coder in the sandbox.",
+             meta={"sources": ["Coder"]}),
+    ],
+
+    # GAIA/Magentic-One 风格工具链：文件、网页、代码执行都在同一条 autogen/CDM 主链路中。
+    "gaia": [
+        Role("FileSurfer", "", agent_type="file_surfer",
+             description="Reads and navigates files available in the case workspace."),
+        Role("WebSurfer", "", agent_type="web_surfer",
+             description="Browses web pages and performs web search when needed."),
+        Role("Coder", "", agent_type="coder",
+             description="Writes code to analyze files or compute intermediate results."),
+        Role("ComputerTerminal", "", agent_type="computer_terminal",
+             description="Executes code produced by Coder in the sandbox.",
+             meta={"sources": ["Coder"]}),
+    ],
+}
+
+
+TEAM_META: dict[str, dict] = {
+    "human_eval": {"team_preset": "coder_executor"},
+    "gaia": {"team_preset": "magentic_one"},
 }
 
 
@@ -195,10 +226,16 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
         raise ValueError(f"unknown team profile {team}; choices: {list(TEAMS)}")
     specs: List[AgentSpec] = []
     for r in TEAMS[team]:
+        meta = {"description": _role_description(r), "agent_type": r.agent_type}
+        if r.tools:
+            meta["tools"] = list(r.tools)
+        if r.meta:
+            meta.update(r.meta)
         specs.append(AgentSpec(
             name=r.name, role=r.name, system_prompt=r.system,
             model=r.model_id or model,
-            meta={"description": _role_description(r)}))
+            tools=list(r.tools or []),
+            meta=meta))
     return specs
 
 
@@ -218,4 +255,5 @@ class StaticTopology:
         from ...runtime.base import MASGraph  # 惰性导入避免环依赖
 
         nodes = list(agents) if agents else team_to_agentspecs(self.team, self.model)
-        return MASGraph(nodes=nodes, rounds=self.rounds, meta={"team": self.team})
+        meta = {"team": self.team, **TEAM_META.get(self.team, {})}
+        return MASGraph(nodes=nodes, rounds=self.rounds, meta=meta)

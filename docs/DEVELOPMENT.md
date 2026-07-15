@@ -4,7 +4,7 @@
 >
 > **状态**：重构已落地并离线自验证通过——`import lychee_mas` 零重依赖；`pytest` 24 passed；`ruff` All checks passed；example 可跑；autogen 仅存在于 `runtime/backends/autogen_*.py`。旧代码完整保留在 `src/LycheeMAS/`（参照，未删改）。
 >
-> **30 秒上手**：`make demo`（离线端到端）→ `make test`（24 测试）→ 读 §5「六步配方」加你的组件。
+> **30 秒上手**：`make demo`（离线端到端）→ `make test`（24 测试）→ 读 §5「六步配方」加你的组件。Benchmark 接入与交接记录见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。
 
 ---
 
