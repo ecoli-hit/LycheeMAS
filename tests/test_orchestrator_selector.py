@@ -16,7 +16,7 @@ pytest.importorskip("vendi_score")
 from lychee_mas.core.types import TaskQuery  # noqa: E402
 from lychee_mas.layers.construct.selectors.pool import CANDIDATE_ROLES  # noqa: E402
 from lychee_mas.pipeline import Orchestrator  # noqa: E402
-from lychee_mas.stores import TraceStore  # noqa: E402
+from lychee_mas.trace import TraceStore  # noqa: E402
 
 _POOL_NAMES = {r[0] for r in CANDIDATE_ROLES}
 _DEFAULT_TEAM = {"manager", "worker", "verifier"}
