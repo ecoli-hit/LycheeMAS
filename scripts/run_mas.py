@@ -175,15 +175,17 @@ def _prepare_predictions_for_run(
     *,
     start_index: int,
     resume: bool,
-) -> tuple[set[str], dict]:
-    """Prepare predictions.jsonl and return case IDs that can be skipped.
+) -> tuple[dict[str, set[int]], dict]:
+    """Prepare predictions.jsonl and return completed samples per case.
 
-    Resume keeps only successful existing predictions in the active file. Error
-    records are backed up and dropped so those cases are retried cleanly.
+    Returns ``{case_id: {k_index, ...}}``; a (case, sample) is skipped on resume
+    only if a successful prediction already exists for that exact k_index. Error
+    records are backed up and dropped so those samples are retried cleanly.
+    K=1 runs use k_index=0, so this stays backward compatible with old files.
     """
     if not resume:
         open(predictions_path, "w", encoding="utf-8").close()
-        return set(), {
+        return {}, {
             "enabled": False,
             "existing_predictions": 0,
             "kept_success_predictions": 0,
@@ -197,33 +199,35 @@ def _prepare_predictions_for_run(
         for offset, item in enumerate(data)
     }
     kept: list[dict] = []
-    skipped_case_ids: set[str] = set()
+    completed: dict[str, set[int]] = {}
     dropped: list[dict] = []
     for record in existing:
         case_id = str(record.get("case_id") or "")
         status = str(record.get("status") or "ok")
+        k_index = int(record.get("k_index", 0) or 0)
         if case_id not in valid_case_ids:
             dropped.append(record)
             continue
         if status == "error":
             dropped.append(record)
             continue
-        if case_id in skipped_case_ids:
+        if k_index in completed.get(case_id, set()):
             dropped.append(record)
             continue
         kept.append(record)
-        skipped_case_ids.add(case_id)
+        completed.setdefault(case_id, set()).add(k_index)
 
-    kept.sort(key=lambda r: int(r.get("sample_index", 10**18) or 10**18))
+    kept.sort(key=lambda r: (int(r.get("sample_index", 10**18) or 10**18),
+                             int(r.get("k_index", 0) or 0)))
     backup_path = _backup_file(predictions_path) if existing and dropped else None
     _write_jsonl(predictions_path, kept)
-    return skipped_case_ids, {
+    return completed, {
         "enabled": True,
         "existing_predictions": len(existing),
         "kept_success_predictions": len(kept),
         "dropped_predictions": len(dropped),
         "backup_path": backup_path,
-        "skipped_case_count": len(skipped_case_ids),
+        "skipped_sample_count": sum(len(ks) for ks in completed.values()),
     }
 
 
@@ -343,6 +347,12 @@ async def run_one(cfg: dict, args) -> dict:
     start_index = int(args.start_index if args.start_index is not None else _get(
         cfg, "run.start_index", 0))
     max_rounds = int(args.max_rounds if args.max_rounds is not None else _get(cfg, "run.max_rounds", 2))
+    k_samples = int(args.samples if args.samples is not None else _get(cfg, "run.samples", 1))
+    if k_samples < 1:
+        raise SystemExit(f"--samples/run.samples 必须 >=1；got {k_samples}")
+    if k_samples > 1 and not do_sample:
+        print("[warn] samples>1 但 backend.do_sample=false，多次采样可能相同；建议开 do_sample 让 pass@K 有意义",
+              flush=True)
     max_turns = args.max_turns if args.max_turns is not None else _get(cfg, "runtime.max_turns", None)
     max_turns = None if max_turns is None else int(max_turns)
     cli_max_new_tokens = args.max_new_tokens
@@ -447,7 +457,7 @@ async def run_one(cfg: dict, args) -> dict:
     out_dir = M.result_dir(model_tag, run_label, task, root=results_root)
     predictions_path = os.path.join(out_dir, "predictions.jsonl")
     spans_path = os.path.join(out_dir, "spans.jsonl")
-    skipped_case_ids, resume_info = _prepare_predictions_for_run(
+    completed_samples, resume_info = _prepare_predictions_for_run(
         predictions_path, data, start_index=start_index, resume=bool(args.resume)
     )
     stale_removed = []
@@ -470,6 +480,7 @@ async def run_one(cfg: dict, args) -> dict:
                 "resolved": {"task": task, "backend_provider": backend_provider,
                              "method": method, "team": profile,
                              "P": P, "n": n, "start_index": start_index,
+                             "samples": k_samples,
                              "model": model_tag, "model_path": model_path,
                              "memory": memory.name, "router": router.name,
                              "scorer_kind": kind,
@@ -526,162 +537,177 @@ async def run_one(cfg: dict, args) -> dict:
     for i, it in enumerate(data):
         sample_index = start_index + i
         case_id = _case_id(it, sample_index)
-        if case_id in skipped_case_ids:
-            ctx.set_case(case_id, sample_index)
-            print(f"  [{i + 1}/{len(data)}] skip completed case_id={case_id}", flush=True)
-            ctx.log_span(
-                "case_skip",
-                case_order=i + 1,
-                num_cases=len(data),
-                reason="resume_existing_success_prediction",
-            )
-            continue
-        ctx.reset()  # 清 turn/决策/记忆库
-        ctx.set_case(case_id, sample_index)
-        print(f"  [{i + 1}/{len(data)}] start case_id={case_id}", flush=True)
-        case_t0 = time.time()
-        ctx.log_span(
-            "case_start",
-            case_order=i + 1,
-            num_cases=len(data),
-            question=it["question"],
-            has_context=bool(it.get("context")),
-            scorer_kind=kind,
-        )
+        done_ks = completed_samples.get(case_id, set())
         q = TaskQuery(question=it["question"], context=it.get("context"),
                       gold=None, id=case_id, meta={"kind": kind})
-        try:
-            # 长程记忆任务把对话历史预载进记忆库（AIME 无 context，此处不触发）
-            if it.get("context") and hasattr(memory, "seed"):
-                memory.seed(it["context"])
-            traj = await runtime.run(graph, q)
-        except Exception as exc:
-            err = exception_record(exc)
-            model_calls = [_normalize_model_call(d) for d in ctx.decisions]
-            case_generation_latency = sum(c["model_generation_latency_s"] for c in model_calls)
-            error_sample = {
-                "case_id": case_id, "sample_index": sample_index,
-                "task": task, "method": method,
-                "scorer_kind": kind, "question": it["question"][:500],
-                "final_answer": "",
-                "status": "error",
-                "error_type": err["error_type"],
-                "error_message": err["error_message"],
-                "traceback": err["traceback"],
-                "num_model_calls": len(model_calls),
-                "num_messages": 0,
-                "sum_input_total_positions": sum(c["input_positions"] for c in model_calls),
-                "sum_input_text_tokens": sum(c["text_input_tokens"] for c in model_calls),
-                "sum_input_latent_positions": sum(c["latent_prefix_positions"] for c in model_calls),
-                "sum_output_text_tokens": sum(c["output_tokens"] for c in model_calls),
-                "sum_model_latency_s": round(case_generation_latency, 3),
-                "case_wall_time_s": round(time.time() - case_t0, 3),
-                "num_tool_calls": 0,
-                "num_tool_errors": 0,
-                "model_call_count": len(model_calls),
-                "message_count": 0,
-                "tool_call_count": 0,
-                "tool_error_count": 0,
-                "input_positions_total": sum(c["input_positions"] for c in model_calls),
-                "text_input_tokens_total": sum(c["text_input_tokens"] for c in model_calls),
-                "latent_prefix_positions_total": sum(c["latent_prefix_positions"] for c in model_calls),
-                "output_tokens_total": sum(c["output_tokens"] for c in model_calls),
-                "model_generation_latency_s_total": round(case_generation_latency, 3),
-                "model_calls": model_calls,
-                "tool_calls": [],
-                "routing_trace": model_calls,
-                "n_messages": 0,
-                "cost_prompt_pos": sum(c["input_positions"] for c in model_calls),
-                "gen_tokens": sum(c["output_tokens"] for c in model_calls),
-                "latency_s": round(case_generation_latency, 3),
-            }
-            with open(predictions_path, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps(error_sample, ensure_ascii=False) + "\n")
+        for k in range(k_samples):
+            # k_index/num_samples 仅在 pass@K（K>1）时写入，保证 K=1 的 prediction 与旧格式逐字一致
+            k_tag = f" k={k + 1}/{k_samples}" if k_samples > 1 else ""
+            sample_extra = {"k_index": k, "num_samples": k_samples} if k_samples > 1 else {}
+            if k in done_ks:
+                ctx.set_case(case_id, sample_index)
+                print(f"  [{i + 1}/{len(data)}{k_tag}] skip completed case_id={case_id}", flush=True)
+                ctx.log_span(
+                    "case_skip",
+                    case_order=i + 1,
+                    num_cases=len(data),
+                    k_index=k,
+                    reason="resume_existing_success_prediction",
+                )
+                continue
+            ctx.reset()  # 清 turn/决策/记忆库
+            ctx.set_case(case_id, sample_index)
+            print(f"  [{i + 1}/{len(data)}{k_tag}] start case_id={case_id}", flush=True)
+            case_t0 = time.time()
             ctx.log_span(
-                "case_error",
+                "case_start",
                 case_order=i + 1,
                 num_cases=len(data),
-                partial_model_call_count=len(model_calls),
-                case_wall_time_s=round(time.time() - case_t0, 3),
-                **err,
+                k_index=k,
+                question=it["question"],
+                has_context=bool(it.get("context")),
+                scorer_kind=kind,
             )
-            print(
-                f"  [{i + 1}/{len(data)}] error case_id={case_id} "
-                f"{err['error_type']}: {err['error_message']}",
-                flush=True,
+            try:
+                # 长程记忆任务把对话历史预载进记忆库（AIME 无 context，此处不触发）
+                if it.get("context") and hasattr(memory, "seed"):
+                    memory.seed(it["context"])
+                traj = await runtime.run(graph, q)
+            except Exception as exc:
+                err = exception_record(exc)
+                model_calls = [_normalize_model_call(d) for d in ctx.decisions]
+                case_generation_latency = sum(c["model_generation_latency_s"] for c in model_calls)
+                error_sample = {
+                    "case_id": case_id, "sample_index": sample_index,
+                    **sample_extra,
+                    "task": task, "method": method,
+                    "scorer_kind": kind, "question": it["question"][:500],
+                    "final_answer": "",
+                    "status": "error",
+                    "error_type": err["error_type"],
+                    "error_message": err["error_message"],
+                    "traceback": err["traceback"],
+                    "num_model_calls": len(model_calls),
+                    "num_messages": 0,
+                    "sum_input_total_positions": sum(c["input_positions"] for c in model_calls),
+                    "sum_input_text_tokens": sum(c["text_input_tokens"] for c in model_calls),
+                    "sum_input_latent_positions": sum(
+                        c["latent_prefix_positions"] for c in model_calls),
+                    "sum_output_text_tokens": sum(c["output_tokens"] for c in model_calls),
+                    "sum_model_latency_s": round(case_generation_latency, 3),
+                    "case_wall_time_s": round(time.time() - case_t0, 3),
+                    "num_tool_calls": 0,
+                    "num_tool_errors": 0,
+                    "model_call_count": len(model_calls),
+                    "message_count": 0,
+                    "tool_call_count": 0,
+                    "tool_error_count": 0,
+                    "input_positions_total": sum(c["input_positions"] for c in model_calls),
+                    "text_input_tokens_total": sum(c["text_input_tokens"] for c in model_calls),
+                    "latent_prefix_positions_total": sum(
+                        c["latent_prefix_positions"] for c in model_calls),
+                    "output_tokens_total": sum(c["output_tokens"] for c in model_calls),
+                    "model_generation_latency_s_total": round(case_generation_latency, 3),
+                    "model_calls": model_calls,
+                    "tool_calls": [],
+                    "routing_trace": model_calls,
+                    "n_messages": 0,
+                    "cost_prompt_pos": sum(c["input_positions"] for c in model_calls),
+                    "gen_tokens": sum(c["output_tokens"] for c in model_calls),
+                    "latency_s": round(case_generation_latency, 3),
+                }
+                with open(predictions_path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(error_sample, ensure_ascii=False) + "\n")
+                ctx.log_span(
+                    "case_error",
+                    case_order=i + 1,
+                    num_cases=len(data),
+                    k_index=k,
+                    partial_model_call_count=len(model_calls),
+                    case_wall_time_s=round(time.time() - case_t0, 3),
+                    **err,
+                )
+                print(
+                    f"  [{i + 1}/{len(data)}{k_tag}] error case_id={case_id} "
+                    f"{err['error_type']}: {err['error_message']}",
+                    flush=True,
+                )
+                raise
+            pred = traj.final_answer.content if traj.final_answer else ""
+            model_calls = [_normalize_model_call(d) for d in traj.meta.get("decisions", [])]
+
+            case_input_positions = sum(c["input_positions"] for c in model_calls)
+            case_text_input_tokens = sum(c["text_input_tokens"] for c in model_calls)
+            case_latent_prefix_positions = sum(c["latent_prefix_positions"] for c in model_calls)
+            case_output_tokens = sum(c["output_tokens"] for c in model_calls)
+            case_generation_latency = sum(c["model_generation_latency_s"] for c in model_calls)
+            tool_calls = list(traj.meta.get("tool_calls", []))
+            case_wall_time = float(traj.meta.get("case_wall_time_s", 0.0) or 0.0)
+            case_tool_call_count = int(traj.meta.get("tool_call_count", len(tool_calls)) or 0)
+            case_tool_error_count = int(traj.meta.get("tool_error_count", 0) or 0)
+            case_message_count = len(traj.messages)
+            case_model_call_count = len(model_calls)
+
+            sample = {
+                "case_id": case_id, "sample_index": sample_index,
+                **sample_extra,
+                "task": task, "method": method,
+                "scorer_kind": kind, "question": it["question"][:500],
+                "final_answer": pred,
+                "num_model_calls": case_model_call_count,
+                "num_messages": case_message_count,
+                "sum_input_total_positions": case_input_positions,
+                "sum_input_text_tokens": case_text_input_tokens,
+                "sum_input_latent_positions": case_latent_prefix_positions,
+                "sum_output_text_tokens": case_output_tokens,
+                "sum_model_latency_s": round(case_generation_latency, 3),
+                "case_wall_time_s": round(case_wall_time, 3),
+                "num_tool_calls": case_tool_call_count,
+                "num_tool_errors": case_tool_error_count,
+                "model_call_count": case_model_call_count,
+                "message_count": case_message_count,
+                "tool_call_count": case_tool_call_count,
+                "tool_error_count": case_tool_error_count,
+                "input_positions_total": case_input_positions,
+                "text_input_tokens_total": case_text_input_tokens,
+                "latent_prefix_positions_total": case_latent_prefix_positions,
+                "output_tokens_total": case_output_tokens,
+                "model_generation_latency_s_total": round(case_generation_latency, 3),
+                "workspace": traj.meta.get("workspace"),
+                "copied_files": traj.meta.get("copied_files", []),
+                "tool_calls": tool_calls,
+                "model_calls": model_calls,
+                # Backward-compatible aliases for older result readers.
+                "n_messages": case_message_count,
+                "routing_trace": model_calls,
+                "cost_prompt_pos": case_input_positions,
+                "gen_tokens": case_output_tokens,
+                "latency_s": round(case_generation_latency, 3)}
+            predictions.append(sample)
+            with open(predictions_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(sample, ensure_ascii=False) + "\n")
+            ctx.log_span(
+                "case_end",
+                case_order=i + 1,
+                num_cases=len(data),
+                k_index=k,
+                status="ok",
+                final_answer=pred,
+                num_model_calls=case_model_call_count,
+                num_messages=case_message_count,
+                num_tool_calls=case_tool_call_count,
+                num_tool_errors=case_tool_error_count,
+                case_wall_time_s=round(case_wall_time or (time.time() - case_t0), 3),
             )
-            raise
-        pred = traj.final_answer.content if traj.final_answer else ""
-        model_calls = [_normalize_model_call(d) for d in traj.meta.get("decisions", [])]
+            print(f"  [{i + 1}/{len(data)}{k_tag}] msgs={case_message_count} "
+                  f"input_pos={case_input_positions} ans={pred[:60]!r}", flush=True)
 
-        case_input_positions = sum(c["input_positions"] for c in model_calls)
-        case_text_input_tokens = sum(c["text_input_tokens"] for c in model_calls)
-        case_latent_prefix_positions = sum(c["latent_prefix_positions"] for c in model_calls)
-        case_output_tokens = sum(c["output_tokens"] for c in model_calls)
-        case_generation_latency = sum(c["model_generation_latency_s"] for c in model_calls)
-        tool_calls = list(traj.meta.get("tool_calls", []))
-        case_wall_time = float(traj.meta.get("case_wall_time_s", 0.0) or 0.0)
-        case_tool_call_count = int(traj.meta.get("tool_call_count", len(tool_calls)) or 0)
-        case_tool_error_count = int(traj.meta.get("tool_error_count", 0) or 0)
-        case_message_count = len(traj.messages)
-        case_model_call_count = len(model_calls)
-
-        sample = {
-            "case_id": case_id, "sample_index": sample_index,
-            "task": task, "method": method,
-            "scorer_kind": kind, "question": it["question"][:500],
-            "final_answer": pred,
-            "num_model_calls": case_model_call_count,
-            "num_messages": case_message_count,
-            "sum_input_total_positions": case_input_positions,
-            "sum_input_text_tokens": case_text_input_tokens,
-            "sum_input_latent_positions": case_latent_prefix_positions,
-            "sum_output_text_tokens": case_output_tokens,
-            "sum_model_latency_s": round(case_generation_latency, 3),
-            "case_wall_time_s": round(case_wall_time, 3),
-            "num_tool_calls": case_tool_call_count,
-            "num_tool_errors": case_tool_error_count,
-            "model_call_count": case_model_call_count,
-            "message_count": case_message_count,
-            "tool_call_count": case_tool_call_count,
-            "tool_error_count": case_tool_error_count,
-            "input_positions_total": case_input_positions,
-            "text_input_tokens_total": case_text_input_tokens,
-            "latent_prefix_positions_total": case_latent_prefix_positions,
-            "output_tokens_total": case_output_tokens,
-            "model_generation_latency_s_total": round(case_generation_latency, 3),
-            "workspace": traj.meta.get("workspace"),
-            "copied_files": traj.meta.get("copied_files", []),
-            "tool_calls": tool_calls,
-            "model_calls": model_calls,
-            # Backward-compatible aliases for older result readers.
-            "n_messages": case_message_count,
-            "routing_trace": model_calls,
-            "cost_prompt_pos": case_input_positions,
-            "gen_tokens": case_output_tokens,
-            "latency_s": round(case_generation_latency, 3)}
-        predictions.append(sample)
-        with open(predictions_path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(sample, ensure_ascii=False) + "\n")
-        ctx.log_span(
-            "case_end",
-            case_order=i + 1,
-            num_cases=len(data),
-            status="ok",
-            final_answer=pred,
-            num_model_calls=case_model_call_count,
-            num_messages=case_message_count,
-            num_tool_calls=case_tool_call_count,
-            num_tool_errors=case_tool_error_count,
-            case_wall_time_s=round(case_wall_time or (time.time() - case_t0), 3),
-        )
-        print(f"  [{i + 1}/{len(data)}] msgs={case_message_count} "
-              f"input_pos={case_input_positions} ans={pred[:60]!r}", flush=True)
-
+    skipped_total = sum(len(ks) for ks in completed_samples.values())
     print(f"[done] {task}/{run_label}: predictions={len(predictions)} "
-          f"skipped={len(skipped_case_ids)} -> {out_dir}", flush=True)
+          f"samples_per_case={k_samples} skipped={skipped_total} -> {out_dir}", flush=True)
     span_logger.log("run_end", num_predictions=len(predictions),
-                    skipped_predictions=len(skipped_case_ids), out_dir=out_dir)
+                    samples_per_case=k_samples,
+                    skipped_predictions=skipped_total, out_dir=out_dir)
     return {"out_dir": out_dir, "num_predictions": len(predictions)}
 
 
@@ -700,6 +726,8 @@ def main() -> None:
     ap.add_argument("--P", type=int, default=None, help="latent prefix 长度")
     ap.add_argument("--c2c-ckpt", dest="c2c_ckpt", default=None,
                     help="latent_strategy=c2c 时的 projector 栈 ckpt 路径（覆盖 memory.c2c_ckpt）")
+    ap.add_argument("--samples", type=int, default=None,
+                    help="每题采样次数 K（pass@K；K>1 建议 backend.do_sample=true；打分侧按 case 聚合）")
     ap.add_argument("--model-path", dest="model_path", default=None)
     ap.add_argument("--model-tag", dest="model_tag", default=None)
     ap.add_argument("--api-model", dest="api_model", default=None, help="OpenAI-compatible model name")

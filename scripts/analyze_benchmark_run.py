@@ -144,7 +144,9 @@ def _score_prediction_mode(args, run_dir: str, config_path: str) -> dict:
         raise SystemExit("Cannot infer task; pass --task")
     start_index = int(run_info.get("start_index") or 0)
 
-    gold_data, gold_by_id = _load_gold_items(task, start_index, len(predictions))
+    # pass@K：一个 case 可能对应多份 prediction（k_index），按去重 case 数加载 gold 对齐
+    num_distinct = len({str(p.get("case_id")) for p in predictions}) or len(predictions)
+    gold_data, gold_by_id = _load_gold_items(task, start_index, num_distinct)
     scored = _score_predictions(predictions, gold_data, gold_by_id, kind=kind)
     metrics = _with_partial_flags(
         M.aggregate_samples(scored, run_info=run_info),
@@ -228,10 +230,18 @@ def main() -> None:
         metrics = _analyze_outputs_mode(args, run_dir, config_path)
         verb = "analyze"
 
+    passk = metrics.get("pass_at_k")
+    passk_str = ""
+    if passk:
+        k_max = passk["max_samples_per_case"]
+        passk_str = (
+            f" | pass@1={passk['pass@1']} pass@{k_max}={passk[f'pass@{k_max}']} "
+            f"(cases={passk['num_distinct_cases']}×{passk['samples_per_case']})"
+        )
     print(
         f"[{verb}] cases={metrics['num_cases']} score_mean={metrics['score_mean']} "
         f"model_calls/case={metrics['mean_model_calls_per_case']} "
-        f"tool_calls/case={metrics['mean_tool_calls_per_case']} -> {run_dir}",
+        f"tool_calls/case={metrics['mean_tool_calls_per_case']}{passk_str} -> {run_dir}",
         flush=True,
     )
     print(json.dumps(metrics, ensure_ascii=False, indent=2))

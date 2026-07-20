@@ -392,6 +392,30 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
         "latency_s_mean": round(generation_latency_sum / n, 3) if n else 0,
         "messages_mean": round(message_count_sum / n, 2) if n else 0,
     }
+
+    # ---- pass@K：当某些 case 有多份采样（run_mas --samples K）时，按 case 分组补充 ----
+    # 纯附加、不改上面任一字段；仅当检测到「样本数 > 去重 case 数」时才写入，K=1 运行完全不变。
+    # pass@1 = 各 case 内 K 份得分均值再对 case 求平均；pass@K = 各 case best-of-K 得分再平均
+    # （二值打分下即「命中率 / 任一正确率」，f1 等连续打分下为最优采样均值）。
+    by_case: dict = {}
+    for sample in samples:
+        cid = str(sample.get("case_id", ""))
+        sv = float(sample.get("score", sample.get("correct", 0.0)) or 0.0)
+        by_case.setdefault(cid, []).append(sv)
+    distinct_cases = len(by_case)
+    if distinct_cases and n > distinct_cases:
+        k_max = max(len(v) for v in by_case.values())
+        pass1 = round(sum(sum(v) / len(v) for v in by_case.values()) / distinct_cases, 4)
+        passk = round(sum(max(v) for v in by_case.values()) / distinct_cases, 4)
+        passk_block = {
+            "num_distinct_cases": distinct_cases,
+            "samples_per_case": round(n / distinct_cases, 2),
+            "max_samples_per_case": k_max,
+            "pass@1": pass1,
+            f"pass@{k_max}": passk,
+        }
+        metrics.update(passk_block)
+        metrics["pass_at_k"] = passk_block
     return metrics
 
 
