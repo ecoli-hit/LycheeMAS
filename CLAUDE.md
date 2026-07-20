@@ -201,14 +201,26 @@ PYTHONPATH=src python scripts/run_experiment.py \
 
 # 带 CDM 记忆通道的真实 AIME 实验（run_mas.py：backend+cdm+固定通道路由+AutoGen 端到端）
 #   method: none|nl_only|latent_only|both；latent 走 memory.latent_strategy(soft_token|c2c)
+#   run_mas 只推理：运行中落 spans.jsonl，每题落 predictions.jsonl（不在此算分）
 CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
     python scripts/run_mas.py --config configs/aime_latent_c2c.yaml   # 纯 latent(C2C) 消融
+
+# 打分：由 analyze_benchmark_run.py 读 gold 打分 → 落 outputs.jsonl + metrics.json（推理/打分分离）
+python scripts/analyze_benchmark_run.py <run_dir> --score-predictions
+
+# pass@K：每题采样 K 次 + 打分侧按 case 聚合（--samples K；K=1 为默认，predictions 与旧格式逐字一致）
+#   K>1 需 backend.do_sample=true（否则多次采样相同）；断点续跑按 (case_id,k_index) 去重
+CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
+    python scripts/run_mas.py --config configs/aime_both.yaml --samples 8   # 每题采 8 次
+python scripts/analyze_benchmark_run.py <run_dir> --score-predictions       # 摘要打印 pass@1 / pass@8
+#   聚合口径（metrics.aggregate_samples 的 pass_at_k）：pass@1=各 case 内 K 份得分均值再对 case 平均；
+#   pass@K=各 case best-of-K 再平均（二值打分即任一正确率，f1 等连续打分为最优采样均值）。
 
 # C2C projector 训练 / 评测（latent_strategy=c2c 的融合器）
 CUDA_VISIBLE_DEVICES=0 python scripts/train_c2c_projector.py --data openhermes --steps 800 --out runs/c2c/<run>
 CUDA_VISIBLE_DEVICES=0 python scripts/eval_c2c_aime.py --ckpt runs/c2c/<run>/final --n 30   # 融合 vs 不融合
 ```
-结果落 `runs/<model-tag>/<...>/` 或 config 里 `eval.results_root`（metrics.json + outputs.jsonl + config 快照）。**改 CDM 后务必先跑 `--questions`/`--n 2` 离线自检、再跑小样本回归**，确认数值与改前一致。
+结果落 `runs/<model-tag>/<...>/` 或 config 里 `eval.results_root`：run_mas 落 `predictions.jsonl` + `spans.jsonl` + config 快照；`analyze_benchmark_run.py --score-predictions` 再落 `outputs.jsonl` + `metrics.json`（含多采样时的 `pass_at_k`）。**改 CDM 后务必先跑 `--questions`/`--n 2` 离线自检、再跑小样本回归**，确认数值与改前一致。
 
 ### 6.3 改动前后的固定动作
 - 改前：`git pull` → `make snapshot` → 读对应 `base.py`。
@@ -274,7 +286,7 @@ CDM = **双通道记忆 + 动态通道选择**。用**单一 source**（seed + �
 
 ## 10. 当前优先级与服务器注意事项
 
-**已落地（`memory/`）**：CDM 双通道端到端可跑（`run_mas.py`，四消融 none/nl_only/latent_only/both）；latent 通道两条策略——`soft_token`（免训练）与 **`c2c`**（Cache-to-Cache 逐层 KV 融合器，含训练/评测脚本 + MAS 内 `generate_chat_with_c2c` 集成）。
+**已落地（`memory/`）**：CDM 双通道端到端可跑（`run_mas.py`，四消融 none/nl_only/latent_only/both）；latent 通道两条策略——`soft_token`（免训练）与 **`c2c`**（Cache-to-Cache 逐层 KV 融合器，含训练/评测脚本 + MAS 内 `generate_chat_with_c2c` 集成）。**benchmark 子系统**（`eval/benchmarks` 19 个任务 + `run_mas` 纯推理落 `predictions.jsonl`/`spans.jsonl` + `analyze_benchmark_run.py` 事后打分，见 §6.2 与 `docs/BENCHMARK_HANDOFF_PUBLIC.md`）；**pass@K** 已接通（`run_mas --samples K` 采样 + 打分侧 `metrics.aggregate_samples` 的 `pass_at_k` 按 case 聚合，K=1 默认路径不变）。
 
 **在研重点（都在 `memory/`）**：把 `memory_router/soft_gate`（软门控，论文主菜）与 `memory_router/learned` 从占位接成真实实现；配套反事实蒸馏数据（用 `trace.TraceStore` 落盘的 routing_trace）与后续 RL 微调。
 
