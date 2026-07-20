@@ -27,10 +27,10 @@ router:                          # 触发算法接缝
   P: 16                          # latent prefix 长度（成本旋钮）
 
 run:
-  task: aime2024
+  task: aime_2024
   n: all                         # 全量（30 题）
   max_rounds: 2                  # analyst→solver→verifier 最多 2 轮
   max_new_tokens: 4096
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/lychee_v0_1   # 落 .../qwen3-4b/latent_only/aime2024
+  results_root: /data/mxy/Project/CDM/results/lychee_v0_1   # 落 .../qwen3-4b/latent_only/aime_2024

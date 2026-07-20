@@ -3,7 +3,7 @@
 # 下一个 agent 的生成。对照 = 同队 nl_only(0.167) / none。
 # 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=0 \
 #         python scripts/run_mas.py --config configs/aime_latent_c2c.yaml
-# 落盘：results/lychee_v0_1/qwen3-4b/aime_latent_only/aime2024/
+# 落盘：results/lychee_v0_1/qwen3-4b/aime_latent_only/aime_2024/
 
 backend:
   model_path: /data/mxy/Models/Qwen/Qwen3-4B
@@ -28,7 +28,7 @@ router:
   P: 16
 
 run:
-  task: aime2024
+  task: aime_2024
   team: aime                      # 与 nl_only 同一支 MAS
   n: all
   max_rounds: 2

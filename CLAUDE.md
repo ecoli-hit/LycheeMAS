@@ -154,7 +154,7 @@ REGISTRY.list("aggregator"); REGISTRY.snapshot()
 | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |
 | `credit_assigner` | — | `attribution_guided` |
 | `trainer` | — | `maspo` |
-| `benchmark` | `gsm8k/aime2024/medqa/arc_easy/openbookqa/locomo10`（数据加载惰性） | — |
+| `benchmark` | 文本类 `gsm8k/aime_2024/medqa/arc_easy/openbookqa/locomo10` + benchmark 子系统 `human_eval/gaia_validation(_level_1..3)/aftraj_audit(_test)/agent_collab_{clc,cpr,idr,rtd}/mast_failure/open_agent_traces`（共 19，数据加载惰性；数据准备 + 重依赖走 `[benchmark]` extra） | — |
 
 > 桩能被 `REGISTRY.list` 看到，是**有意为之**：让消融矩阵在代码里可见、占好名字。把某个桩接成真实实现是后续研究的标准动作（见 §6）。
 

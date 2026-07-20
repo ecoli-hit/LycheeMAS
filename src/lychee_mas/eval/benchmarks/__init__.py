@@ -1,155 +1,434 @@
-"""数据 loaders（迁移自 benchs/loaders.py）+ benchmark 注册。
+"""Benchmark registry for LycheeMAS evaluation.
 
-每个 task 注册为 `benchmark/<name>`（惰性加载数据，避免 import 时读盘，CLAUDE.md §9）。
-`datasets` 库在用到时才惰性导入；数据根目录走环境变量（CDM_DATA_ROOT / CDM_PROCESSED_ROOT）。
-
-统一返回格式：每条 = {task, kind, question, gold, context}。
-- kind ∈ {exact, aime, mc, f1}（驱动 eval.metrics.score）
-- gold：exact/aime 为 str；mc 为 [text, letter]；f1 为 [str, ...]
+Each loader returns records shaped as ``{task, kind, question, gold, context}``.
+The entry points stay intentionally small: benchmark-specific loading and data
+preparation live in sibling modules, while this file only exposes public
+``load``/``prepare`` registries and registers benchmark classes.
 """
+
 from __future__ import annotations
 
-import glob
-import json
-import os
-import re
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from ...core.registry import REGISTRY
+from .aftraj import ensure_source as ensure_aftraj_source
+from .aftraj import load_aftraj_audit, load_aftraj_audit_test
+from .agent_collab import ensure_source as ensure_agent_collab_source
+from .agent_collab import (
+    load_agent_collab_clc,
+    load_agent_collab_cpr,
+    load_agent_collab_idr,
+    load_agent_collab_rtd,
+)
+from .aime_2024 import load_aime_2024, prepare_aime_2024
+from .choice_qa import (
+    load_arc_easy,
+    load_medqa,
+    load_openbookqa,
+    prepare_arc_easy,
+    prepare_medqa,
+    prepare_openbookqa,
+)
+from .common import DATA_BACKENDS, prepared_root, processed_root, raw_root
+from .gaia import (
+    ensure_full_source as ensure_gaia_full_source,
+)
+from .gaia import (
+    ensure_validation_source as ensure_gaia_validation_source,
+)
+from .gaia import (
+    load_gaia_validation,
+    load_gaia_validation_level_1,
+    load_gaia_validation_level_2,
+    load_gaia_validation_level_3,
+)
+from .gsm8k import load_gsm8k, prepare_gsm8k
+from .human_eval import ensure_source as ensure_human_eval_source
+from .human_eval import load_human_eval
+from .locomo10 import load_locomo10, prepare_locomo10
+from .mast_data import ensure_source as ensure_mast_source
+from .mast_data import load_mast_failure
+from .open_agent_traces import ensure_source as ensure_open_agent_traces_source
+from .open_agent_traces import load_open_agent_traces
 
-RAW = os.environ.get("CDM_DATA_ROOT", os.path.join("data", "raw"))
-PROCESSED = os.environ.get("CDM_PROCESSED_ROOT", os.path.join("data", "processed"))
+RAW = raw_root()
+PREPARED = prepared_root()
+PROCESSED = processed_root()
 
-# poles for the communication-channel probe
-REASONING_POLE = ("gsm8k", "aime2024")  # expect latent to do relatively well
-FACT_POLE = ("medqa", "openbookqa", "arc_easy")  # expect NL to do relatively well
-MEMORY_TASKS = ("locomo10",)  # long-memory probe
+REASONING_POLE = ("gsm8k", "aime_2024")
+FACT_POLE = ("medqa", "openbookqa", "arc_easy")
+MEMORY_TASKS = ("locomo10",)
+CODE_TASKS = ("human_eval",)
+TOOL_TASKS = (
+    "gaia_validation",
+    "gaia_validation_level_1",
+    "gaia_validation_level_2",
+    "gaia_validation_level_3",
+)
+MAS_DIAGNOSTIC_TASKS = (
+    "aftraj_audit",
+    "aftraj_audit_test",
+    "mast_failure",
+    "open_agent_traces",
+)
+MAS_COLLAB_TASKS = (
+    "agent_collab_idr",
+    "agent_collab_rtd",
+    "agent_collab_cpr",
+    "agent_collab_clc",
+)
+
+FULL_PREPARE_TARGETS = (
+    "gsm8k",
+    "aime_2024",
+    "arc_easy",
+    "openbookqa",
+    "medqa",
+    "locomo10",
+    "human_eval",
+    "gaia",
+    "aftraj",
+    "agent_collab",
+    "mast_data",
+    "open_agent_traces",
+)
+
+BENCHMARK_STRUCTURE = [
+    {
+        "benchmark_source": "GSM8K",
+        "full_prepare_target": "gsm8k",
+        "prepare_targets": ["gsm8k"],
+        "runnable_tasks": ["gsm8k"],
+        "kinds": ["exact"],
+    },
+    {
+        "benchmark_source": "AIME 2024",
+        "full_prepare_target": "aime_2024",
+        "prepare_targets": ["aime_2024"],
+        "runnable_tasks": ["aime_2024"],
+        "kinds": ["aime"],
+    },
+    {
+        "benchmark_source": "ARC-Easy",
+        "full_prepare_target": "arc_easy",
+        "prepare_targets": ["arc_easy"],
+        "runnable_tasks": ["arc_easy"],
+        "kinds": ["mc"],
+    },
+    {
+        "benchmark_source": "OpenBookQA",
+        "full_prepare_target": "openbookqa",
+        "prepare_targets": ["openbookqa"],
+        "runnable_tasks": ["openbookqa"],
+        "kinds": ["mc"],
+    },
+    {
+        "benchmark_source": "MedQA",
+        "full_prepare_target": "medqa",
+        "prepare_targets": ["medqa"],
+        "runnable_tasks": ["medqa"],
+        "kinds": ["mc"],
+    },
+    {
+        "benchmark_source": "LoCoMo10",
+        "full_prepare_target": "locomo10",
+        "prepare_targets": ["locomo10"],
+        "runnable_tasks": ["locomo10"],
+        "kinds": ["f1"],
+    },
+    {
+        "benchmark_source": "HumanEval",
+        "full_prepare_target": "human_eval",
+        "prepare_targets": ["human_eval"],
+        "runnable_tasks": ["human_eval"],
+        "kinds": ["human_eval"],
+    },
+    {
+        "benchmark_source": "GAIA",
+        "full_prepare_target": "gaia",
+        "prepare_targets": [
+            "gaia",
+            "gaia_validation",
+            "gaia_validation_level_1",
+            "gaia_validation_level_2",
+            "gaia_validation_level_3",
+        ],
+        "runnable_tasks": [
+            "gaia_validation",
+            "gaia_validation_level_1",
+            "gaia_validation_level_2",
+            "gaia_validation_level_3",
+        ],
+        "kinds": ["gaia"],
+    },
+    {
+        "benchmark_source": "AFTraj-2K",
+        "full_prepare_target": "aftraj",
+        "prepare_targets": ["aftraj", "aftraj_audit", "aftraj_audit_test"],
+        "runnable_tasks": ["aftraj_audit", "aftraj_audit_test"],
+        "kinds": ["mas_audit"],
+    },
+    {
+        "benchmark_source": "AgentCollabBench",
+        "full_prepare_target": "agent_collab",
+        "prepare_targets": [
+            "agent_collab",
+            "agent_collab_idr",
+            "agent_collab_rtd",
+            "agent_collab_cpr",
+            "agent_collab_clc",
+        ],
+        "runnable_tasks": [
+            "agent_collab_idr",
+            "agent_collab_rtd",
+            "agent_collab_cpr",
+            "agent_collab_clc",
+        ],
+        "kinds": [
+            "mas_instruction_decay",
+            "mas_tracer_durability",
+            "mas_consensus_pollution",
+            "mas_context_leakage",
+        ],
+    },
+    {
+        "benchmark_source": "MAST-Data",
+        "full_prepare_target": "mast_data",
+        "prepare_targets": ["mast_data", "mast_failure"],
+        "runnable_tasks": ["mast_failure"],
+        "kinds": ["mas_failure_taxonomy"],
+    },
+    {
+        "benchmark_source": "Open Agent Traces",
+        "full_prepare_target": "open_agent_traces",
+        "prepare_targets": ["open_agent_traces"],
+        "runnable_tasks": ["open_agent_traces"],
+        "kinds": ["mas_deviation"],
+    },
+]
 
 
-def _parquet(subdir: str, split: str):
-    from datasets import load_dataset  # 惰性导入
+BENCHMARK_MAPPINGS = {
+    "GSM8K": [
+        {"prepare_target": "gsm8k", "runnable_tasks": ["gsm8k"], "kinds": ["exact"]},
+    ],
+    "AIME 2024": [
+        {"prepare_target": "aime_2024", "runnable_tasks": ["aime_2024"], "kinds": ["aime"]},
+    ],
+    "ARC-Easy": [
+        {"prepare_target": "arc_easy", "runnable_tasks": ["arc_easy"], "kinds": ["mc"]},
+    ],
+    "OpenBookQA": [
+        {"prepare_target": "openbookqa", "runnable_tasks": ["openbookqa"], "kinds": ["mc"]},
+    ],
+    "MedQA": [
+        {"prepare_target": "medqa", "runnable_tasks": ["medqa"], "kinds": ["mc"]},
+    ],
+    "LoCoMo10": [
+        {"prepare_target": "locomo10", "runnable_tasks": ["locomo10"], "kinds": ["f1"]},
+    ],
+    "HumanEval": [
+        {"prepare_target": "human_eval", "runnable_tasks": ["human_eval"], "kinds": ["human_eval"]},
+    ],
+    "GAIA": [
+        {
+            "prepare_target": "gaia",
+            "runnable_tasks": [],
+            "kinds": [],
+            "note": "full dataset prepare only",
+        },
+        {
+            "prepare_target": "gaia_validation",
+            "runnable_tasks": ["gaia_validation"],
+            "kinds": ["gaia"],
+        },
+        {
+            "prepare_target": "gaia_validation_level_1",
+            "runnable_tasks": ["gaia_validation_level_1"],
+            "kinds": ["gaia"],
+        },
+        {
+            "prepare_target": "gaia_validation_level_2",
+            "runnable_tasks": ["gaia_validation_level_2"],
+            "kinds": ["gaia"],
+        },
+        {
+            "prepare_target": "gaia_validation_level_3",
+            "runnable_tasks": ["gaia_validation_level_3"],
+            "kinds": ["gaia"],
+        },
+    ],
+    "AFTraj-2K": [
+        {
+            "prepare_target": "aftraj",
+            "runnable_tasks": ["aftraj_audit", "aftraj_audit_test"],
+            "kinds": ["mas_audit"],
+        },
+        {
+            "prepare_target": "aftraj_audit",
+            "runnable_tasks": ["aftraj_audit"],
+            "kinds": ["mas_audit"],
+        },
+        {
+            "prepare_target": "aftraj_audit_test",
+            "runnable_tasks": ["aftraj_audit_test"],
+            "kinds": ["mas_audit"],
+        },
+    ],
+    "AgentCollabBench": [
+        {
+            "prepare_target": "agent_collab",
+            "runnable_tasks": [
+                "agent_collab_idr",
+                "agent_collab_rtd",
+                "agent_collab_cpr",
+                "agent_collab_clc",
+            ],
+            "kinds": [
+                "mas_instruction_decay",
+                "mas_tracer_durability",
+                "mas_consensus_pollution",
+                "mas_context_leakage",
+            ],
+        },
+        {
+            "prepare_target": "agent_collab_idr",
+            "runnable_tasks": ["agent_collab_idr"],
+            "kinds": ["mas_instruction_decay"],
+        },
+        {
+            "prepare_target": "agent_collab_rtd",
+            "runnable_tasks": ["agent_collab_rtd"],
+            "kinds": ["mas_tracer_durability"],
+        },
+        {
+            "prepare_target": "agent_collab_cpr",
+            "runnable_tasks": ["agent_collab_cpr"],
+            "kinds": ["mas_consensus_pollution"],
+        },
+        {
+            "prepare_target": "agent_collab_clc",
+            "runnable_tasks": ["agent_collab_clc"],
+            "kinds": ["mas_context_leakage"],
+        },
+    ],
+    "MAST-Data": [
+        {
+            "prepare_target": "mast_data",
+            "runnable_tasks": ["mast_failure"],
+            "kinds": ["mas_failure_taxonomy"],
+        },
+        {
+            "prepare_target": "mast_failure",
+            "runnable_tasks": ["mast_failure"],
+            "kinds": ["mas_failure_taxonomy"],
+        },
+    ],
+    "Open Agent Traces": [
+        {
+            "prepare_target": "open_agent_traces",
+            "runnable_tasks": ["open_agent_traces"],
+            "kinds": ["mas_deviation"],
+        },
+    ],
+}
 
-    base = os.path.join(RAW, subdir)
-    files = glob.glob(os.path.join(base, f"{split}-*.parquet")) or \
-        glob.glob(os.path.join(base, "*.parquet"))
-    if not files:
-        raise FileNotFoundError(f"no parquet under {base}")
-    return load_dataset("parquet", data_files={split: files}, split=split)
+
+for _row in BENCHMARK_STRUCTURE:
+    _row["mappings"] = BENCHMARK_MAPPINGS[_row["benchmark_source"]]
 
 
-def _fmt_choices(stem: str, texts, labels) -> str:
-    lines = [f"{lab}. {txt}" for lab, txt in zip(labels, texts)]
-    return stem.strip() + "\n" + "\n".join(lines) + "\nAnswer with the option letter."
+def prepare_human_eval(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_human_eval_source(force_download=force, source=source))
 
 
-# ---------- reasoning pole ----------
-def load_gsm8k(n: Optional[int] = None) -> List[Dict]:
-    out = []
-    for it in _parquet("gsm8k/main", "test"):
-        gold = it["answer"].split("####")[-1].strip().replace(",", "")
-        out.append({"task": "gsm8k", "kind": "exact",
-                    "question": it["question"].strip() + "\nGive the final numeric answer.",
-                    "gold": gold, "context": None})
-        if n and len(out) >= n:
-            break
-    return out
+def prepare_gaia(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_gaia_full_source(force_download=force, source=source))
 
 
-def load_aime2024(n: Optional[int] = None) -> List[Dict]:
-    out = []
-    for it in _parquet("aime_2024/data", "train"):
-        out.append({"task": "aime2024", "kind": "aime",
-                    "question": it["problem"].strip() + "\nGive the final integer answer.",
-                    "gold": str(it["answer"]).strip(), "context": None})
-        if n and len(out) >= n:
-            break
-    return out
+def prepare_gaia_validation(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_gaia_validation_source(force_download=force, source=source))
 
 
-# ---------- fact pole ----------
-def _load_arc(subset: str, task: str, n: Optional[int]) -> List[Dict]:
-    out = []
-    for it in _parquet(f"ai2_arc/{subset}", "test"):
-        ch = it["choices"]
-        labels = [str(label) for label in ch["label"]]
-        gold_letter = str(it["answerKey"])
-        gold_text = dict(zip(labels, ch["text"])).get(gold_letter, "")
-        out.append({"task": task, "kind": "mc",
-                    "question": _fmt_choices(it["question"], ch["text"], labels),
-                    "gold": [gold_text, gold_letter], "context": None})
-        if n and len(out) >= n:
-            break
-    return out
+def prepare_aftraj(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_aftraj_source(force_download=force, source=source))
 
 
-def load_arc_easy(n=None):
-    return _load_arc("ARC-Easy", "arc_easy", n)
+def prepare_agent_collab(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_agent_collab_source(force_download=force, source=source))
 
 
-def load_openbookqa(n: Optional[int] = None) -> List[Dict]:
-    out = []
-    for it in _parquet("openbookqa/main", "test"):
-        ch = it["choices"]
-        labels = [str(label) for label in ch["label"]]
-        gold_letter = str(it["answerKey"])
-        gold_text = dict(zip(labels, ch["text"])).get(gold_letter, "")
-        out.append({"task": "openbookqa", "kind": "mc",
-                    "question": _fmt_choices(it["question_stem"], ch["text"], labels),
-                    "gold": [gold_text, gold_letter], "context": None})
-        if n and len(out) >= n:
-            break
-    return out
+def prepare_mast_data(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_mast_source(force_download=force, source=source))
 
 
-def load_medqa(n: Optional[int] = None) -> List[Dict]:
-    with open(os.path.join(RAW, "medqa.json")) as f:
-        data = json.load(f)
-    out = []
-    for it in data:
-        opts = it["options"]  # ["A. ...", ...]
-        ans = it["answer"].strip()
-        letter = None
-        for o in opts:
-            m = re.match(r"\s*([A-D])\.\s*(.*)", o)
-            if m and m.group(2).strip() == ans:
-                letter = m.group(1)
-                break
-        out.append({"task": "medqa", "kind": "mc",
-                    "question": it["question"].strip(),
-                    "gold": [ans, letter], "context": None})
-        if n and len(out) >= n:
-            break
-    return out
+def prepare_open_agent_traces(force: bool = False, source: Optional[str] = None) -> str:
+    return str(ensure_open_agent_traces_source(force_download=force, source=source))
 
 
-# ---------- long-memory probe ----------
-def load_locomo10(n: Optional[int] = None, max_qa_per_conv: int = 10) -> List[Dict]:
-    """Flatten LoCoMo: each record = one question + the full dialogue history text."""
-    with open(os.path.join(PROCESSED, "locomo10.json")) as f:
-        data = json.load(f)
-    out = []
-    for conv in data:
-        parts = []
-        for sid, date, sess in zip(conv["sessions_ids"], conv["sessions_dates"], conv["sessions"]):
-            parts.append(f"=== {sid} ({date}) ===")
-            parts.extend(sess if isinstance(sess, list) else [str(sess)])
-        history = "\n".join(parts)
-        for qa in conv["qa"][:max_qa_per_conv]:
-            ans = qa.get("answer")
-            if ans is None:
-                continue
-            out.append({"task": "locomo10", "kind": "f1",
-                        "question": qa["question"].strip() + "\nAnswer concisely.",
-                        "gold": [str(ans)], "context": history})
-            if n and len(out) >= n:
-                return out
-    return out
+SOURCE_PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
+    "gsm8k": prepare_gsm8k,
+    "aime_2024": prepare_aime_2024,
+    "arc_easy": prepare_arc_easy,
+    "openbookqa": prepare_openbookqa,
+    "medqa": prepare_medqa,
+    "locomo10": prepare_locomo10,
+    "human_eval": prepare_human_eval,
+    "gaia": prepare_gaia,
+    "gaia_validation": prepare_gaia_validation,
+    "aftraj": prepare_aftraj,
+    "agent_collab": prepare_agent_collab,
+    "mast_data": prepare_mast_data,
+    "open_agent_traces": prepare_open_agent_traces,
+}
+
+PREPARE_ALIASES: dict[str, str] = {
+    "gaia_validation_level_1": "gaia_validation",
+    "gaia_validation_level_2": "gaia_validation",
+    "gaia_validation_level_3": "gaia_validation",
+    "aftraj_audit": "aftraj",
+    "aftraj_audit_test": "aftraj",
+    "agent_collab_idr": "agent_collab",
+    "agent_collab_rtd": "agent_collab",
+    "agent_collab_cpr": "agent_collab",
+    "agent_collab_clc": "agent_collab",
+    "mast_failure": "mast_data",
+}
+
+PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
+    **SOURCE_PREPARERS,
+    **{alias: SOURCE_PREPARERS[source] for alias, source in PREPARE_ALIASES.items()},
+}
+
+
+def prepare(task: str, force: bool = False, source: Optional[str] = None) -> str:
+    try:
+        return PREPARERS[task](force, source)
+    except KeyError as exc:
+        available = ", ".join(sorted(PREPARERS))
+        raise KeyError(f"No preparer for benchmark {task!r}; available: {available}") from exc
 
 
 LOADERS = {
-    "gsm8k": load_gsm8k, "aime2024": load_aime2024,
-    "arc_easy": load_arc_easy, "openbookqa": load_openbookqa, "medqa": load_medqa,
+    "gsm8k": load_gsm8k,
+    "aime_2024": load_aime_2024,
+    "arc_easy": load_arc_easy,
+    "openbookqa": load_openbookqa,
+    "medqa": load_medqa,
     "locomo10": load_locomo10,
+    "human_eval": load_human_eval,
+    "gaia_validation": load_gaia_validation,
+    "gaia_validation_level_1": load_gaia_validation_level_1,
+    "gaia_validation_level_2": load_gaia_validation_level_2,
+    "gaia_validation_level_3": load_gaia_validation_level_3,
+    "aftraj_audit": load_aftraj_audit,
+    "aftraj_audit_test": load_aftraj_audit_test,
+    "agent_collab_idr": load_agent_collab_idr,
+    "agent_collab_rtd": load_agent_collab_rtd,
+    "agent_collab_cpr": load_agent_collab_cpr,
+    "agent_collab_clc": load_agent_collab_clc,
+    "mast_failure": load_mast_failure,
+    "open_agent_traces": load_open_agent_traces,
 }
 
 
@@ -157,9 +436,8 @@ def load(task: str, n: Optional[int] = None) -> List[Dict]:
     return LOADERS[task](n=n)
 
 
-# ---------- benchmark 注册（惰性：构造不读盘，load() 时才加载） ----------
 class _Benchmark:
-    """统一基准接口：load(n) 调对应 loader。构造时不触碰磁盘/datasets（CLAUDE.md §9）。"""
+    """Uniform registry adapter: construction is lazy and does not touch data."""
 
     task: str = ""
 
@@ -170,8 +448,7 @@ class _Benchmark:
         return load(self.task, n=self.n if n is None else n)
 
 
-def _register_benchmarks():
-    # 为每个 task 动态生成一个 _Benchmark 子类并注册为 benchmark/<task>
+def _register_benchmarks() -> None:
     for _task in LOADERS:
         cls = type(f"Benchmark_{_task}", (_Benchmark,), {"task": _task, "name": _task})
         REGISTRY.register("benchmark", _task)(cls)
@@ -179,4 +456,25 @@ def _register_benchmarks():
 
 _register_benchmarks()
 
-__all__ = ["load", "LOADERS", "REASONING_POLE", "FACT_POLE", "MEMORY_TASKS"]
+__all__ = [
+    "load",
+    "prepare",
+    "PREPARERS",
+    "SOURCE_PREPARERS",
+    "PREPARE_ALIASES",
+    "LOADERS",
+    "FULL_PREPARE_TARGETS",
+    "BENCHMARK_STRUCTURE",
+    "BENCHMARK_MAPPINGS",
+    "DATA_BACKENDS",
+    "RAW",
+    "PREPARED",
+    "PROCESSED",
+    "REASONING_POLE",
+    "FACT_POLE",
+    "MEMORY_TASKS",
+    "CODE_TASKS",
+    "TOOL_TASKS",
+    "MAS_DIAGNOSTIC_TASKS",
+    "MAS_COLLAB_TASKS",
+]

@@ -93,7 +93,7 @@ def main() -> None:
         while len(chat_ids(solver_sys, "x")) < len(chat_ids(analyst_sys, "x")):
             solver_sys += "\n"
 
-    data = load_task("aime2024", n=(args.n or None))
+    data = load_task("aime_2024", n=(args.n or None))
     samples, fused_ok, plain_ok = [], 0, 0
     for i, it in enumerate(data):
         prob, gold = it["question"], it["gold"]

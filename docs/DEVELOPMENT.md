@@ -58,11 +58,15 @@ src/lychee_mas/
 │   └── processing/     决定跑几次 MAS：serial/（processor/serial 跑 1 次）+ parallel/（processor/parallel 并发 K 次 + aggregator 聚合：self_consistency 可跑 / dynamicagg 桩）
 ├── pipeline.py            Orchestrator.run（端到端编排，按 config 从 REGISTRY 取组件）
 └── eval/
-    ├── benchmarks/        数据 loaders + benchmark/<task> 注册（惰性加载，不在 import 读盘）
-    ├── metrics.py         score（exact/aime/mc/f1）+ result_dir/write_results（math/yaml 惰性导入）
+    ├── benchmarks/        数据 loaders + benchmark/<task> 注册（共 19：文本类 6 + benchmark 子系统；惰性加载，不在 import 读盘）
+    ├── metrics.py         score（exact/aime/mc/f1 + human_eval/gaia/mas_* 等）+ result_dir/write_results（math/yaml 惰性导入）
     ├── math_parsing_util.py  Qwen2.5-Math 借用的数学解析（逐字保留；heavy 依赖，仅 score_aime 内惰性 import）
     └── task_config.py     每个 task 的默认队伍 + 答案提取策略
 ```
+
+> **Benchmark 子系统**（HumanEval / GAIA / choice-QA / MAS 诊断类等）的数据准备、`run_mas.py` 纯推理落
+> `predictions.jsonl`/`spans.jsonl` + `analyze_benchmark_run.py` 事后打分、批量入口 `run_benchmark_batch.py`
+> 及 docker 沙盒，详见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。重依赖走 `pip install -e ".[benchmark]"`。
 
 ---
 

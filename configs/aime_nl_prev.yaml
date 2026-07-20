@@ -22,7 +22,7 @@ router:                          # 触发算法接缝
   P: 16                          # latent prefix 长度（nl_only 下不生效）
 
 run:                             # 单次实验运行参数
-  task: aime2024                 # ★ AIME
+  task: aime_2024                 # ★ AIME
   n: all                         # ★ 全量（all/null/0 = 不截断，跑完整数据集）
   max_rounds: 2                  # analyst→solver→verifier 最多循环 2 轮
   max_new_tokens: 4096           # AIME 推理较长，给足生成预算（想更快可调小）

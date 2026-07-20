@@ -7,6 +7,7 @@
 
 未登记的 task 用 DEFAULT_TEAM / DEFAULT_EXTRACTOR 兜底。纯标准库（仅 re）。
 """
+
 from __future__ import annotations
 
 import re
@@ -52,12 +53,25 @@ DEFAULT_EXTRACTOR = "default"  # 未登记 task 的默认答案提取策略
 
 # task 名 -> {team: 队伍 profile 名, extractor: 提取策略名}
 TASK_CONFIG: dict[str, dict] = {
-    "gsm8k":      {"team": "reason", "extractor": "default"},
-    "aime2024":   {"team": "aime",   "extractor": "boxed"},
-    "medqa":      {"team": "fact",   "extractor": "default"},
-    "arc_easy":   {"team": "fact",   "extractor": "default"},
-    "openbookqa": {"team": "fact",   "extractor": "default"},
-    "locomo10":   {"team": "memory", "extractor": "default"},
+    "gsm8k": {"team": "reason", "extractor": "default"},
+    "aime_2024": {"team": "aime", "extractor": "boxed"},
+    "medqa": {"team": "fact", "extractor": "default"},
+    "arc_easy": {"team": "fact", "extractor": "default"},
+    "openbookqa": {"team": "fact", "extractor": "default"},
+    "locomo10": {"team": "memory", "extractor": "default"},
+    "human_eval": {"team": "human_eval", "extractor": "default"},
+    "gaia_validation": {"team": "gaia", "extractor": "default"},
+    "gaia_validation_level_1": {"team": "gaia", "extractor": "default"},
+    "gaia_validation_level_2": {"team": "gaia", "extractor": "default"},
+    "gaia_validation_level_3": {"team": "gaia", "extractor": "default"},
+    "aftraj_audit": {"team": "reason", "extractor": "default"},
+    "aftraj_audit_test": {"team": "reason", "extractor": "default"},
+    "agent_collab_idr": {"team": "reason", "extractor": "default"},
+    "agent_collab_rtd": {"team": "reason", "extractor": "default"},
+    "agent_collab_cpr": {"team": "reason", "extractor": "default"},
+    "agent_collab_clc": {"team": "reason", "extractor": "default"},
+    "mast_failure": {"team": "reason", "extractor": "default"},
+    "open_agent_traces": {"team": "reason", "extractor": "default"},
 }
 
 

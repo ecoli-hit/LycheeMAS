@@ -127,7 +127,7 @@ def _persist(args, result: dict) -> str:
     bench = args.benchmark or "adhoc"
     from lychee_mas.eval.metrics import result_dir, write_results
 
-    out_dir = result_dir(args.model_tag, method, bench, root=args.results_root)
+    out_dir = result_dir(args.model_tag, method, bench, root=args.runs_root or args.results_root)
     snapshot = {"args": vars(args), "registry": REGISTRY.snapshot()}
     write_results(out_dir, result["samples"], result["metrics"], snapshot)
     return out_dir
@@ -151,14 +151,16 @@ def main() -> None:
                     help="团队规模下界（消融/扫描用；默认走 selector 默认 1）")
     ap.add_argument("--selector-max-roles", dest="selector_max_roles", type=int, default=None,
                     help="团队规模上界（消融/扫描用；默认走 selector 默认 5）")
-    ap.add_argument("--benchmark", default=None, help="benchmark 名（gsm8k|aime2024|...）")
+    ap.add_argument("--benchmark", default=None, help="benchmark 名（gsm8k|aime_2024|...）")
     ap.add_argument("--questions", nargs="*", default=None, help="离线自检：直接给若干问题")
     ap.add_argument("--n", type=int, default=5, help="样本数上限")
     ap.add_argument("--rounds", type=int, default=1, help="每轮发言轮数")
     ap.add_argument("--seed", type=int, default=0, help="随机种子（可复现）")
     ap.add_argument("--model-tag", dest="model_tag", default="mock", help="落盘目录用的模型标签")
-    ap.add_argument("--results-root", dest="results_root", default=os.path.join("runs", "lychee"),
-                    help="结果根目录")
+    ap.add_argument("--runs-root", dest="runs_root", default=None,
+                    help="运行结果根目录；优先于 --results-root")
+    ap.add_argument("--results-root", dest="results_root", default=None,
+                    help="旧兼容别名；未指定时使用 LYCHEE_BENCHMARK_RUNS_ROOT 或 runs/benchmarks")
     ap.add_argument("--no-save", action="store_true", help="不落盘（仅打印）")
     args = ap.parse_args()
 

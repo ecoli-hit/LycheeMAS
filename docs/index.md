@@ -78,7 +78,7 @@ src/lychee_mas/                       # ★ 框架本体（import 即触发全�
 │       └── parallel/                 #     processor/parallel（并发 K 次）+ aggregator/{self_consistency, dynamicagg}
 ├── pipeline.py                       # Orchestrator.run（端到端编排；可选 selector / aggregator）
 └── eval/                             # 评测
-    ├── benchmarks/                   #   benchmark/{gsm8k,aime2024,medqa,arc_easy,openbookqa,locomo10}（惰性加载）
+    ├── benchmarks/                   #   文本类{gsm8k,aime_2024,medqa,arc_easy,openbookqa,locomo10} + 子系统{human_eval,gaia_validation,aftraj_audit,agent_collab_*,mast_failure,open_agent_traces}（共 19，惰性加载）
     ├── metrics.py                    #   score（exact/aime/mc/f1）+ write_results（落盘）
     ├── math_parsing_util.py          #   Qwen2.5-Math 借用的数学解析（heavy 惰性）
     └── task_config.py                #   每个 task 的默认队伍 + 答案提取策略

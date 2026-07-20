@@ -36,13 +36,19 @@ class GenResult:
     n_gen_tokens: int  # 生成的新 token 数
     latency_s: float  # 本次生成耗时（秒）
     prefix_len: int = 0  # n_prompt_pos 里属于 latent prefix 的位置数 P（无 latent 则 0）
+    original_prompt_pos: Optional[int] = None  # 截断前 prompt token 数；未截断时等于 n_prompt_pos
+    prompt_truncated: bool = False  # 是否因超过 max_input_tokens 裁剪了上下文
+    dropped_messages: int = 0  # 上下文裁剪时丢弃的旧非 system 消息数
 
 
 class HFBackend:
     def __init__(self, model_name: Optional[str] = None, device: str = "cuda:0",
                  dtype: Any = None, enable_thinking: bool = False,
                  do_sample: bool = False, temperature: float = 0.7,
-                 top_p: float = 0.8, seed: int = 0, strict_hidden: bool = True):
+                 top_p: float = 0.8, seed: int = 0, strict_hidden: bool = True,
+                 max_input_tokens: Optional[int] = None,
+                 max_repeated_token_run: int = 128,
+                 repetition_penalty: float = 1.0):
         # torch/transformers 在此惰性导入（无 GPU/无库的离线环境不应触发本类构造）
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -62,6 +68,13 @@ class HFBackend:
             self.tok.pad_token = self.tok.eos_token
         self.model = AutoModelForCausalLM.from_pretrained(
             model_name, dtype=dtype).to(self.device).eval()  # eval 模式（无 dropout，确定性）
+        if not do_sample:
+            # Some checkpoints ship sampling defaults in generation_config.
+            # Greedy smoke runs should not emit warnings about ignored sampling
+            # knobs, so clear them at construction time.
+            for name in ("temperature", "top_p", "top_k"):
+                if hasattr(self.model.generation_config, name):
+                    setattr(self.model.generation_config, name, None)
         self.H = self.model.config.hidden_size
         # 约束 #3（latent soft-prefix 路径要求 H==2560）；C2C cache 融合按 head_dim 跨维，
         # source 模型 H 可不同 ⇒ strict_hidden=False 跳过此 assert。
@@ -74,40 +87,90 @@ class HFBackend:
         self.temperature = temperature
         self.top_p = top_p
         self.seed = seed
+        self.max_input_tokens = max_input_tokens
+        self.max_repeated_token_run = max_repeated_token_run
+        self.repetition_penalty = repetition_penalty
         if do_sample:
             torch.manual_seed(seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
 
-    def _gen_kwargs(self, max_new_tokens: int) -> Dict[str, Any]:
+    def _gen_kwargs(self, max_new_tokens: int, prompt_len: int = 0) -> Dict[str, Any]:
         """统一生成参数：默认贪心；do_sample=True 时加 temperature/top_p（构造已设种子）。"""
         kw: Dict[str, Any] = {"max_new_tokens": max_new_tokens, "do_sample": self.do_sample,
-                              "pad_token_id": self.tok.pad_token_id}
+                              "pad_token_id": self.tok.pad_token_id,
+                              "eos_token_id": self.tok.eos_token_id}
         if self.do_sample:
             kw["temperature"] = self.temperature
             kw["top_p"] = self.top_p
+        if self.repetition_penalty and self.repetition_penalty != 1.0:
+            kw["repetition_penalty"] = self.repetition_penalty
+        if self.max_repeated_token_run and self.max_repeated_token_run > 0:
+            from transformers import StoppingCriteria, StoppingCriteriaList
+
+            class RepeatedTokenRunCriteria(StoppingCriteria):
+                def __init__(self, start_len: int, max_run: int):
+                    self.start_len = start_len
+                    self.max_run = max_run
+
+                def __call__(self, input_ids, scores, **kwargs) -> bool:
+                    generated = input_ids[:, self.start_len:]
+                    if generated.shape[-1] < self.max_run:
+                        return False
+                    tail = generated[0, -self.max_run:]
+                    return bool((tail == tail[0]).all().item())
+
+            kw["stopping_criteria"] = StoppingCriteriaList([
+                RepeatedTokenRunCriteria(prompt_len, int(self.max_repeated_token_run))
+            ])
         return kw
 
     # ---- 构造 prompt 的 token ids ----
     def _chat_ids(self, messages: List[Dict]):
         # 套 Qwen chat 模板、加生成提示符，再分词成 (1,T) 的 ids
-        text = self.tok.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True,
-            enable_thinking=self.enable_thinking)
-        return self.tok(text, return_tensors="pt").input_ids.to(self.device)
+        def encode(ms: List[Dict]):
+            text = self.tok.apply_chat_template(
+                ms, tokenize=False, add_generation_prompt=True,
+                enable_thinking=self.enable_thinking)
+            return self.tok(text, return_tensors="pt").input_ids
+
+        ids = encode(messages)
+        original_len = int(ids.shape[1])
+        dropped = 0
+        if self.max_input_tokens and original_len > self.max_input_tokens:
+            kept = list(messages)
+            while ids.shape[1] > self.max_input_tokens:
+                removable = [i for i, msg in enumerate(kept) if msg.get("role") != "system"]
+                if len(removable) <= 1:
+                    break
+                del kept[removable[0]]
+                dropped += 1
+                ids = encode(kept)
+            if ids.shape[1] > self.max_input_tokens:
+                ids = ids[:, -int(self.max_input_tokens):]
+        truncated = original_len != int(ids.shape[1]) or dropped > 0
+        return ids.to(self.device), {
+            "original_prompt_pos": original_len,
+            "prompt_truncated": truncated,
+            "dropped_messages": dropped,
+        }
 
     # ---- 原语 1：普通文本生成（NL / none 走这里）----
     def generate_chat(self, messages: List[Dict], max_new_tokens: int = 256) -> GenResult:
         import torch
 
         with torch.no_grad():
-            ids = self._chat_ids(messages)
+            ids, prompt_info = self._chat_ids(messages)
+            attn = torch.ones_like(ids)
             t0 = time.time()
-            out = self.model.generate(input_ids=ids, **self._gen_kwargs(max_new_tokens))
+            out = self.model.generate(
+                input_ids=ids, attention_mask=attn,
+                **self._gen_kwargs(max_new_tokens, prompt_len=ids.shape[1])
+            )
             dt = time.time() - t0
             new = out[0, ids.shape[1]:]  # 用 input_ids 时 generate 回显输入，需切掉前缀只取新 token
             return GenResult(self.tok.decode(new, skip_special_tokens=True),
-                             ids.shape[1], int(new.shape[0]), dt)
+                             ids.shape[1], int(new.shape[0]), dt, **prompt_info)
 
     # ---- 原语 2：编码文本 -> 末层 hidden states（latent 的源）----
     def encode_hidden(self, text: str, max_tokens: int = 4096):
@@ -116,7 +179,10 @@ class HFBackend:
         with torch.no_grad():
             ids = self.tok(text, return_tensors="pt", truncation=True,
                            max_length=max_tokens).input_ids.to(self.device)  # 过长截断
-            out = self.model(input_ids=ids, output_hidden_states=True)  # 前向一遍取隐藏态
+            attn = torch.ones_like(ids)
+            out = self.model(
+                input_ids=ids, attention_mask=attn, output_hidden_states=True
+            )  # 前向一遍取隐藏态
             return out.hidden_states[-1]  # (1, T, H) 末层
 
     # ---- 原语 3：把 (1,P,H) soft prefix 拼到 token 嵌入前再生成（latent 注入）----
@@ -128,7 +194,7 @@ class HFBackend:
         assert prefix.dim() == 3 and prefix.shape[-1] == self.H, \
             f"prefix must be (1,P,{self.H}), got {tuple(prefix.shape)}"
         with torch.no_grad():
-            ids = self._chat_ids(messages)
+            ids, prompt_info = self._chat_ids(messages)
             tok_embeds = self.embed(ids)  # (1, T, H) 先把 ids 过嵌入层
             prefix = prefix.to(tok_embeds.dtype).to(self.device)  # 对齐 dtype/device
             P = prefix.shape[1]
@@ -138,11 +204,12 @@ class HFBackend:
             attn = torch.ones(1, P + ids.shape[1], device=self.device, dtype=torch.long)
             t0 = time.time()
             out = self.model.generate(inputs_embeds=inp, attention_mask=attn,
-                                      **self._gen_kwargs(max_new_tokens))
+                                      **self._gen_kwargs(max_new_tokens, prompt_len=0))
             dt = time.time() - t0
             # 用 inputs_embeds 时 generate 只返回新 token（不回显输入），故无需切片（约束 #3）
             return GenResult(self.tok.decode(out[0], skip_special_tokens=True),
-                             P + ids.shape[1], int(out.shape[1]), dt, prefix_len=P)
+                             P + ids.shape[1], int(out.shape[1]), dt, prefix_len=P,
+                             **prompt_info)
 
     # ---- C2C 原语：模型维度（建 projector 栈用）----
     def kv_dims(self) -> tuple:
@@ -157,8 +224,9 @@ class HFBackend:
         import torch
 
         with torch.no_grad():
-            ids = self._chat_ids(messages)
-            out = self.model(input_ids=ids, use_cache=True)
+            ids, _prompt_info = self._chat_ids(messages)
+            attn = torch.ones_like(ids)
+            out = self.model(input_ids=ids, attention_mask=attn, use_cache=True)
             layers = [(lyr.keys.detach(), lyr.values.detach())
                       for lyr in out.past_key_values.layers]
         return ids.shape[1], layers
@@ -209,16 +277,19 @@ class HFBackend:
         import torch
 
         with torch.no_grad():
-            ids = self._chat_ids(messages)
+            ids, prompt_info = self._chat_ids(messages)
+            attn = torch.ones_like(ids)
             cache = make_fusion_cache(source_layers, projectors, self.model.config,
                                       src_span=src_span, tgt_span=tgt_span)
             t0 = time.time()
-            out = self.model.generate(input_ids=ids, past_key_values=cache,
-                                      **self._gen_kwargs(max_new_tokens))
+            out = self.model.generate(
+                input_ids=ids, attention_mask=attn, past_key_values=cache,
+                **self._gen_kwargs(max_new_tokens, prompt_len=ids.shape[1])
+            )
             dt = time.time() - t0
             new = out[0, ids.shape[1]:]
             return GenResult(self.tok.decode(new, skip_special_tokens=True),
-                             ids.shape[1], int(new.shape[0]), dt)
+                             ids.shape[1], int(new.shape[0]), dt, **prompt_info)
 
 
 def common_suffix_len(a, b) -> int:
