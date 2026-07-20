@@ -12,7 +12,7 @@
 
 | 层 | 模块 | 职责 | 状态 |
 |----|------|------|------|
-| 构建 | `lychee_mas.layers.construct` | 团队组建 + 静态/动态拓扑（AgentSelector / TopologyGenerator） | static 已实现；动态/AgentInit 待接 |
+| 构建 | `lychee_mas.layers.construct` | 团队组建 + 静态/动态拓扑（AgentSelector / TopologyGenerator） | static + AgentInit（`agent_selector`）已实现；动态拓扑待接 |
 | 剪枝 | `lychee_mas.layers.prune` | 网络剪枝 + 模型级词表降本（GraphPruner / VocabAdapter） | 桩，待接 AgentDropout/AgentVocab |
 | 记忆 | `lychee_mas.memory`（**顶层包**，已提升出 `layers/`） | 运行时多表征记忆管理（MemoryManager + MemoryRouter） | **CDM 已实现（本仓库当前主线）** |
 | 处理 | `lychee_mas.layers.processing`（内分 `serial` + `parallel` 两子模块） | 决定跑几次 MAS + 如何归约：`processor/serial`（跑 1 次 → 1 轨迹）、`processor/parallel`（并发 K 次 → 用 `aggregator` 聚合） | serial/parallel 均可跑；aggregator: self_consistency 已实现、dynamicagg 待接 |

@@ -9,14 +9,14 @@
 
 ## 1. 本批文档清单（第一批：4 篇）
 
-| 文档 | 论文 | 会议 | 层 · 类别/注册名 | 当前桩位置 | 把握度 |
+| 文档 | 论文 | 会议 | 层 · 类别/注册名 | 状态 / 桩位置 | 把握度 |
 |---|---|---|---|---|---|
-| [01-agentinit.md](01-agentinit.md) | **AgentInit** — Diversity & Expertise Orchestration | EMNLP'25 Findings (CCF-B) | 构建 · `agent_selector/agentinit` | `layers/construct/selectors/__init__.py:14` | 🟡 |
+| [01-agentinit.md](01-agentinit.md) | **AgentInit** — Diversity & Expertise Orchestration | EMNLP'25 Findings (CCF-B) | 构建 · `agent_selector/agentinit` | ✅ 已实现（`selectors/agentinit.py`） | ✅ |
 | [02-agentdropout.md](02-agentdropout.md) | **AgentDropout** — Dynamic Agent Elimination | ACL'25 (CCF-A) | 剪枝 · `graph_pruner/agentdropout` | `layers/prune/pruners/__init__.py:27` | 🟢 |
 | [03-agentvocab.md](03-agentvocab.md) | **AgentVocab** — Structure-Aware Vocabulary Adaptation | ICML'26 (CCF-A) | 剪枝 · `vocab_adapter/agentvocab` | `layers/prune/vocab/__init__.py:13` | 🔴 |
 | [04-maspo.md](04-maspo.md) | **MASPO** — Joint Prompt Optimization | ICML'26 (CCF-A) | 归因训练 · `trainer/maspo` | `train/__init__.py:63` | 🟢 |
 
-> 把握度：🟢 据官方仓库 + arXiv 写实 / 🟡 arXiv 在但部分算法细节待核验 / 🔴 公开信息有限、需对照论文 PDF 回填。
+> 把握度：✅ 已实现落地 / 🟢 据官方仓库 + arXiv 写实 / 🟡 arXiv 在但部分算法细节待核验 / 🔴 公开信息有限、需对照论文 PDF 回填。
 >
 > **后续批次（暂缓）**：AgentPrune（`graph_pruner/agentprune`，基线）、AgentDropout v2（`graph_pruner/agentdropout_v2`，运行时在线淘汰）。
 
@@ -24,7 +24,7 @@
 
 | 论文 | arXiv / 主页 | 官方代码 |
 |---|---|---|
-| AgentInit | [arXiv 2509.19236](https://arxiv.org/abs/2509.19236) · [ACL 2025.findings-emnlp.636](https://aclanthology.org/2025.findings-emnlp.636/) | github.com/1737423697/AgentInit（待核验） |
+| AgentInit | [arXiv 2509.19236](https://arxiv.org/abs/2509.19236) · [ACL 2025.findings-emnlp.636](https://aclanthology.org/2025.findings-emnlp.636/) | [github.com/1737423697/AgentInit](https://github.com/1737423697/AgentInit) |
 | AgentDropout | [arXiv 2503.18891](https://arxiv.org/abs/2503.18891) · [ACL 2025.acl-long.1170](https://aclanthology.org/2025.acl-long.1170/) | [github.com/wangzx1219/AgentDropout](https://github.com/wangzx1219/AgentDropout) |
 | AgentVocab | ICML'26 [poster 61748](https://icml.cc/virtual/2026/poster/61748)（暂无公开 arXiv） | anonymous.4open.science/r/AgentVocab-28CC（匿名，待核验） |
 | MASPO | [arXiv 2605.06623](https://arxiv.org/abs/2605.06623) · ICML'26 [poster 62219](https://icml.cc/virtual/2026/poster/62219) | [github.com/wangzx1219/MASPO](https://github.com/wangzx1219/MASPO) |
@@ -131,5 +131,5 @@ MASPO ──(独立训练驱动: 采样→评分→三维信用→改 prompt→�
 |---|---|---|---|
 | AgentDropout（+邻接前置） | 🟢 | 8–12 | MASGraph 邻接；torch |
 | MASPO | 🟢 | 10–15 | 闭环；LLM 调用；`[train]` extra |
-| AgentInit | 🟡 | 5–8 | 候选池；算法核验 |
+| AgentInit | ✅ 已落地 | — | 候选池 + Pareto/Vendi（pool + generate） |
 | AgentVocab | 🔴 | 8–12 | hf_backend 生成期；公开信息缺口 |

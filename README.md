@@ -11,7 +11,7 @@
 
 | 层       | 模块                                        | 职责                                                                  |
 | -------- | ------------------------------------------- | --------------------------------------------------------------------- |
-| 构建     | `lychee_mas.layers.construct`             | 多智能体网络构建（团队组建 + 静态/动态图）                            |
+| 构建     | `lychee_mas.layers.construct`             | 多智能体网络构建（团队组建 + 静态/动态图；**AgentInit** 多样性×相关性选队）|
 | 剪枝     | `lychee_mas.layers.prune`                 | 网络剪枝与优化（含模型级词表降本）                                    |
 | 记忆     | `lychee_mas.memory`                       | 运行时多维度多表征记忆管理（NL/隐空间/参数；已提升为顶层包）          |
 | 处理     | `lychee_mas.layers.processing`            | 决定跑几次 MAS：`serial` 单次执行 + `parallel` 并发 K 次并聚合    |
@@ -67,6 +67,18 @@ PYTHONPATH=src python scripts/run_experiment.py \
     --runtime mock --team default --aggregator self_consistency \
     --questions "2 plus 2 is 4" "answer is 7"
 ```
+
+**AgentInit 选队**（`agent_selector/agentinit`，EMNLP'25 Findings）：用多样性×相关性的 Pareto 选择决定团队成员，替代固定 `--team` 模板。需 `.[construct]`（`vendi_score`）：
+
+```bash
+uv pip install -e ".[construct]"
+# pool 模式：固定候选池 + 确定性挑选，离线、可复现（generate 模式走 LLM 现场生成角色）
+PYTHONPATH=src python scripts/run_experiment.py \
+    --runtime mock --selector agentinit --selector-mode pool \
+    --questions "2 plus 2 is 4"
+```
+
+不带 `--selector` 时行为完全不变（走 `--team` 模板，零回归）。设计与用法详见 `docs/dev/01-agentinit.md`。
 
 ## 跑测试
 

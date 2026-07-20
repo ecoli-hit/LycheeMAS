@@ -1,228 +1,136 @@
-# 01 · AgentInit 开发文档（构建层）
+# 01 · AgentInit（构建层 · `agent_selector/agentinit`）
 
 > 论文：**AgentInit: Initializing LLM-based Multi-Agent Systems via Diversity and Expertise Orchestration for Effective and Efficient Collaboration**（EMNLP 2025 Findings, CCF-B）
-> arXiv [2509.19236](https://arxiv.org/abs/2509.19236) · [ACL 2025.findings-emnlp.636](https://aclanthology.org/2025.findings-emnlp.636/) · 代码 [github.com/1737423697/AgentInit](https://github.com/1737423697/AgentInit)
-> 目标：把 `agent_selector/agentinit` 从桩接成真实组件。
-> 把握度 🟡（方法骨架已确证；diversity/expertise 精确公式与是否共优化拓扑待论文 PDF）。先读 [README.md](README.md) §3 共性事实。
+> arXiv [2509.19236](https://arxiv.org/abs/2509.19236) · [ACL 2025.findings-emnlp.636](https://aclanthology.org/2025.findings-emnlp.636/) · 官方代码 [github.com/1737423697/AgentInit](https://github.com/1737423697/AgentInit)
+
+**状态：✅ 已实现并接入 Orchestrator**（`pool` 离线模式 + `generate` LLM 模式）。本文为**已落地组件**的使用与设计说明。
 
 ---
 
-## 0. 实现状态（2026-07，M1–M3 已完成）—— 以此节为准
+## 1. 方法核心
 
-`agent_selector/agentinit` 已从桩接成真实组件并接入 Orchestrator。**下文 §1–§12 是最初的规划稿，部分
-假设与最终实现不符**（对照官方源码核实后修正），以本节为准：
+AgentInit 解决「如何**组建**一支高效 MAS 团队」：在候选角色上做**多目标平衡选择**，同时兼顾团队**多样性**（diversity）与任务**相关性**（relevance），选出小而互补的团队 —— 降冗余、降 token、保性能。
 
-**与规划稿的关键出入（已按官方源码修正）**：
-- **不是 NSGA-II 进化**：官方 `Manager` 用 `itertools.combinations` 枚举角色子集当种群，只做**非支配
-  排序**取第一前沿（`Optimizer.fast_non_dominated_sort`），无交叉/变异/代数。故无 `generations/pop_size`。
-- **角色是按 query 用 LLM 现场生成**（CreateRoles→CheckRoles↔CheckPlans 共识→SelectGroup），非固定池。
-  框架另提供 `pool` 模式（固定候选池 + 确定性嵌入）作离线/消融替身。
-- **diversity = Vendi 分数**（官方同款 `vendi_score`，角色相似度子矩阵），**relevance = 与 query 的
-  平均余弦**；两目标取负 → 非支配排序同时最大化。
-- **团队规模 k 不固定**：由 `min_roles/max_roles`(1..5) + 前沿 + SelectGroup 涌现，无 `team_size`。
-- **budget**：官方无此概念。本实现仅 `generate` 模式 + **仅 token 单位**，用于给「角色生成多轮迭代」封顶；
-  pool 模式与 calls/usd 一律忽略（见 `AgentInitSelector.select` docstring）。
+选择数学与官方源码一致（不是 NSGA-II 进化）：
 
-**两种模式（同一 `select()`）**：
-- `pool`：固定候选池 + 确定性 hash 嵌入 + `_pareto` + 确定性挑选。零 GPU/API，可复现，兼作消融基线。
-- `generate`：忠实官方 —— 注入的 chat_fn（env 驱动 OpenAI 兼容）现场生成角色 + HF embedder
-  (`LYCHEE_EMBED_MODEL`) + LLM SelectGroup。含 RoleFeedback/PlanFeedback 双向反馈（并修了官方
-  `history_plan` 误用 `suggestions_roles` 的 bug）。
+- **枚举种群**：用 `itertools.combinations` 枚举规模 `min_roles..max_roles` 的角色子集当作种群（对齐官方 `Init_Population`），无交叉/变异/代数。
+- **两个目标**（都取负 → 同时最大化）：
+  - `relevance` = 子集内角色与 query 的**平均余弦**；
+  - `diversity` = 角色相似度子矩阵的 **Vendi 分数**（官方同款 `vendi_score`）。
+- **非支配排序**：`fast_non_dominated_sort` 取第一前沿（Pareto front）。
+- **定案**：`pool` 模式用确定性替身（前沿里 relevance+diversity 之和最优、平手偏小团队再按下标字典序）；`generate` 模式用 LLM `SelectGroup`。
 
-**落点文件**：`src/lychee_mas/layers/construct/selectors/`
-`agentinit.py`(选择器) · `_pareto.py`(非支配排序+双目标) · `pool.py`(候选池) · `_generate.py`(生成状态机)
-· `_llm.py`(chat helper，tenacity 重试) · `embedder.py`(HF embedder)；配置 `configs/agents/agentinit.yaml`；
-测试 `tests/test_agentinit*.py` + `tests/test_orchestrator_selector.py`。
+团队规模 **k 不固定**：由 `min_roles/max_roles`(默认 1..5) + 前沿涌现决定，无 `team_size` 超参。
 
-**用法**：
+---
+
+## 2. 两种模式（同一 `select()`）
+
+| 模式 | 角色来源 | 依赖 | 用途 |
+|---|---|---|---|
+| `pool`（默认） | 固定候选池 `pool.candidate_pool(query)` + 确定性 hash 嵌入 | 仅 `numpy` + `vendi_score`（`.[construct]`），零 GPU/API | 离线、可复现；也是「AgentInit 去掉 LLM 生成」的消融基线 |
+| `generate` | LLM 现场生成角色（CreateRoles↔Check 双向反馈共识 → SelectGroup） | 上面 + HF 句向量编码器 + OpenAI 兼容 LLM | 忠实复现官方；含 RoleFeedback/PlanFeedback |
+
+`generate` 模式的 LLM 走 env：`LYCHEE_LLM_MODEL / LYCHEE_LLM_API_KEY / LYCHEE_LLM_BASE_URL`；句向量编码器路径写在 config 的 `embedder_model`。
+
+**budget 语义**（本 selector 专属）：仅 `generate` 模式认 `Budget(unit=TOKENS)`，给「角色生成多轮迭代」封顶（累计生成 token 超限即用当前角色定案）；`pool` 模式与 `calls/usd` 单位一律忽略。
+
+---
+
+## 3. 在框架中的定位与接入
+
+- **层 / 类别 / 注册名**：构建（`layers/construct/`）· `agent_selector` · `agentinit`。
+- **协议**：`construct/base.py::AgentSelector.select(query, budget=None) -> list[AgentSpec]`。
+- **只产出团队成员**（AgentSpec 列表）；拓扑仍由 `StaticTopology` 接管 —— 契合框架「selector → topology」分工。
+
+`Orchestrator.build_graph(query)` 内的可选 selector step（`pipeline.py`）：
+
+```python
+agents = None
+if self.selector_name:                                    # 给了 --selector 才走
+    selector = REGISTRY.create("agent_selector", self.selector_name, **self.selector_kwargs)
+    agents = selector.select(query)
+topo = REGISTRY.create("topology_generator", "static", team=self.team, model=self.model, rounds=self.rounds)
+return topo.build(agents=agents)                          # StaticTopology.build 支持显式 agents（templates.py:222）
+```
+
+给了 `--selector` 时由 selector 决定成员，`--team` 的角色被覆盖、仅余 `meta["team"]` 标签（rounds 由 `--rounds` 决定，会打 warning）；**不给 `--selector` 时零回归**（走 team 模板）。
+
+---
+
+## 4. 落点文件
+
+`src/lychee_mas/layers/construct/selectors/`
+
+| 文件 | 职责 |
+|---|---|
+| `agentinit.py` | `AgentInitSelector`（注册 `agent_selector/agentinit`）+ `pool` 模式 `_select_pool` |
+| `_pareto.py` | `cosine_matrix` / `cosine_to_query` / `objective_relevance` / `objective_diversity`(Vendi) / `fast_non_dominated_sort` |
+| `pool.py` | `candidate_pool(query)` 候选池 + `embed_query` 确定性嵌入 + `CANDIDATE_ROLES` |
+| `_generate.py` | `generate_and_select` 生成状态机（CreateRoles↔Check → SelectGroup，双向反馈） |
+| `_llm.py` | OpenAI 兼容 chat helper（`tenacity` 重试） |
+| `embedder.py` | HF 句向量编码器（`generate` 模式，惰性 import） |
+
+配置 `configs/agents/agentinit.yaml`；测试 `tests/test_agentinit.py` · `tests/test_agentinit_generate.py` · `tests/test_orchestrator_selector.py`。
+
+> `numpy / vendi_score / torch` 全部方法内惰性 import —— `selectors/__init__` 被 import 时零重依赖，`make selfcheck` 仍 `HEAVY LOADED: NONE`。
+
+---
+
+## 5. 用法
+
 ```bash
-# 离线（pool，mock runtime）
-PYTHONPATH=src python scripts/run_experiment.py --runtime mock --selector agentinit --selector-mode pool \
-    --questions "..."
-# 真实（generate）：需 env LYCHEE_LLM_MODEL / LYCHEE_LLM_API_KEY / LYCHEE_LLM_BASE_URL + 编码器路径
+# 依赖：pool/generate 都需 vendi_score（.[construct]）
+uv pip install -e ".[construct]"
+
+# 离线 pool（mock runtime，确定性可复现）
+PYTHONPATH=src python scripts/run_experiment.py \
+    --runtime mock --selector agentinit --selector-mode pool --questions "..."
+
+# 真实 generate：需 env LYCHEE_LLM_MODEL / LYCHEE_LLM_API_KEY / LYCHEE_LLM_BASE_URL + 编码器路径
 python scripts/run_experiment.py --runtime autogen --selector agentinit --selector-mode generate \
     --selector-embedder /path/to/encoder --benchmark mmlu --n 5
 ```
-`--selector` 给出时由 selector 决定成员，`--team` 的角色被覆盖、仅余 `meta` 标签（rounds 由 `--rounds`
-决定，与 team 无关，会打 warning）；不给 `--selector` 时零回归。
+
+CLI 开关（`run_experiment.py`）：`--selector` `--selector-mode` `--selector-critique-rounds` `--selector-embedder` `--selector-min-roles`（透传给 `AgentInitSelector` 构造）。
 
 ---
 
-## 1. 论文与方法核心
-
-AgentInit 解决"如何**初始化/组建**一支高效 MAS 团队"：在候选 agent 池上做**多目标平衡选择**，兼顾团队**多样性**与任务**相关性/专长**，选出小而互补的团队（降冗余、降 token、保性能）。
-
-### 1.1 已确证（来源见下）
-
-- **选择策略 = Pareto 原则**：摘要原文"*Balanced team selection strategies using **Pareto principles*** 来 *jointly consider agent team diversity and task relevance*"。
-- **算法 = NSGA-II**（Non-dominated Sorting Genetic Algorithm II，多目标进化），正文确证。
-- **"Natural Language to Format" 机制**：保证（被选 agent 的）格式/一致性。
-- **构建基础**：实现基于 GPTSwarm / AgentPrune / AgentDropout / AutoAgents。
-- **效果**：相对 SOTA 与预定义策略整体性能 **1.2×、1.7×**，同时**显著降 token**；基准含 **MMLU**（代码 `experiments/run_mmlu.py`）。
-
-> 来源：[arXiv abstract 2509.19236](https://arxiv.org/abs/2509.19236)、[ACL Anthology 636](https://aclanthology.org/2025.findings-emnlp.636/)、[官方代码 README](https://github.com/1737423697/AgentInit)。
-
-### 1.2 `【待对照论文 PDF 核验】`
-
-- diversity 与 expertise/relevance 的**精确数学定义**（如 diversity=语义嵌入两两相似度的反函数？expertise=任务域小样本基准分？）。
-- 是否**同时优化拓扑**，还是**仅选成员**（拓扑交给下游）。
-- **团队规模 k** 的控制（固定 / 自适应 / 上下界）。
-- 完整 benchmark 列表与基线全名、精确数值。
-
-> 写实现前回填本节：读 [arXiv PDF](https://arxiv.org/pdf/2509.19236) 方法节 + 核对 `github.com/1737423697/AgentInit` 里实现 NSGA-II/选择的源文件（README 未直接列出函数名）。
-
----
-
-## 2. 在框架中的定位
-
-- **层**：构建（`layers/construct/`）。
-- **类别 / 注册名**：`agent_selector` / `agentinit`。
-- **协议**：`construct/base.py::AgentSelector`。
-- **当前桩**：`src/lychee_mas/layers/construct/selectors/__init__.py:14`（`AgentInitSelector.select` 抛 `NotImplementedError`）。
-
-**定位判断**：AgentInit 只产出"**团队成员（AgentSpec 列表）**"；拓扑由现有 `TopologyGenerator`（`StaticTopology`）接管——这与框架已有的"selector→topology"分工天然契合，且 `StaticTopology.build(agents=...)` **已支持显式传入 agents**（`construct/templates.py:222`），接入成本低。
-
----
-
-## 3. 接口函数（签名对齐）
-
-`construct/base.py`（原样）：
-
-```python
-@runtime_checkable
-class AgentSelector(Protocol):
-    def select(self, query: TaskQuery, budget: Optional[Budget] = None) -> list[AgentSpec]: ...
-```
-
-消费/产出类型（`core/types.py`）：
-
-```python
-@dataclass
-class AgentSpec:
-    id; name; role; system_prompt; model; tools: list[str]
-    profile: dict[str, Any]   # ★ 装专长/多样性特征（专长向量、嵌入、领域分）
-    meta: dict[str, Any]
-
-@dataclass
-class Budget: limit: float; unit: BudgetUnit   # tokens|calls|usd —— 控制团队规模/成本
-```
-
-约定：把每个候选 agent 的**专长向量/角色嵌入**放 `AgentSpec.profile`，diversity 用它两两算、expertise 用它对 `query` 算相关性；`budget` 映射到团队规模 k 或候选评估预算。
-
----
-
-## 4. 写哪些代码 · 在哪里实现
-
-| 动作 | 文件 | 说明 |
-|---|---|---|
-| **实现类** | `src/lychee_mas/layers/construct/selectors/agentinit.py`（新建） | `class AgentInitSelector(AgentSelector)`，`@REGISTRY.register("agent_selector","agentinit")` |
-| 替桩 + 触发注册 | `src/lychee_mas/layers/construct/selectors/__init__.py` | 删桩，改为 `from .agentinit import AgentInitSelector` |
-| **候选池** | `src/lychee_mas/layers/construct/templates.py` | 在固定 `TEAMS` 之外加更大的**角色/模型候选池** `CANDIDATE_ROLES`（带 `profile`/`description`）+ `candidate_pool(task)->list[AgentSpec]` |
-| 多样性/专长度量 | 同 `agentinit.py` | `_diversity(specs)`、`_expertise(spec, query)`（嵌入惰性 import；离线可用确定性桩特征测） |
-| NSGA-II 选择 | 同 `agentinit.py` | `_nsga2_select(cands, k, generations)`（纯 Python 实现非支配排序 + 拥挤度；无需重库） |
-| 配置 | `configs/agents/agentinit.yaml`（新建） | 超参（见 §8） |
-| 测试 | `tests/test_agentinit.py`（新建） | 离线 mock，测 Pareto/规模/确定性（见 §9） |
-| 编排接入 | `src/lychee_mas/pipeline.py` | `Orchestrator(selector=None)`：`build_graph()` 内先 `agents=selector.select(query,budget)` 再 `StaticTopology.build(agents=agents)` |
-| CLI | `scripts/run_experiment.py` | 加 `--selector`，透传给 `Orchestrator` |
-
-> 嵌入模型（若 expertise/diversity 用语义嵌入）**惰性 import**；NSGA-II 用纯标准库实现，保证 `selectors/__init__.py` import 零重依赖（`make selfcheck` 仍 `NONE`）。离线测试用 `profile` 里的确定性向量，不需真嵌入。
-
----
-
-## 5. 从官方仓库迁移映射
-
-> 原则：借选择算法逻辑，agent 执行仍走 LycheeMAS。保留原始引用与许可证（黄金法则 8）。
-
-| 官方仓库（`1737423697/AgentInit`） | → LycheeMAS 落点 |
-|---|---|
-| NSGA-II 多目标选择（具体文件待核验） | `AgentInitSelector._nsga2_select` |
-| diversity / expertise 度量 | `_diversity` / `_expertise`（公式待 PDF 回填） |
-| 候选生成 / 角色池 | `templates.py::candidate_pool` + `CANDIDATE_ROLES` |
-| Natural-Language-to-Format 机制 | 选中 agent 的 `system_prompt` 规整（复用 `Role`/`PREV_OUTPUT_HEADER` 约定） |
-| `experiments/run_mmlu.py` | 实验脚本 → `scripts/run_experiment.py --selector agentinit --benchmark ...` |
-
----
-
-## 6. 编排接入（集成）
-
-见 [README.md](README.md) §3.1。AgentInit 接在 topology **之前**：
-
-```python
-def build_graph(self):
-    agents = None
-    if self.selector:                                          # ← 新增可选 step
-        agents = REGISTRY.create("agent_selector", self.selector).select(self.query, self.budget)
-    topo = REGISTRY.create("topology_generator", "static", team=self.team, model=self.model, rounds=self.rounds)
-    return topo.build(agents=agents)                           # StaticTopology.build 已支持显式 agents
-```
-
-CLI：`--selector agentinit`。不带 `--selector` 时行为与现在完全一致（走 team 模板）。
-
----
-
-## 7. 开发流程（六步配方 + 里程碑）
-
-- **M0（核验, ~0.5d）**：读 arXiv PDF 方法节 + 官方源码，回填 §1.2（diversity/expertise 公式、是否定拓扑、规模 k）。
-- **M1（候选池, ~1d）**：`templates.py` 加 `CANDIDATE_ROLES` + `candidate_pool(task)`，每角色带 `profile`。
-- **M2（度量 + NSGA-II, ~2–3d）**：`_diversity`/`_expertise` + 纯 Python NSGA-II；`AgentInitSelector.select` 串起来；替桩 + 注册 + config + test。
-- **M3（接入 + 实验, ~1.5–2d）**：`Orchestrator(selector=)` + CLI；消融（见 §10），对齐论文 1.2×/1.7× 与 token 降幅。
-
-六步对齐：①读 `construct/base.py`（已确认）→②写 `agentinit.py`+注册 →③`selectors/__init__.py` 触发 →④`configs/agents/agentinit.yaml` →⑤`tests/test_agentinit.py` →⑥`make lint/test/selfcheck` + `make demo`。
-
----
-
-## 8. 配置 `configs/agents/agentinit.yaml`
+## 6. 配置 `configs/agents/agentinit.yaml`
 
 ```yaml
-# agent_selector/agentinit 超参
-team_size: 5              # 目标团队规模 k（待核验：固定 or 自适应）
-generations: 30          # NSGA-II 迭代代数
-pop_size: 50             # 候选池/种群大小
-objectives: [diversity, expertise]   # 两目标
-diversity_metric: embedding_cosine   # 待 PDF 核验
-expertise_metric: query_relevance    # 待 PDF 核验
-seed: 0                  # 可复现
+name: agentinit
+mode: pool                       # pool（离线/消融）| generate（忠实 LLM 生成）
+objectives: [relevance, diversity]
+min_roles: 1                     # 子集枚举下界
+max_roles: 5                     # 上界（对齐官方 Init_Population；规模由前沿涌现）
+seed: 0                          # pool 选择确定性；此项为 API 一致性预留
+
+# --- 仅 generate 模式 ---
+embedder_model: /path/to/embed   # 句向量编码器 HF 路径（yaml 走 safe_load，不支持 ${env:}，写真实路径）
+critique_rounds: 3               # CreateRoles↔Check 迭代上限（对齐官方 num_steps）
 ```
 
 ---
 
-## 9. 测试（离线、零重依赖）
+## 7. 测试（离线、零重依赖 · 需 `vendi_score`）
 
-`tests/test_agentinit.py`（用 `AgentSpec.profile` 里的确定性向量，不调真嵌入）：
+- `test_agentinit.py`：`pool` 模式规模约束、Pareto 前沿正确性、多样性生效、`seed` 确定性。
+- `test_agentinit_generate.py`：`generate` 状态机（fake chat_fn + mock embedder，不调真 LLM）。
+- `test_orchestrator_selector.py`：`Orchestrator(selector="agentinit")` 在 mock runtime 产出 `Trajectory`；不带 selector 与 team 模板一致。
 
-- 规模约束：`select()` 返回恰好 `team_size` 个 `AgentSpec`。
-- Pareto 正确性：构造已知支配关系的候选，断言被选集为非支配解（高 expertise + 高 diversity 的组合优先于被支配组合）。
-- 多样性生效：相同专长的重复候选不会被同时选满（diversity 目标拉开）。
-- 确定性：固定 `seed` 两次 `select()` 结果一致。
-- 接入不回归：`Orchestrator(selector="agentinit")` 在 mock runtime 产出 `Trajectory`；不带 selector 时与 team 模板一致。
+> 三个测试文件顶部 `pytest.importorskip("vendi_score")`：未装 `.[construct]` 时自动跳过（不报错）。
 
 ---
 
-## 10. 实验与消融
+## 8. 实验与消融
 
 | 配置 | 变量 | 看什么 |
 |---|---|---|
 | `--team default`（无 selector） | 预定义团队 | 基线 acc / token |
-| `--selector agentinit` | AgentInit 选队 | acc↑（对齐 1.2×/1.7×）、token↓ |
-| 随机选队 baseline | 随机 k 个 | 验证 AgentInit 优于随机 |
-| 扫 `team_size∈{3,5,7}` | 规模 | 规模-性能-成本权衡 |
-| 关 diversity / 关 expertise | 单目标 | 消融两目标各自贡献 |
+| `--selector agentinit --selector-mode pool` | AgentInit 选队（离线） | acc↑、token↓、团队规模 |
+| `--selector agentinit --selector-mode generate` | 忠实 AgentInit | 对齐论文 1.2×/1.7× |
+| 随机选队 baseline | 随机 k 个 | 验证优于随机 |
+| 关 diversity / 关 relevance | 单目标 | 两目标各自贡献 |
 
 **指标**：accuracy、token、团队规模、（可选）多样性分。基准对齐论文（含 MMLU）。落 `runs/<model-tag>/agentinit/<task>/`。
-
----
-
-## 11. 验收标准
-
-- `make lint && make test && make selfcheck` 全绿（`HEAVY LOADED: NONE`）。
-- 离线 `scripts/run_experiment.py --runtime mock --selector agentinit --questions "..."` 跑通。
-- 条件允许：`--runtime autogen --benchmark mmlu --n 5 --selector agentinit` 小样本 acc 不低于预定义团队、token 更省。
-- 不带 `--selector` 时行为与改前完全一致。
-
----
-
-## 12. 预期时间 + 风险依赖
-
-- **预期时间**：5–8 人天（M0 0.5d + M1 1d + M2 2–3d + M3 1.5–2d）。
-- **依赖**：候选池定义（`templates.py`）；可选嵌入模型（diversity/expertise 用语义相似度时）。**不依赖** MASGraph 邻接前置。
-- **风险**：① diversity/expertise 精确定义未确证（M0 必须先回填，否则实现可能偏离论文）；② 若论文实际**同时优化拓扑**，则需把选择产物也写入 `MASGraph.edges`，接入点要扩展（当前假设仅选成员）；③ 候选池质量直接决定上限，需覆盖任务所需角色谱。
