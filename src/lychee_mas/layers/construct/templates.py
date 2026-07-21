@@ -119,6 +119,28 @@ A one-line justification, then on the FINAL line exactly (a bare integer inside 
 APPROVE: \\boxed{{<integer 0-999>}}
 """
 
+# 双 agent（planner→solver，一轮）用的求解者：没有 Verifier，因此由 Solver 自己宣布最终答案。
+AIME_PS_SOLVER = f"""\
+# ROLE
+You are the Solver and the ONLY agent that declares the final answer.
+
+# INPUT
+The Planner's plan, given to you as a note headed "{PREV_OUTPUT_HEADER}".
+Follow that plan together with the original problem.
+
+# RULES
+- Show every non-trivial step.
+- The AIME answer is a SINGLE INTEGER between 0 and 999. Compute it all the way to that
+  integer: evaluate EVERY expression (binomial, factorial, fraction, radical, power, sum) to
+  a concrete number. NEVER leave the answer as an unevaluated expression and NEVER as a
+  decimal.
+- If your result is not an integer in [0, 999], you made an error — recheck before answering.
+
+# OUTPUT
+SOLUTION_STEPS, then on the FINAL line exactly (a bare integer inside \\boxed):
+APPROVE: \\boxed{{<integer 0-999>}}
+"""
+
 
 # ---- 命名队伍 profile（每个 profile 的最后一个角色必须用 APPROVE 收尾）----
 TEAMS: dict[str, List[Role]] = {
@@ -142,6 +164,13 @@ TEAMS: dict[str, List[Role]] = {
         Role("analyst", AIME_ANALYST),
         Role("solver", AIME_SOLVER),
         Role("verifier", AIME_VERIFIER),
+    ],
+
+    # Aime 双 agent（规划 -> 求解，一轮）：planner 复用 Analyst prompt（拆解+策略、不求解），
+    # solver 直接给最终答案（APPROVE 收尾）。用于最小 MAS 对照（text_mas / c2c / single）。
+    "planner_solver": [
+        Role("planner", AIME_ANALYST),
+        Role("solver", AIME_PS_SOLVER),
     ],
 
     # 推理极（gsm8k / aime ...）：规划 -> 求解 -> 复核，强调分步推导与重算

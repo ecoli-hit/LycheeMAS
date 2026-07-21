@@ -21,6 +21,7 @@ from .agent_collab import (
     load_agent_collab_rtd,
 )
 from .aime_2024 import load_aime_2024, prepare_aime_2024
+from .aime_2025 import load_aime_2025, prepare_aime_2025
 from .choice_qa import (
     load_arc_easy,
     load_medqa,
@@ -55,7 +56,7 @@ RAW = raw_root()
 PREPARED = prepared_root()
 PROCESSED = processed_root()
 
-REASONING_POLE = ("gsm8k", "aime_2024")
+REASONING_POLE = ("gsm8k", "aime_2024", "aime_2025")
 FACT_POLE = ("medqa", "openbookqa", "arc_easy")
 MEMORY_TASKS = ("locomo10",)
 CODE_TASKS = ("human_eval",)
@@ -81,6 +82,7 @@ MAS_COLLAB_TASKS = (
 FULL_PREPARE_TARGETS = (
     "gsm8k",
     "aime_2024",
+    "aime_2025",
     "arc_easy",
     "openbookqa",
     "medqa",
@@ -106,6 +108,13 @@ BENCHMARK_STRUCTURE = [
         "full_prepare_target": "aime_2024",
         "prepare_targets": ["aime_2024"],
         "runnable_tasks": ["aime_2024"],
+        "kinds": ["aime"],
+    },
+    {
+        "benchmark_source": "AIME 2025",
+        "full_prepare_target": "aime_2025",
+        "prepare_targets": ["aime_2025"],
+        "runnable_tasks": ["aime_2025"],
         "kinds": ["aime"],
     },
     {
@@ -214,6 +223,9 @@ BENCHMARK_MAPPINGS = {
     ],
     "AIME 2024": [
         {"prepare_target": "aime_2024", "runnable_tasks": ["aime_2024"], "kinds": ["aime"]},
+    ],
+    "AIME 2025": [
+        {"prepare_target": "aime_2025", "runnable_tasks": ["aime_2025"], "kinds": ["aime"]},
     ],
     "ARC-Easy": [
         {"prepare_target": "arc_easy", "runnable_tasks": ["arc_easy"], "kinds": ["mc"]},
@@ -369,6 +381,7 @@ def prepare_open_agent_traces(force: bool = False, source: Optional[str] = None)
 SOURCE_PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
     "gsm8k": prepare_gsm8k,
     "aime_2024": prepare_aime_2024,
+    "aime_2025": prepare_aime_2025,
     "arc_easy": prepare_arc_easy,
     "openbookqa": prepare_openbookqa,
     "medqa": prepare_medqa,
@@ -412,6 +425,7 @@ def prepare(task: str, force: bool = False, source: Optional[str] = None) -> str
 LOADERS = {
     "gsm8k": load_gsm8k,
     "aime_2024": load_aime_2024,
+    "aime_2025": load_aime_2025,
     "arc_easy": load_arc_easy,
     "openbookqa": load_openbookqa,
     "medqa": load_medqa,

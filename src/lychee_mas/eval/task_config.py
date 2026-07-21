@@ -55,6 +55,7 @@ DEFAULT_EXTRACTOR = "default"  # 未登记 task 的默认答案提取策略
 TASK_CONFIG: dict[str, dict] = {
     "gsm8k": {"team": "reason", "extractor": "default"},
     "aime_2024": {"team": "aime", "extractor": "boxed"},
+    "aime_2025": {"team": "aime", "extractor": "boxed"},
     "medqa": {"team": "fact", "extractor": "default"},
     "arc_easy": {"team": "fact", "extractor": "default"},
     "openbookqa": {"team": "fact", "extractor": "default"},

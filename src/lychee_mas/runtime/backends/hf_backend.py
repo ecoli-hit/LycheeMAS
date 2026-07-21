@@ -252,8 +252,9 @@ class HFBackend:
         只在该跨度上做逐层 KV 融合（projector 把 source-KV 融进 target-KV）。公共块过短(<min_align)
         说明没有可对齐的共享上下文 ⇒ 退回普通生成（不融合）。成本：prefix_len 记为 source 长度。
         """
-        src_ids = self._chat_ids(source_messages)[0].tolist()
-        tgt_ids = self._chat_ids(messages)[0].tolist()
+        # _chat_ids 返回 (ids(1,T), prompt_info)：先取 ids 再取首行，得到扁平 token 列表
+        src_ids = self._chat_ids(source_messages)[0][0].tolist()
+        tgt_ids = self._chat_ids(messages)[0][0].tolist()
         si, ti, L = longest_common_block(src_ids, tgt_ids)
         if L < min_align:
             return self.generate_chat(messages, max_new_tokens)  # 无共享跨度 -> 不融合

@@ -1,0 +1,37 @@
+# 试验一 c2c：AIME 上 planner→solver 双 agent、一轮、纯 latent 通道（C2C KV-cache 融合）。
+# 与 aime_ps_nl.yaml 同一支队伍/同一轮数，仅通信通道不同（NL 文本 → C2C KV 融合），apples-to-apples。
+# 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=1 \
+#         python scripts/run_mas.py --config configs/aime_ps_c2c.yaml           # aime_2024
+#       …同上 --task aime_2025                                                  # aime_2025
+# 落盘：results/lychee_v0_1/qwen3-4b/planner_solver_latent_only/<task>/
+
+backend:
+  model_path: /data/mxy/Models/Qwen/Qwen3-4B
+  model_tag: qwen3-4b
+  device: cuda:0
+  dtype: bfloat16
+  enable_thinking: false
+  do_sample: false                # 贪心，与 nl/single 同口径
+
+memory:
+  name: dual_channel
+  latent_strategy: c2c            # ★ 用训练好的 C2C projector 作 latent 通道
+  nl_strategy: prev_output
+  max_encode_tokens: 4096
+  include_transcript: true
+  # 同模型 self（Qwen3-4B）OpenHermes-500k 训练的 projector 栈
+  c2c_ckpt: /data/mxy/Project/CDM/LycheeMAS/runs/c2c/qwen3-4b_self_openhermes_500k/final
+  c2c_gate: soft                  # σ(logit) 连续门（与训练一致）
+
+router:
+  method: latent_only             # ★ 纯 latent：planner→solver 只走 KV 融合，不注入 NL
+
+run:
+  task: aime_2024
+  team: planner_solver            # ★ 双 agent：planner → solver
+  n: all
+  max_rounds: 1                   # ★ 一轮
+  max_new_tokens: 4096
+
+eval:
+  results_root: /data/mxy/Project/CDM/results/lychee_v0_1

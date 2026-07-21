@@ -1,0 +1,34 @@
+# 试验一 单模型基线：1 个 agent 直接作答、不注入任何记忆（team=single + method=none）。
+# 作为 planner_solver 双 agent（nl / c2c）的单模型对照，落在同一 results 树。
+# 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=2 \
+#         python scripts/run_mas.py --config configs/aime_ps_single.yaml        # aime_2024
+#       …同上 --task aime_2025                                                  # aime_2025
+# 落盘：results/lychee_v0_1/qwen3-4b/single_none/<task>/
+
+backend:
+  model_path: /data/mxy/Models/Qwen/Qwen3-4B
+  model_tag: qwen3-4b
+  device: cuda:0
+  dtype: bfloat16
+  enable_thinking: false
+  do_sample: false
+
+memory:                           # method=none 不注入，字段仅保留完整
+  name: dual_channel
+  latent_strategy: soft_token
+  nl_strategy: prev_output
+  max_encode_tokens: 4096
+  include_transcript: true
+
+router:
+  method: none                    # ★ 纯模型，无记忆注入
+
+run:
+  task: aime_2024
+  team: single                    # ★ 单 agent 直接作答
+  n: all
+  max_rounds: 1
+  max_new_tokens: 4096
+
+eval:
+  results_root: /data/mxy/Project/CDM/results/lychee_v0_1
