@@ -12,7 +12,6 @@
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-0F766E?style=flat-square">
   <img alt="核心零依赖" src="https://img.shields.io/badge/core%20deps-zero-0EA5E9?style=flat-square">
-  <img alt="研究主线 CDM" src="https://img.shields.io/badge/research-CDM%20memory-7C3AED?style=flat-square">
 </p>
 
 <p align="center">
@@ -26,7 +25,7 @@
 
 > **把整个 MAS 统一表示为一张带时序与记忆状态的有向图 G=(V,E,W,T,M)，每一层都是对 G（或其执行轨迹 τ）的一次变换。**
 
-> **版本范围：** 本 README 对应 **LycheeMAS v0.2**。当前研究主线 = 记忆层 CDM（`lychee_mas.memory`）：双通道记忆（自然语言 + 隐空间）+ 运行时动态通道选择。隐空间通道两种物化策略——`soft_token`（免训练自压缩）与 `c2c`（训练好的 Cache-to-Cache 逐层 KV 融合器）。端到端实验驱动见 `scripts/run_mas.py`。
+> **版本范围：** 本 README 对应 **LycheeMAS v0.2**。
 
 [框架总览](#框架总览) · [安装](#安装) · [跑 demo](#跑-demo离线零重依赖) · [跑测试](#跑测试) · [目录](#目录)
 
@@ -128,7 +127,7 @@ make lint     # ruff check src
 src/lychee_mas/
 ├── core/        统一图抽象类型（types）+ 组件注册表（registry）
 ├── runtime/     Runtime 协议 + 后端（mock / autogen / HF / vLLM）；唯一允许 import autogen 的位置
-├── memory/      记忆层 CDM（顶层包）：channels / managers / routing + store.py（MemoryStore）
+├── memory/      记忆层（顶层包）：channels / managers / routing + store.py（MemoryStore）
 ├── trace/       归因/信用（读侧）：归因/信用（attributor + credit_assigner）+ store.py（TraceStore）
 ├── train/       训练（写侧）：RL/提示优化训练（trainer/maspo）
 ├── layers/      层变换（construct / prune / processing{parallel,serial}；各层 base.py + 注册实现）
@@ -141,7 +140,7 @@ tests/           pytest（离线、零重依赖）
 docs/            开发文档（见 docs/DEVELOPMENT.md）
 ```
 
-> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、各层扩展点）见 `docs/DEVELOPMENT.md`；benchmark 接入交接见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。
+> 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、各层扩展点）见 `docs/DEVELOPMENT.md`；benchmark 接入交接见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。
 
 ---
 
