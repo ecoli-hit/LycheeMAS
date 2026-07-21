@@ -1,11 +1,38 @@
-# LycheeMAS
+<h1 align="center">LycheeMAS</h1>
 
 <div align="center">
     <img src="images/logo.png" width=250></img>
-    <p class="image-caption">LycheeMAS</p>
 </div>
 
+<p align="center"><strong>基于 AutoGen 的五层多智能体系统（MAS）研究框架</strong></p>
+<p align="center"><em>一张图 G=(V,E,W,T,M)，五层变换，组件可插拔、可消融、可复现。</em></p>
+
+<p align="center">
+  <a href="https://github.com/ecoli-hit/LycheeMAS"><img alt="Release v0.2" src="https://img.shields.io/badge/release-v0.2-111827?style=flat-square"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-0F766E?style=flat-square">
+  <img alt="核心零依赖" src="https://img.shields.io/badge/core%20deps-zero-0EA5E9?style=flat-square">
+  <img alt="研究主线 CDM" src="https://img.shields.io/badge/research-CDM%20memory-7C3AED?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="https://github.com/ecoli-hit/LycheeMAS">GitHub</a> ·
+  <a href="CLAUDE.md">工程规范</a> ·
+  <a href="docs/DEVELOPMENT.md">开发文档</a> ·
+  <a href="docs/BENCHMARK_HANDOFF_PUBLIC.md">Benchmark 交接</a> ·
+  <a href="configs/">配置</a> ·
+  <a href="examples/">示例</a>
+</p>
+
+> **把整个 MAS 统一表示为一张带时序与记忆状态的有向图 G=(V,E,W,T,M)，每一层都是对 G（或其执行轨迹 τ）的一次变换。**
+
+> **版本范围：** 本 README 对应 **LycheeMAS v0.2**。当前研究主线 = 记忆层 CDM（`lychee_mas.memory`）：双通道记忆（自然语言 + 隐空间）+ 运行时动态通道选择。隐空间通道两种物化策略——`soft_token`（免训练自压缩）与 `c2c`（训练好的 Cache-to-Cache 逐层 KV 融合器）。端到端实验驱动见 `scripts/run_mas.py`。
+
+[框架总览](#框架总览) · [安装](#安装) · [跑 demo](#跑-demo离线零重依赖) · [跑测试](#跑测试) · [目录](#目录)
+
 ---
+
+## 框架总览
 
 基于 **AutoGen** 的五层多智能体系统（MAS）研究框架。主线是把整个 MAS 统一表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**，每一层都是对 G（或其执行轨迹 τ）的一次变换：
 
@@ -19,7 +46,7 @@
 
 设计四原则：**可插拔可消融**（registry + config）、**Runtime 抽象隔离 AutoGen**、**性能-成本联合度量**、**可复现**。
 
-**当前研究主线 = 记忆层 CDM**（`lychee_mas.memory`）：双通道记忆（自然语言 + 隐空间）+ 运行时动态通道选择。隐空间通道两种物化策略——`soft_token`（免训练自压缩）与 `c2c`（训练好的 Cache-to-Cache 逐层 KV 融合器）。端到端实验驱动见 `scripts/run_mas.py`。
+---
 
 ## 安装
 
@@ -49,6 +76,8 @@ uv pip install -e ".[all]"
 ```
 
 重依赖（torch / transformers / autogen / numpy / yaml / sympy …）一律惰性导入：缺这些库时 `import lychee_mas` 与 `REGISTRY.snapshot()` 仍可成功（纯离线开发只需 `.[dev]`）。
+
+---
 
 ## 跑 demo（离线，零重依赖）
 
@@ -80,6 +109,8 @@ PYTHONPATH=src python scripts/run_experiment.py \
 
 不带 `--selector` 时行为完全不变（走 `--team` 模板，零回归）。设计与用法详见 `docs/dev/01-agentinit.md`。
 
+---
+
 ## 跑测试
 
 ```bash
@@ -88,6 +119,8 @@ make lint     # ruff check src
 ```
 
 全部用 mock runtime，无需 API key。
+
+---
 
 ## 目录
 
@@ -109,3 +142,7 @@ docs/            开发文档（见 docs/DEVELOPMENT.md）
 ```
 
 > 工程约束详见 `CLAUDE.md`；开发指南（如何新增一个组件、CDM 数据流、各层扩展点）见 `docs/DEVELOPMENT.md`；benchmark 接入交接见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。
+
+---
+
+<p align="center"><strong>把每一个 MAS 研究问题，变成同一张图上一次可消融的变换。</strong></p>
