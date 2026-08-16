@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "id": "aliyun-qwen-plus-cn-beijing-2025-12-01",
+  "basis": "token_usage",
+  "billing_mode": "provider_token_usage",
+  "rate_card_mode": "flat_or_input_token_tiers",
+  "rate_unit": "per_million_tokens",
+  "supported_deployment_kinds": ["api", "vllm"],
+  "required_rates": ["input", "output"],
+  "optional_rates": ["cached_input", "reasoning_output", "thinking_output"],
+  "currency": "CNY",
+  "rates": {},
+  "rate_tiers": [
+    {"up_to_input_tokens": 128000, "rates": {"input": 0.8, "cached_input": 0.16, "output": 2.0, "thinking_output": 8.0}},
+    {"up_to_input_tokens": 256000, "rates": {"input": 2.4, "cached_input": 0.48, "output": 20.0, "thinking_output": 24.0}},
+    {"up_to_input_tokens": 1000000, "rates": {"input": 4.8, "cached_input": 0.96, "output": 48.0, "thinking_output": 64.0}}
+  ],
+  "metadata": {
+    "provider": "Alibaba Cloud Model Studio",
+    "region": "cn-beijing",
+    "billing_mode": "real_time",
+    "model_snapshot": "qwen-plus-2025-12-01",
+    "model_ids": ["qwen-plus"],
+    "source_spec_ids": ["dashscope-qwen-plus"],
+    "rate_source": "official_documentation",
+    "rate_source_url": "https://help.aliyun.com/zh/model-studio/qwen-plus",
+    "retrieved_at": "2026-08-14",
+    "cache_pricing": "implicit_cache_hit_20_percent",
+    "purpose": "actual_cost"
+  },
+  "notes": "Official original prices for real-time inference in China (Beijing). The qwen-plus alias currently maps to qwen-plus-2025-12-01. Tier selection uses each request's total input tokens. thinking_output applies to all output tokens in thinking mode. Promotional discounts and free quota are excluded."
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "profile": "agbench_gaia",
+  "extends": "agbench_base",
+  "aligned_with": {
+    "case_requirements": "src/autogen/python/packages/agbench/benchmarks/GAIA/Templates/MagenticOne/requirements.txt",
+    "execution_adaptation": "Case requirements are preinstalled instead of repeated for every case"
+  },
+  "commands": [
+    "bash",
+    "curl",
+    "exiftool",
+    "ffmpeg",
+    "git",
+    "pip",
+    "python"
+  ],
+  "python_modules": [
+    "autogen_agentchat",
+    "autogen_core",
+    "autogen_ext",
+    "markitdown",
+    "matplotlib",
+    "nltk",
+    "numpy",
+    "pandas",
+    "playwright",
+    "pydub",
+    "pytest",
+    "requests",
+    "seaborn",
+    "sklearn",
+    "speech_recognition",
+    "tiktoken",
+    "urllib3",
+    "youtube_transcript_api",
+    "yaml"
+  ],
+  "python_distributions": {
+    "autogen-agentchat": "0.7.5",
+    "autogen-core": "0.7.5",
+    "autogen-ext": "0.7.5"
+  },
+  "browser_globs": [
+    "/ms-playwright/chromium-*/chrome-linux*/chrome",
+    "/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
+  ],
+  "writable_python_prefix": "/opt/lychee-case-venv"
+}

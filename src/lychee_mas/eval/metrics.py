@@ -12,6 +12,10 @@
   - "mas_deviation": Open Agent Traces deviation detection。
   - "mas_instruction_decay" / "mas_tracer_durability" /
     "mas_consensus_pollution" / "mas_context_leakage": AgentCollabBench metrics。
+  - "bbeh": BBEH 官方确定性答案抽取与 fuzzy exact match。
+  - "hle": HLE 官方 judge 结果与置信度校准。
+  - "swe_bench_verified": SWE-bench 官方 Docker harness resolved 状态。
+  - "workbench": WorkBench 官方最终数据库状态与 harmful side-effect 指标。
 
 CLAUDE.md §9：所有跑分必须同时报性能与成本——`result_dir`/`write_results` 落 metrics+outputs+config。
 
@@ -23,29 +27,34 @@ CLAUDE.md §9：所有跑分必须同时报性能与成本——`result_dir`/`wr
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import string
 from collections import Counter
 from typing import Any, List, Optional
 
-BINARY_SCORERS = {
-    "exact",
-    "aime",
-    "mc",
-    "human_eval",
-    "gaia",
-    "mas_audit",
-    "mas_deviation",
-    "mas_instruction_decay",
-    "mas_tracer_durability",
-    "mas_consensus_pollution",
-    "mas_context_leakage",
-}
+
+def _benchmark_for_kind(kind: str):
+    from .benchmarks import BENCHMARKS
+
+    for benchmark in BENCHMARKS.all():
+        if kind in benchmark.score_handlers:
+            return benchmark
+    raise KeyError(f"unknown scorer kind {kind!r}")
+
+
+def _binary_scorers() -> set[str]:
+    from .benchmarks import BENCHMARKS
+
+    return {kind for benchmark in BENCHMARKS.all() for kind in benchmark.binary_kinds}
+
+
+BINARY_SCORERS = _binary_scorers()
 
 
 def is_binary_scorer(kind: str | None) -> bool:
-    return bool(kind in BINARY_SCORERS)
+    return bool(kind and kind in BINARY_SCORERS)
 
 
 # ---- 规整 / 评分 ----
@@ -134,6 +143,12 @@ def score_human_eval(pred: str, gold) -> float:
     return 1.0 if evaluate_answer(pred, gold).get("success") else 0.0
 
 
+def score_bbeh(pred: str, gold: str) -> float:
+    from .benchmarks.bbeh import evaluate_correctness
+
+    return 1.0 if evaluate_correctness(str(pred), str(gold)) else 0.0
+
+
 def score_mas_audit(pred: str, gold) -> float:
     from .benchmarks.aftraj import score_audit
 
@@ -161,77 +176,14 @@ def score_agent_collab(pred: str, gold, metric: str | None = None) -> float:
 
 
 def score(kind: str, pred: str, gold) -> float:
-    # 统一评分入口：按 kind 分发；gold 可能是 str / (text, letter) / list
-    if kind == "exact":
-        return score_exact(pred, gold if isinstance(gold, str) else gold[0])
-    if kind == "aime":
-        return score_aime(pred, gold if isinstance(gold, str) else gold[0])
-    if kind == "mc":
-        gt, gl = gold if isinstance(gold, (list, tuple)) else (gold, None)  # (选项文本, 选项字母)
-        return score_mc(pred, gt, gl)
-    if kind == "f1":
-        return score_f1(pred, gold if isinstance(gold, list) else [gold])
-    if kind == "gaia":
-        return score_gaia(pred, gold if isinstance(gold, str) else gold[0])
-    if kind == "human_eval":
-        return score_human_eval(pred, gold)
-    if kind == "mas_audit":
-        return score_mas_audit(pred, gold)
-    if kind == "mas_failure_taxonomy":
-        return score_mas_failure_taxonomy(pred, gold)
-    if kind == "mas_deviation":
-        return score_mas_deviation(pred, gold)
-    if kind == "mas_instruction_decay":
-        return score_agent_collab(pred, gold, metric="IDR")
-    if kind == "mas_tracer_durability":
-        return score_agent_collab(pred, gold, metric="RTD")
-    if kind == "mas_consensus_pollution":
-        return score_agent_collab(pred, gold, metric="CPR")
-    if kind == "mas_context_leakage":
-        return score_agent_collab(pred, gold, metric="CLC")
-    raise ValueError(kind)
+    return float(score_details(kind, pred, gold).get("score", 0.0))
 
 
-def score_details(kind: str, pred: str, gold) -> dict:
-    """Return a structured score breakdown when a benchmark supports one."""
-    if kind == "mas_audit":
-        from .benchmarks.aftraj import audit_score_details
+def score_details(kind: str, pred: str, gold, record: dict | None = None) -> dict:
+    """Compatibility entry point for callers that only have a scorer kind."""
 
-        return audit_score_details(pred, gold if isinstance(gold, dict) else {})
-    if kind == "mas_failure_taxonomy":
-        from .benchmarks.mast_data import taxonomy_score_details
-
-        return taxonomy_score_details(pred, gold if isinstance(gold, dict) else {"labels": gold})
-    if kind == "mas_deviation":
-        from .benchmarks.open_agent_traces import deviation_score_details
-
-        return deviation_score_details(pred, gold if isinstance(gold, dict) else {})
-    if kind == "mas_instruction_decay":
-        from .benchmarks.agent_collab import agent_collab_score_details
-
-        return agent_collab_score_details(
-            pred, gold if isinstance(gold, dict) else {"expected": gold}, metric="IDR"
-        )
-    if kind == "mas_tracer_durability":
-        from .benchmarks.agent_collab import agent_collab_score_details
-
-        return agent_collab_score_details(
-            pred, gold if isinstance(gold, dict) else {"expected": gold}, metric="RTD"
-        )
-    if kind == "mas_consensus_pollution":
-        from .benchmarks.agent_collab import agent_collab_score_details
-
-        return agent_collab_score_details(
-            pred, gold if isinstance(gold, dict) else {"expected": gold}, metric="CPR"
-        )
-    if kind == "mas_context_leakage":
-        from .benchmarks.agent_collab import agent_collab_score_details
-
-        return agent_collab_score_details(
-            pred, gold if isinstance(gold, dict) else {"expected": gold}, metric="CLC"
-        )
-    value = score(kind, pred, gold)
-    return {"score": value}
+    benchmark = _benchmark_for_kind(kind)
+    return benchmark.score(pred, {"kind": kind, "gold": gold}, record=record)
 
 
 # ---- run-level 汇总 ----
@@ -262,6 +214,11 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
     """
     run_info = run_info or {}
     n = len(samples)
+    by_case_records: dict[str, list[dict]] = {}
+    for index, sample in enumerate(samples):
+        case_id = str(sample.get("case_id") or f"__missing_case_id_{index}")
+        by_case_records.setdefault(case_id, []).append(sample)
+    distinct_cases = len(by_case_records)
     first = samples[0] if samples else {}
     kind = run_info.get("scorer_kind") or first.get("scorer_kind") or first.get("kind")
     task = run_info.get("task") or first.get("task")
@@ -279,6 +236,21 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
     case_wall_time_sum = 0.0
     tool_call_count_sum = 0
     tool_error_count_sum = 0
+    tool_request_count_sum = 0
+    tool_execution_count_sum = 0
+    tool_agent_error_count_sum = 0
+    timing_fields = (
+        "client_rate_limiter_wait_s",
+        "client_http_request_latency_s",
+        "client_response_postprocess_latency_s",
+        "client_model_call_wall_time_s",
+        "provider_request_queue_latency_s",
+        "provider_scheduled_to_first_token_s",
+        "provider_generation_latency_s",
+        "provider_mean_inter_token_latency_s",
+        "provider_output_tokens_per_second",
+    )
+    timing_values: dict[str, list[float]] = {field: [] for field in timing_fields}
 
     for sample in samples:
         score_value = float(sample.get("score", sample.get("correct", 0.0)) or 0.0)
@@ -317,8 +289,30 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
             sample, "num_tool_calls", "tool_call_count", list_field="tool_calls"
         )
         tool_error_count_sum += int(_sample_number(sample, "num_tool_errors", "tool_error_count"))
+        tool_request_count_sum += _sample_count(
+            sample, "num_tool_requests", "tool_request_count", list_field="tool_requests"
+        )
+        tool_execution_count_sum += _sample_count(
+            sample,
+            "num_tool_executions",
+            "tool_execution_count",
+            list_field="tool_executions",
+        )
+        tool_agent_error_count_sum += _sample_count(
+            sample,
+            "num_tool_agent_errors",
+            "tool_agent_error_count",
+            list_field="tool_agent_errors",
+        )
+        for call in sample.get("model_calls") or []:
+            if not isinstance(call, dict):
+                continue
+            for field in timing_fields:
+                if call.get(field) is not None:
+                    timing_values[field].append(float(call[field]))
 
     score_mean = round(score_sum / n, 4) if n else None
+    case_divisor = distinct_cases or 1
     metrics = {
         "schema_version": 2,
         "model": run_info.get("model"),
@@ -326,37 +320,69 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
         "method": method,
         "team": run_info.get("team"),
         "task": task,
+        "benchmark_id": run_info.get("benchmark_id") or first.get("benchmark_id"),
         "probe": run_info.get("probe", "mas"),
         "memory": run_info.get("memory"),
         "router": run_info.get("router"),
         "summary_scope": run_info.get("summary_scope", "run"),
-        "aggregation_scope": "case_aggregates",
-        "num_cases": n,
-        "case_count": n,
+        "aggregation_scope": "prediction_and_distinct_case_aggregates",
+        "num_predictions": n,
+        "prediction_count": n,
+        "num_distinct_cases": distinct_cases,
+        "num_cases": distinct_cases,
+        "case_count": distinct_cases,
         "scorer_kind": kind,
         "mean_score": score_mean,
         "score_mean": score_mean,
         "accuracy": score_mean if is_binary_scorer(kind) else None,
+        "num_correct_predictions": num_correct if is_binary_scorer(kind) else None,
         "num_correct": num_correct if is_binary_scorer(kind) else None,
-        "mean_model_calls_per_case": round(model_call_count_sum / n, 2) if n else 0,
-        "mean_messages_per_case": round(message_count_sum / n, 2) if n else 0,
-        "mean_input_total_positions_per_case": round(input_positions_sum / n, 1) if n else 0,
-        "mean_input_text_tokens_per_case": round(text_input_tokens_sum / n, 1) if n else 0,
-        "mean_input_latent_positions_per_case": round(latent_prefix_positions_sum / n, 1)
-        if n
-        else 0,
-        "mean_output_text_tokens_per_case": round(output_tokens_sum / n, 1) if n else 0,
-        "mean_model_latency_s_per_case": round(generation_latency_sum / n, 3) if n else 0,
+        "mean_model_calls_per_prediction": round(model_call_count_sum / n, 2) if n else 0,
+        "mean_messages_per_prediction": round(message_count_sum / n, 2) if n else 0,
+        "mean_input_total_positions_per_prediction": round(input_positions_sum / n, 1) if n else 0,
+        "mean_input_text_tokens_per_prediction": round(text_input_tokens_sum / n, 1) if n else 0,
+        "mean_input_latent_positions_per_prediction": round(
+            latent_prefix_positions_sum / n, 1
+        ) if n else 0,
+        "mean_output_text_tokens_per_prediction": round(output_tokens_sum / n, 1) if n else 0,
+        "mean_model_latency_s_per_prediction": round(generation_latency_sum / n, 3) if n else 0,
+        "mean_model_calls_per_case": round(model_call_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_messages_per_case": round(message_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_input_total_positions_per_case": round(input_positions_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "mean_input_text_tokens_per_case": round(text_input_tokens_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "mean_input_latent_positions_per_case": round(
+            latent_prefix_positions_sum / case_divisor, 1
+        ) if distinct_cases else 0,
+        "mean_output_text_tokens_per_case": round(output_tokens_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "mean_model_latency_s_per_case": round(generation_latency_sum / case_divisor, 3)
+        if distinct_cases else 0,
         "mean_model_latency_s_per_call": round(generation_latency_sum / model_call_count_sum, 3)
         if model_call_count_sum
         else 0,
-        "mean_case_wall_time_s": round(case_wall_time_sum / n, 3) if n else 0,
-        "mean_tool_calls_per_case": round(tool_call_count_sum / n, 2) if n else 0,
-        "mean_tool_errors_per_case": round(tool_error_count_sum / n, 2) if n else 0,
+        "mean_case_wall_time_s": round(case_wall_time_sum / case_divisor, 3)
+        if distinct_cases else 0,
+        "mean_tool_calls_per_case": round(tool_call_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_tool_errors_per_case": round(tool_error_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_tool_requests_per_case": round(tool_request_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_tool_executions_per_case": round(tool_execution_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "mean_tool_agent_errors_per_case": round(tool_agent_error_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
         "total_model_calls": model_call_count_sum,
         "total_messages": message_count_sum,
         "total_tool_calls": tool_call_count_sum,
         "total_tool_errors": tool_error_count_sum,
+        "total_tool_requests": tool_request_count_sum,
+        "total_tool_executions": tool_execution_count_sum,
+        "total_tool_agent_errors": tool_agent_error_count_sum,
         "total_input_total_positions": input_positions_sum,
         "total_input_text_tokens": text_input_tokens_sum,
         "total_input_latent_positions": latent_prefix_positions_sum,
@@ -365,18 +391,32 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
         "total_case_wall_time_s": round(case_wall_time_sum, 3),
         "tool_call_count": tool_call_count_sum,
         "tool_error_count": tool_error_count_sum,
-        "model_calls_per_case_mean": round(model_call_count_sum / n, 2) if n else 0,
-        "messages_per_case_mean": round(message_count_sum / n, 2) if n else 0,
-        "tool_calls_per_case_mean": round(tool_call_count_sum / n, 2) if n else 0,
-        "tool_errors_per_case_mean": round(tool_error_count_sum / n, 2) if n else 0,
-        "input_positions_per_case_mean": round(input_positions_sum / n, 1) if n else 0,
-        "text_input_tokens_per_case_mean": round(text_input_tokens_sum / n, 1) if n else 0,
-        "latent_prefix_positions_per_case_mean": round(latent_prefix_positions_sum / n, 1)
-        if n
+        "tool_request_count": tool_request_count_sum,
+        "tool_execution_count": tool_execution_count_sum,
+        "tool_agent_error_count": tool_agent_error_count_sum,
+        "model_calls_per_case_mean": round(model_call_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "messages_per_case_mean": round(message_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "tool_calls_per_case_mean": round(tool_call_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "tool_errors_per_case_mean": round(tool_error_count_sum / case_divisor, 2)
+        if distinct_cases else 0,
+        "input_positions_per_case_mean": round(input_positions_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "text_input_tokens_per_case_mean": round(text_input_tokens_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "latent_prefix_positions_per_case_mean": round(
+            latent_prefix_positions_sum / case_divisor, 1
+        )
+        if distinct_cases
         else 0,
-        "output_tokens_per_case_mean": round(output_tokens_sum / n, 1) if n else 0,
-        "model_generation_latency_s_per_case_mean": round(generation_latency_sum / n, 3)
-        if n
+        "output_tokens_per_case_mean": round(output_tokens_sum / case_divisor, 1)
+        if distinct_cases else 0,
+        "model_generation_latency_s_per_case_mean": round(
+            generation_latency_sum / case_divisor, 3
+        )
+        if distinct_cases
         else 0,
         "model_generation_latency_s_per_call_mean": round(
             generation_latency_sum / model_call_count_sum, 3
@@ -392,41 +432,113 @@ def aggregate_samples(samples: List[dict], run_info: Optional[dict] = None) -> d
         "latency_s_mean": round(generation_latency_sum / n, 3) if n else 0,
         "messages_mean": round(message_count_sum / n, 2) if n else 0,
     }
+    for field, values in timing_values.items():
+        metrics[f"{field}_available_calls"] = len(values)
+        metrics[f"{field}_mean_per_available_call"] = (
+            round(sum(values) / len(values), 6) if values else None
+        )
+        if field != "provider_output_tokens_per_second":
+            metrics[f"{field}_total"] = round(sum(values), 6) if values else None
 
-    # ---- pass@K：当某些 case 有多份采样（run_mas --samples K）时，按 case 分组补充 ----
-    # 纯附加、不改上面任一字段；仅当检测到「样本数 > 去重 case 数」时才写入，K=1 运行完全不变。
-    # pass@1 = 各 case 内 K 份得分均值再对 case 求平均；pass@K = 各 case best-of-K 得分再平均
-    # （二值打分下即「命中率 / 任一正确率」，f1 等连续打分下为最优采样均值）。
-    by_case: dict = {}
-    for sample in samples:
-        cid = str(sample.get("case_id", ""))
-        sv = float(sample.get("score", sample.get("correct", 0.0)) or 0.0)
-        by_case.setdefault(cid, []).append(sv)
-    distinct_cases = len(by_case)
+    # ---- 多采样：二值 scorer 报标准 pass@k；连续 scorer 报 best-of-k score ----
     if distinct_cases and n > distinct_cases:
-        k_max = max(len(v) for v in by_case.values())
-        pass1 = round(sum(sum(v) / len(v) for v in by_case.values()) / distinct_cases, 4)
-        passk = round(sum(max(v) for v in by_case.values()) / distinct_cases, 4)
-        passk_block = {
-            "num_distinct_cases": distinct_cases,
-            "samples_per_case": round(n / distinct_cases, 2),
-            "max_samples_per_case": k_max,
-            "pass@1": pass1,
-            f"pass@{k_max}": passk,
+        scores_by_case = {
+            case_id: [
+                float(record.get("score", record.get("correct", 0.0)) or 0.0)
+                for record in records
+            ]
+            for case_id, records in by_case_records.items()
         }
-        metrics.update(passk_block)
-        metrics["pass_at_k"] = passk_block
+        requested_values = [
+            int(record.get("num_samples", 0) or 0)
+            for record in samples
+            if int(record.get("num_samples", 0) or 0) > 0
+        ]
+        requested_k = max(requested_values, default=max(len(v) for v in scores_by_case.values()))
+        sample_counts = {case_id: len(values) for case_id, values in scores_by_case.items()}
+        complete = all(count == requested_k for count in sample_counts.values())
+        sampling = {
+            "num_distinct_cases": distinct_cases,
+            "requested_samples_per_case": requested_k,
+            "completed_samples_per_case": sample_counts,
+            "mean_completed_samples_per_case": round(n / distinct_cases, 2),
+            "min_completed_samples_per_case": min(sample_counts.values()),
+            "max_completed_samples_per_case": max(sample_counts.values()),
+            "is_sampling_complete": complete,
+        }
+        metrics["sampling"] = sampling
+        metrics.update({
+            "requested_samples_per_case": requested_k,
+            "samples_per_case": sampling["mean_completed_samples_per_case"],
+            "max_samples_per_case": sampling["max_completed_samples_per_case"],
+            "is_sampling_complete": complete,
+        })
+
+        if is_binary_scorer(kind):
+            passk_block: dict[str, Any] = {
+                **sampling,
+                "pass@1": round(
+                    sum(sum(values) / len(values) for values in scores_by_case.values())
+                    / distinct_cases,
+                    4,
+                ),
+            }
+            if complete:
+                for k in range(1, requested_k + 1):
+                    estimates = []
+                    for values in scores_by_case.values():
+                        sample_n = len(values)
+                        correct_n = sum(1 for value in values if value == 1.0)
+                        miss_probability = (
+                            math.comb(sample_n - correct_n, k) / math.comb(sample_n, k)
+                            if sample_n - correct_n >= k
+                            else 0.0
+                        )
+                        estimates.append(1.0 - miss_probability)
+                    passk_block[f"pass@{k}"] = round(sum(estimates) / len(estimates), 4)
+                metrics.update({
+                    key: value for key, value in passk_block.items() if key.startswith("pass@")
+                })
+            else:
+                passk_block["observed_any_correct_rate"] = round(
+                    sum(1.0 if any(value == 1.0 for value in values) else 0.0
+                        for values in scores_by_case.values()) / distinct_cases,
+                    4,
+                )
+            metrics["pass_at_k"] = passk_block
+        else:
+            best_block = {
+                **sampling,
+                "mean_score_per_prediction": score_mean,
+                "mean_best_of_k_score": round(
+                    sum(max(values) for values in scores_by_case.values()) / distinct_cases,
+                    4,
+                ),
+            }
+            metrics["best_of_k"] = best_block
+            metrics["mean_best_of_k_score"] = best_block["mean_best_of_k_score"]
+    if task:
+        from .benchmarks import get_benchmark
+
+        metrics = get_benchmark(str(task)).aggregate(samples, metrics)
     return metrics
 
 
 # ---- 落盘 ----
-def result_dir(model: str, method: str, task: str, root: Optional[str] = None) -> str:
-    # 按 CLAUDE.md §9 布局拼出叶子目录并创建：root/[model]/[method]/[task]/
+def result_dir(
+    model: str,
+    method: str,
+    task: str,
+    root: Optional[str] = None,
+    *,
+    team: Optional[str] = None,
+) -> str:
+    # Benchmark runner 使用 root/model/team/method/task；旧调用未传 team 时保持四层布局。
     if root is None:
         from .benchmarks.common import runs_root
 
         root = runs_root()
-    d = os.path.join(root, model, method, task)
+    d = os.path.join(root, model, *([team] if team else []), method, task)
     os.makedirs(d, exist_ok=True)
     return d
 

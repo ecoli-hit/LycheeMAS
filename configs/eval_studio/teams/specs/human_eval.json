@@ -1,0 +1,62 @@
+{
+  "schema_version": 4,
+  "id": "human_eval",
+  "role_profile": "human_eval",
+  "group_chat": {
+    "type": "round_robin"
+  },
+  "termination": {
+    "conditions": [
+      {
+        "type": "text_mention",
+        "text": "TERMINATE",
+        "sources": [
+          "ComputerTerminal"
+        ]
+      }
+    ]
+  },
+  "model_context": {
+    "type": "token_limited"
+  },
+  "controller_model_context": {
+    "type": "token_limited"
+  },
+  "participants": [
+    {
+      "id": "Coder",
+      "name": "Coder",
+      "agent_type": "coder",
+      "system_prompt": "",
+      "description": "Writes and revises code for the programming task.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "ComputerTerminal",
+      "name": "ComputerTerminal",
+      "agent_type": "computer_terminal",
+      "system_prompt": "",
+      "description": "Executes code produced by Coder in the sandbox.",
+      "tools": [],
+      "model_id": null,
+      "meta": {
+        "sources": [
+          "Coder"
+        ]
+      }
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "Coder",
+      "kind": "participant",
+      "participant_id": "Coder",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

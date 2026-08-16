@@ -1,7 +1,7 @@
 # 纯隐空间通道（latent_only）在 AIME 上的全量实验配置（新框架 scripts/run_mas.py）。
 # 跑法：CDM_DATA_ROOT=/data/mxy/Project/CDM/Data/raw CUDA_VISIBLE_DEVICES=2 \
 #         python scripts/run_mas.py --config configs/aime_latent.yaml
-# 命令行同名项可覆盖（如 --n 3 / --P 32 / --results-root <dir>）。
+# 命令行同名项可覆盖（如 --n 3 / --P 32 / --runs-root <dir>）。
 
 backend:                         # HF 模型后端（latent 通道要求 hidden=2560，仅 Qwen3-4B 适用）
   model_path: /data/mxy/Models/Qwen/Qwen3-4B
@@ -16,6 +16,7 @@ backend:                         # HF 模型后端（latent 通道要求 hidden=
 
 memory:                          # CDM 双通道记忆方法
   name: dual_channel
+  P: 16                          # latent prefix 长度（成本旋钮）
   latent_strategy: soft_token    # ★ latent 通道：softmax(h·Eᵀ)·E 投回输入嵌入空间（正确路径）
   nl_strategy: prev_output       # latent_only 下不会用到 NL，仅保留字段完整
   max_encode_tokens: 4096
@@ -24,13 +25,13 @@ memory:                          # CDM 双通道记忆方法
 
 router:                          # 触发算法接缝
   method: latent_only            # ★ 全程只用隐空间通道（always-latent 消融）
-  P: 16                          # latent prefix 长度（成本旋钮）
 
 run:
+  team: aime
   task: aime_2024
   n: all                         # 全量（30 题）
   max_rounds: 2                  # analyst→solver→verifier 最多 2 轮
   max_new_tokens: 4096
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/lychee_v0_1   # 落 .../qwen3-4b/latent_only/aime_2024
+  runs_root: runs/benchmarks

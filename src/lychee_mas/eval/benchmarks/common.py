@@ -1,8 +1,8 @@
 """Shared helpers for LycheeMAS benchmark loaders.
 
 The individual benchmark modules own their dataset-specific choices. This
-module only keeps the common mechanics: data roots, provider order, parquet
-IO, ModelScope/HuggingFace conversion, and multiple-choice formatting.
+module only keeps the common mechanics: data roots, provider order, provider
+cache/Git checkout helpers, parquet IO, and multiple-choice formatting.
 """
 
 from __future__ import annotations
@@ -12,12 +12,16 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-DATA_BACKENDS = ("modelscope", "huggingface")
+from .base import STANDARD_SOURCE_PROVIDERS
+
+DATA_BACKENDS = STANDARD_SOURCE_PROVIDERS
 
 DEFAULT_RAW_ROOT = os.path.join("data", "benchmarks", "raw")
 DEFAULT_PREPARED_ROOT = os.path.join("data", "benchmarks", "prepared")
@@ -56,10 +60,66 @@ def safe_source_id(identifier: str) -> str:
 
 
 def raw_source_dir(benchmark: str, provider: str, identifier: str) -> Path:
+    try:
+        overrides = json.loads(os.environ.get("LYCHEE_BENCHMARK_RAW_OVERRIDES", "[]"))
+    except ValueError:
+        overrides = []
+    matching = [
+        item
+        for item in overrides
+        if isinstance(overrides, list)
+        if item.get("benchmark_key") == benchmark and item.get("path")
+    ]
+    for item in matching:
+        if item.get("provider") == provider and item.get("source_id") == identifier:
+            return Path(str(item["path"])).expanduser().resolve()
+    if len(matching) == 1:
+        return Path(str(matching[0]["path"])).expanduser().resolve()
     return Path(raw_root()) / benchmark / provider / safe_source_id(identifier)
 
 
+def conversion_only() -> bool:
+    return os.environ.get("LYCHEE_BENCHMARK_CONVERSION_ONLY", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def load_local_dataset_split(source: str | os.PathLike, split: str):
+    """Load one split from a downloaded dataset tree without provider network calls."""
+    from datasets import load_dataset
+
+    root = Path(source)
+    patterns = {
+        "parquet": ("*.parquet",),
+        "json": ("*.json", "*.jsonl"),
+        "csv": ("*.csv",),
+    }
+    for builder, suffixes in patterns.items():
+        files = [path for suffix in suffixes for path in root.rglob(suffix)]
+        split_files = [path for path in files if split.lower() in path.name.lower()]
+        selected = split_files or files
+        if selected:
+            return load_dataset(
+                builder,
+                data_files={split: [str(path) for path in selected]},
+                split=split,
+            )
+    raise FileNotFoundError(
+        "conversion-only could not find parquet/json/jsonl/csv files "
+        f"for split={split} under {root}"
+    )
+
+
 def prepared_benchmark_dir(benchmark: str) -> Path:
+    try:
+        overrides = json.loads(os.environ.get("LYCHEE_BENCHMARK_PREPARED_OVERRIDES", "{}"))
+    except ValueError:
+        overrides = {}
+    override = overrides.get(benchmark) if isinstance(overrides, dict) else None
+    if override:
+        return Path(str(override)).expanduser().resolve()
     return Path(prepared_root()) / benchmark
 
 
@@ -82,7 +142,124 @@ def copy_raw_to_prepared(raw_dir: str | os.PathLike, prepared_dir: str | os.Path
         shutil.copytree(raw_path, prepared_path)
     else:
         shutil.copy2(raw_path, prepared_path)
+    try:
+        relative = raw_path.relative_to(Path(raw_root()).resolve())
+    except ValueError:
+        relative = None
+    if relative is not None and len(relative.parts) >= 3:
+        benchmark, provider, source_id = relative.parts[:3]
+        metadata_path = (
+            prepared_path / ".lychee_source.json"
+            if prepared_path.is_dir()
+            else Path(f"{prepared_path}.lychee_source.json")
+        )
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "benchmark": benchmark,
+                    "provider": provider,
+                    "source_id": source_id.replace("--", "/", 1),
+                    "raw_path": str(raw_path),
+                    "copied_at_utc": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return prepared_path
+
+
+def clone_git_source(
+    benchmark: str,
+    repo_url: str,
+    destination: str | os.PathLike,
+    *,
+    revision: str,
+    force: bool = False,
+) -> Path:
+    """Materialize one pinned official Git repository in the Raw tree.
+
+    A temporary sibling directory prevents an interrupted clone from looking
+    complete. Existing clones are reused only when their HEAD matches the
+    requested revision; benchmark preparation never performs an implicit pull.
+    """
+
+    destination = Path(destination)
+    if destination.is_dir() and not force:
+        result = subprocess.run(
+            ["git", "-C", str(destination), "rev-parse", "HEAD"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0 and result.stdout.strip() == revision:
+            return destination
+    if conversion_only():
+        raise FileNotFoundError(
+            f"conversion-only requires the pinned source {revision} at {destination}"
+        )
+
+    temporary = destination.with_name(f".{destination.name}.clone-part")
+    remove_path(temporary)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    log_download_source(
+        benchmark,
+        "github",
+        repo_url,
+        temporary,
+        revision=revision,
+    )
+    try:
+        subprocess.run(["git", "init", str(temporary)], check=True)
+        subprocess.run(
+            ["git", "-C", str(temporary), "remote", "add", "origin", repo_url],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(temporary),
+                "fetch",
+                "--depth",
+                "1",
+                "origin",
+                revision,
+            ],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(temporary), "checkout", "--detach", "FETCH_HEAD"],
+            check=True,
+        )
+        remove_path(destination)
+        os.replace(temporary, destination)
+    except Exception:
+        remove_path(temporary)
+        raise
+
+    metadata_path = destination / ".lychee_source.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "benchmark": benchmark,
+                "provider": "github",
+                "source_id": repo_url,
+                "revision": revision,
+                "destination": str(destination),
+                "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return destination
 
 
 def raw_source_candidates(
@@ -90,11 +267,12 @@ def raw_source_candidates(
     providers: Sequence[str] = DATA_BACKENDS,
 ) -> list[tuple[str, str, Path]]:
     """Return raw cache locations for configured provider ids in preferred order."""
-    from .source_catalog import provider_ids
+    from .registry import BENCHMARKS
 
     candidates: list[tuple[str, str, Path]] = []
+    benchmark_impl = BENCHMARKS.get(benchmark)
     for provider in providers:
-        for identifier in provider_ids(benchmark, provider):
+        for identifier in benchmark_impl.provider_ids(provider):
             candidates.append(
                 (provider, identifier, raw_source_dir(benchmark, provider, identifier))
             )
@@ -131,10 +309,15 @@ def restore_prepared_from_raw(
 def parquet_files(
     subdir: str, split: Optional[str] = None, root: Optional[str] = None
 ) -> list[str]:
-    base = os.path.join(root or prepared_root(), subdir)
+    relative = Path(subdir)
+    base = (
+        Path(root) / relative
+        if root is not None
+        else prepared_benchmark_dir(relative.parts[0]).joinpath(*relative.parts[1:])
+    )
     if split:
-        return glob.glob(os.path.join(base, f"{split}-*.parquet"))
-    return glob.glob(os.path.join(base, "*.parquet"))
+        return glob.glob(os.path.join(str(base), f"{split}-*.parquet"))
+    return glob.glob(os.path.join(str(base), "*.parquet"))
 
 
 def has_parquet(subdir: str, split: Optional[str] = None, root: Optional[str] = None) -> bool:
@@ -210,18 +393,76 @@ def log_download_source(
     provider: str,
     identifier: str,
     destination: str | os.PathLike | None = None,
+    *,
+    revision: str | None = None,
 ) -> None:
     """Print a stable, grep-friendly line showing which provider is being used."""
     msg = f"[download] {benchmark}: provider={provider} id={identifier}"
     if destination is not None:
         msg += f" -> {destination}"
+        path = Path(destination)
+        metadata_path = (
+            path / ".lychee_source.json"
+            if path.suffix == ""
+            else Path(f"{path}.lychee_source.json")
+        )
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "benchmark": benchmark,
+                    "provider": provider,
+                    "source_id": identifier,
+                    "revision": revision,
+                    "destination": str(path),
+                    "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     print(msg, flush=True)
+
+
+def raw_source_matches(
+    path: str | os.PathLike,
+    *,
+    provider: str,
+    source_id: str,
+    revision: str | None,
+) -> bool:
+    """Return whether a Raw source has matching provenance and real payload files."""
+
+    root = Path(path)
+    metadata_path = root / ".lychee_source.json"
+    if not root.is_dir() or not metadata_path.is_file():
+        return False
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError):
+        return False
+    if (
+        metadata.get("provider") != provider
+        or metadata.get("source_id") != source_id
+        or metadata.get("revision") != revision
+    ):
+        return False
+    return any(
+        candidate.is_file()
+        and candidate.name != ".lychee_source.json"
+        and not candidate.name.endswith((".lock", ".part", ".incomplete"))
+        for candidate in root.rglob("*")
+    )
 
 
 def load_parquet(subdir: str, split: str):
     from datasets import load_dataset
 
-    base = os.path.join(prepared_root(), subdir)
+    relative = Path(subdir)
+    base = prepared_benchmark_dir(relative.parts[0]).joinpath(*relative.parts[1:])
     files = parquet_files(subdir, split=split) or parquet_files(subdir)
     if not files:
         raise FileNotFoundError(f"no parquet under {base}")
@@ -229,19 +470,34 @@ def load_parquet(subdir: str, split: str):
 
 
 def save_hf_dataset(
-    repo_id: str, subset: Optional[str], split: str, out_dir: str, *, benchmark: str = "hf_dataset"
+    repo_id: str,
+    subset: Optional[str],
+    split: str,
+    out_dir: str,
+    *,
+    benchmark: str = "hf_dataset",
+    raw_subset_dir: Optional[str] = None,
 ):
     from datasets import load_dataset
     from huggingface_hub import snapshot_download
 
     src = raw_source_dir(benchmark, "huggingface", repo_id)
-    log_download_source(benchmark, "huggingface", repo_id, src)
+    if conversion_only():
+        source_tree = src / raw_subset_dir if raw_subset_dir else src
+        dataset = load_local_dataset_split(source_tree, split)
+        _write_parquet_split(dataset, out_dir, split)
+        return dataset
+    log_download_source(benchmark, "huggingface", repo_id, src, revision="main")
     snapshot_download(repo_id=repo_id, repo_type="dataset", local_dir=str(src))
-    dataset = (
-        load_dataset(repo_id, subset, split=split) if subset else load_dataset(repo_id, split=split)
-    )
-    os.makedirs(out_dir, exist_ok=True)
-    dataset.to_parquet(os.path.join(out_dir, f"{split}-00000-of-00001.parquet"))
+    if raw_subset_dir:
+        dataset = load_local_dataset_split(src / raw_subset_dir, split)
+    else:
+        dataset = (
+            load_dataset(repo_id, subset, split=split)
+            if subset
+            else load_dataset(repo_id, split=split)
+        )
+    _write_parquet_split(dataset, out_dir, split)
     return dataset
 
 
@@ -279,16 +535,40 @@ def save_modelscope_dataset(
     out_dir: str,
     *,
     benchmark: str = "modelscope_dataset",
+    raw_subset_dir: Optional[str] = None,
 ):
     from modelscope.hub.snapshot_download import snapshot_download
 
     src = raw_source_dir(benchmark, "modelscope", dataset_id)
+    if conversion_only():
+        source_tree = src / raw_subset_dir if raw_subset_dir else src
+        dataset = load_local_dataset_split(source_tree, split)
+        _write_parquet_split(dataset, out_dir, split)
+        return dataset
     log_download_source(benchmark, "modelscope", dataset_id, src)
     snapshot_download(dataset_id, repo_type="dataset", local_dir=str(src))
-    dataset = load_modelscope_dataset(dataset_id, subset, split)
-    os.makedirs(out_dir, exist_ok=True)
-    dataset.to_parquet(os.path.join(out_dir, f"{split}-00000-of-00001.parquet"))
+    dataset = (
+        load_local_dataset_split(src / raw_subset_dir, split)
+        if raw_subset_dir
+        else load_modelscope_dataset(dataset_id, subset, split)
+    )
+    _write_parquet_split(dataset, out_dir, split)
     return dataset
+
+
+def _write_parquet_split(dataset, out_dir: str, split: str) -> None:
+    """Atomically replace one prepared split and remove stale shards."""
+
+    destination = Path(out_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    final_path = destination / f"{split}-00000-of-00001.parquet"
+    temporary_path = destination / f".{split}-00000-of-00001.tmp.parquet"
+    if temporary_path.exists():
+        temporary_path.unlink()
+    dataset.to_parquet(str(temporary_path))
+    for old_path in destination.glob(f"{split}-*.parquet"):
+        old_path.unlink()
+    temporary_path.replace(final_path)
 
 
 def hf_resolve_url(repo_id: str, path: str, revision: str = "main") -> str:
@@ -327,7 +607,7 @@ def download_url(url: str, dest: str, *, timeout: int = 120) -> str:
 def download_hf_files(
     repo_id: str, files: Sequence[str], out_dir: str, *, revision: str = "main"
 ) -> list[str]:
-    log_download_source("hf_files", "huggingface", repo_id, out_dir)
+    log_download_source("hf_files", "huggingface", repo_id, out_dir, revision=revision)
     downloaded: list[str] = []
     errors: list[str] = []
     for path in files:

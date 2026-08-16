@@ -1,0 +1,42 @@
+{
+  "schema_version": 4,
+  "id": "swe_bench_verified",
+  "role_profile": "swe_bench_verified",
+  "group_chat": {"type": "round_robin"},
+  "termination": {
+    "conditions": [{"type": "text_mention", "text": "TERMINATE", "sources": ["ComputerTerminal"]}]
+  },
+  "model_context": {"type": "token_limited"},
+  "controller_model_context": {"type": "token_limited"},
+  "participants": [
+    {
+      "id": "Coder",
+      "name": "Coder",
+      "agent_type": "coder",
+      "system_prompt": "",
+      "description": "Inspects and edits the case-local repository to resolve the issue.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "ComputerTerminal",
+      "name": "ComputerTerminal",
+      "agent_type": "computer_terminal",
+      "system_prompt": "",
+      "description": "Runs repository inspection and tests in the generation sandbox.",
+      "tools": [],
+      "model_id": null,
+      "meta": {"sources": ["Coder"]}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "Coder",
+      "kind": "participant",
+      "participant_id": "Coder",
+      "required_capabilities": ["text_generation"]
+    }
+  ]
+}

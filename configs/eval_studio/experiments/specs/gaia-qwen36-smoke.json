@@ -1,0 +1,81 @@
+{
+  "schema_version": 3,
+  "id": "gaia-qwen36-smoke",
+  "benchmark": {
+    "benchmark_spec_id": "gaia",
+    "runnable_task": "gaia_validation",
+    "cases": 5,
+    "start_index": 0,
+    "scoring_profile": "official"
+  },
+  "team_spec_id": "gaia",
+  "runtime": {
+    "method": "none",
+    "samples": 1,
+    "max_rounds": 4,
+    "max_turns": 20,
+    "max_model_calls_per_case": null,
+    "max_case_retries": 0,
+    "on_case_error": "continue",
+    "max_new_tokens": 32768,
+    "max_input_tokens": null,
+    "min_output_reserve_tokens": 2048,
+    "min_thinking_reserve_tokens": 0,
+    "max_thinking_budget_tokens": null,
+    "min_final_reserve_tokens": 1024,
+    "safety_margin_tokens": 256,
+    "case_concurrency": 32,
+    "concurrency_policy": {
+      "mode": "fixed",
+      "initial": 32,
+      "minimum": 32,
+      "maximum": 32,
+      "increase_step": 1,
+      "decrease_factor": 0.5,
+      "control_window_cases": 32
+    },
+    "seed": 0,
+    "do_sample": true,
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "code_executor": "docker",
+    "code_timeout": 60,
+    "work_root": "runs/lychee_tool_workspaces",
+    "web_headless": true,
+    "save_screenshots": false,
+    "docker_image": "lychee-agbench-gaia:local",
+    "trace_model_calls": true,
+    "trace_detail_level": "compact",
+    "max_stalls": 3
+  },
+  "observability": {
+    "collect_vllm_metrics": true,
+    "vllm_metrics_interval_s": 5.0
+  },
+  "network": {
+    "mode": "benchmark_default",
+    "proxy_url": "",
+    "no_proxy": "127.0.0.1,localhost,::1",
+    "targets": {
+      "downloads": false,
+      "web_surfer": false,
+      "code_executor": false,
+      "model_backend": false
+    },
+    "docker_bridge_host": "172.17.0.1",
+    "container_proxy_port": 17897,
+    "probe_url": "https://www.google.com/generate_204"
+  },
+  "environment": {
+    "repo_root": ".",
+    "python": ".venv/bin/python",
+    "conda_sh": "",
+    "conda_env": "",
+    "raw_root": "data/benchmarks/raw",
+    "prepared_root": "data/benchmarks/prepared",
+    "models_root": "models",
+    "runs_root": "runs/benchmarks"
+  },
+  "notes": "Uses the canonical GAIA TeamSpec and GAIA official scorer.",
+  "updated_at_utc": "2026-08-10T14:33:45.521090+00:00"
+}

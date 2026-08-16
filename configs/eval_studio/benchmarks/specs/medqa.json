@@ -1,0 +1,6 @@
+{
+  "schema_version": 4,
+  "id": "medqa",
+  "name": "MedQA",
+  "category": "domain_knowledge"
+}

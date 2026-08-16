@@ -15,6 +15,7 @@ backend:                         # HF 模型后端（LycheeMAS/backends/backend_
 
 memory:                          # 记忆方法接缝（LycheeMAS/memory/）
   name: dual_channel             # 记忆管理器：dual_channel | mem0 | ama（后两者为桩）
+  P: 16                          # latent prefix 长度（latent 通道成本旋钮）
   latent_strategy: soft_token    # latent 通道方法：soft_token(正确) | segment_mean | stride | tail
   nl_strategy: prev_output       # NL 通道方法：prev_output(原样传上一个 agent 输出)；后续可扩展
   max_encode_tokens: 4096        # 编码记忆 source 时最多取多少 token（过长截断）
@@ -24,7 +25,6 @@ memory:                          # 记忆方法接缝（LycheeMAS/memory/）
 router:                          # 编排控制器（LycheeMAS/router/）= 选择① + 信息编排②
   selection: roundrobin          # ① agent 选择：roundrobin（轮转）| selector（AutoGen LLM 选）
   method: nl_only                # ② 记忆通道决策（channel decider）：none|nl_only|latent_only|both|router_static|router_learned|soft_gate|mem0|ama
-  P: 16                          # latent prefix 长度（latent 通道成本旋钮）
 
 run:                             # 单次实验运行参数（run_mas.py）
   task: gsm8k                    # 任务名，逗号分隔可跑多个：gsm8k,medqa,locomo10
@@ -34,4 +34,4 @@ run:                             # 单次实验运行参数（run_mas.py）
   max_new_tokens: 4096            # 每次 agent 生成的最大新 token（够长以免截断答案）
 
 eval:                            # 评测与落盘（LycheeMAS/benchs/metrics.py）
-  results_root: /data/mxy/Project/CDM/results/autogen_base   # 结果根目录（叶子=[model]/[method]/[task]）
+  runs_root: runs/benchmarks     # 结果根目录（叶子=[model]/[method]/[task]）

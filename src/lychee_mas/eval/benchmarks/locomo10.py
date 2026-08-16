@@ -9,24 +9,51 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     download_url,
     hf_resolve_url,
     json_file_ready,
     log_download_source,
-    prepared_root,
+    prepared_benchmark_dir,
     raw_source_dir,
 )
-from .source_catalog import fallback_specs, other_defaults, provider_ids, source_backend_order
+from .registry import register_benchmark
 
-_FALLBACK = fallback_specs("locomo10")[0]
-REPO_ID = provider_ids("locomo10", "huggingface")[0]
+SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_LOCOMO10_MODELSCOPE_ID",
+        "default_ids": ["evalscope/locomo"],
+    },
+    "huggingface": {"env": None, "default_ids": ["Percena/locomo-mc10"]},
+    "github": {
+        "env": None,
+        "default_ids": [
+            "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json"
+        ],
+        "source_type": "raw_file",
+        "purpose": "official LoCoMo raw JSON fallback",
+    },
+    "other_defaults": [],
+    "fallback_files": [
+        {
+            "provider": "huggingface_direct",
+            "repo_id": "Percena/locomo-mc10",
+            "files": ["raw/locomo10.json"],
+            "strict": True,
+            "purpose": "single-file source used by the LoCoMo10 loader",
+        }
+    ],
+}
+
+_FALLBACK = SOURCES["fallback_files"][0]
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 RAW_FILE = _FALLBACK["files"][0]
-_OTHER_DEFAULTS = other_defaults("locomo10")
+GITHUB_URL = resolve_provider_ids(SOURCES, "github")[0]
 
 
 def _target_file() -> str:
-    return os.path.join(prepared_root(), "locomo10", "locomo10.json")
+    return str(prepared_benchmark_dir("locomo10") / "locomo10.json")
 
 
 def _download_huggingface() -> str:
@@ -53,7 +80,7 @@ def _publish_raw_json(provider: str, identifier: str, raw_file: Path) -> str | N
 
 
 def _download_modelscope() -> str:
-    dataset_ids = provider_ids("locomo10", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for LoCoMo10; set LYCHEE_LOCOMO10_MODELSCOPE_ID "
@@ -89,15 +116,10 @@ def _download_modelscope() -> str:
 
 
 def _download_github_raw() -> str:
-    raw_source = next(
-        (item for item in _OTHER_DEFAULTS if item.get("provider") == "github_raw"), None
-    )
-    if not raw_source:
-        raise RuntimeError("no GitHub raw fallback configured for LoCoMo10")
-    src = raw_source_dir("locomo10", "github_raw", str(raw_source["id"]))
+    src = raw_source_dir("locomo10", "github", GITHUB_URL)
     raw_file = src / "locomo10.json"
-    log_download_source("locomo10", "github_raw", str(raw_source["id"]), src)
-    download_url(str(raw_source["id"]), str(raw_file))
+    log_download_source("locomo10", "github", GITHUB_URL, src)
+    download_url(GITHUB_URL, str(raw_file))
     os.makedirs(os.path.dirname(_target_file()), exist_ok=True)
     shutil.copyfile(raw_file, _target_file())
     return _target_file()
@@ -121,7 +143,7 @@ def prepare_locomo10(force: bool = False, source: Optional[str] = None) -> str:
                 return _download_modelscope()
             if backend == "huggingface":
                 return _download_huggingface()
-            if backend == "github_raw":
+            if backend == "github":
                 return _download_github_raw()
             raise ValueError(f"unknown LoCoMo10 backend {backend!r}")
         except Exception as exc:
@@ -130,17 +152,13 @@ def prepare_locomo10(force: bool = False, source: Optional[str] = None) -> str:
 
 
 def _backend_order(source: Optional[str]) -> list[str]:
-    order = source_backend_order("locomo10", source)
-    selected = (source or os.environ.get("LYCHEE_DATA_SOURCE") or "auto").lower()
-    if selected == "auto" and _OTHER_DEFAULTS:
-        order.extend(str(item["provider"]) for item in _OTHER_DEFAULTS if item.get("provider"))
-    return order
+    return resolve_source_backend_order("locomo10", SOURCES, source)
 
 
 def _restore_from_raw(source: Optional[str]) -> str | None:
     for backend in _backend_order(source):
         if backend == "modelscope":
-            for dataset_id in provider_ids("locomo10", "modelscope"):
+            for dataset_id in resolve_provider_ids(SOURCES, "modelscope"):
                 src = raw_source_dir("locomo10", "modelscope", dataset_id)
                 candidates = [
                     src / RAW_FILE,
@@ -159,19 +177,14 @@ def _restore_from_raw(source: Optional[str]) -> str | None:
             )
             if restored:
                 return restored
-        elif backend == "github_raw":
-            raw_source = next(
-                (item for item in _OTHER_DEFAULTS if item.get("provider") == "github_raw"), None
+        elif backend == "github":
+            restored = _publish_raw_json(
+                "github",
+                GITHUB_URL,
+                raw_source_dir("locomo10", "github", GITHUB_URL) / "locomo10.json",
             )
-            if raw_source:
-                restored = _publish_raw_json(
-                    "github_raw",
-                    str(raw_source["id"]),
-                    raw_source_dir("locomo10", "github_raw", str(raw_source["id"]))
-                    / "locomo10.json",
-                )
-                if restored:
-                    return restored
+            if restored:
+                return restored
     return None
 
 
@@ -302,3 +315,26 @@ def load_locomo10(n: Optional[int] = None, max_qa_per_conv: int = 10) -> List[Di
     if data and isinstance(data[0], dict) and "qa" in data[0]:
         return _load_original_conversation_records(data, n, max_qa_per_conv)
     return _load_mc10_records(data, n)
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    from ..metrics import score_f1
+
+    references = [str(item) for item in gold] if isinstance(gold, list) else [str(gold)]
+    return {"score": score_f1(prediction, references)}
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="locomo10",
+        name="LoCoMo10",
+        category="memory",
+        sources=SOURCES,
+        full_prepare_target="locomo10",
+        prepare_handlers={"locomo10": prepare_locomo10},
+        loaders={"locomo10": load_locomo10},
+        scorer_kinds={"locomo10": "f1"},
+        score_handlers={"f1": _score},
+        capabilities={"required": ["text_generation", "long_context"]},
+    )
+)

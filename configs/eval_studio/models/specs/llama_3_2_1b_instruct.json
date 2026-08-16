@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "llama_3_2_1b_instruct",
+  "name": "Llama-3.2-1B-Instruct",
+  "organization": "Meta",
+  "family": "Llama 3.2",
+  "parameter_size": "1B",
+  "license": "Llama-3.2-Community",
+  "gated": true,
+  "capabilities": ["text_generation", "tool_calling", "hf", "vllm", "latent"],
+  "sources": {
+    "modelscope": [{"id": "LLM-Research/Llama-3.2-1B-Instruct", "format": "transformers", "priority": 10}],
+    "huggingface": [{"id": "meta-llama/Llama-3.2-1B-Instruct", "format": "transformers", "priority": 20, "gated": true}]
+  }
+}

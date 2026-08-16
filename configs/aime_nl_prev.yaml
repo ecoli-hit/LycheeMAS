@@ -11,6 +11,7 @@ backend:                         # HF 模型后端
 
 memory:                          # 记忆方法接缝
   name: dual_channel             # 记忆管理器
+  P: 16                          # latent prefix 长度（nl_only 下不生效）
   latent_strategy: soft_token    # nl_only 下不会用到 latent，仅保留字段完整
   nl_strategy: prev_output       # ★ 纯 NL：向下传递上一个 agent 的输出（带来源标志）
   max_encode_tokens: 4096
@@ -19,13 +20,13 @@ memory:                          # 记忆方法接缝
 
 router:                          # 触发算法接缝
   method: nl_only                # ★ 全程只用 NL 通道（always-NL 消融）
-  P: 16                          # latent prefix 长度（nl_only 下不生效）
 
 run:                             # 单次实验运行参数
+  team: aime
   task: aime_2024                 # ★ AIME
   n: all                         # ★ 全量（all/null/0 = 不截断，跑完整数据集）
   max_rounds: 2                  # analyst→solver→verifier 最多循环 2 轮
   max_new_tokens: 4096           # AIME 推理较长，给足生成预算（想更快可调小）
 
 eval:                            # 评测与落盘
-  results_root: /data/mxy/Project/CDM/results/autogen_base   # 结果根目录
+  runs_root: runs/benchmarks

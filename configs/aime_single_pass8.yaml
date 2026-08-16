@@ -17,6 +17,7 @@ backend:
 
 memory:                          # method=none 下不注入，字段仅保留完整
   name: dual_channel
+  P: 16
   latent_strategy: soft_token
   nl_strategy: prev_output
   max_encode_tokens: 4096
@@ -25,7 +26,6 @@ memory:                          # method=none 下不注入，字段仅保留完
 
 router:
   method: none
-  P: 16
 
 run:
   task: aime_2024
@@ -36,4 +36,4 @@ run:
   samples: 8                     # ★ 每题跑 8 次
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/lychee_v0_1
+  runs_root: runs/benchmarks

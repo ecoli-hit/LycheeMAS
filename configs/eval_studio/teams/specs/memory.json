@@ -1,0 +1,81 @@
+{
+  "schema_version": 4,
+  "id": "memory",
+  "role_profile": "memory",
+  "group_chat": {
+    "type": "round_robin"
+  },
+  "termination": {
+    "conditions": [
+      {
+        "type": "text_mention",
+        "text": "APPROVE"
+      }
+    ]
+  },
+  "model_context": {
+    "type": "token_limited"
+  },
+  "controller_model_context": {
+    "type": "token_limited"
+  },
+  "participants": [
+    {
+      "id": "retriever",
+      "name": "retriever",
+      "agent_type": "assistant",
+      "system_prompt": "You are the RETRIEVER. You are given long conversation history / notes as memory. Extract and quote ONLY the facts from that memory that are relevant to the question. Do NOT answer the question yet.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "answerer",
+      "name": "answerer",
+      "agent_type": "assistant",
+      "system_prompt": "You are the ANSWERER. Using the retriever's quoted facts and the question, give a short, direct answer grounded in the memory. If the memory does not contain it, say so explicitly.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "verifier",
+      "name": "verifier",
+      "agent_type": "assistant",
+      "system_prompt": "You are the VERIFIER. Check that the answer is actually supported by the retrieved memory facts. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise correct it in one line.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "retriever",
+      "kind": "participant",
+      "participant_id": "retriever",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "answerer",
+      "kind": "participant",
+      "participant_id": "answerer",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "verifier",
+      "kind": "participant",
+      "participant_id": "verifier",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

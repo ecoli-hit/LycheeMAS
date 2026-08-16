@@ -14,10 +14,10 @@ defaults:
 
 run:
   task: gsm8k        # 任务名（逗号分隔可多任务）
-  team: default      # 静态拓扑队伍 profile（null=按 task 自动选）
+  team: default      # RoleProfile 名
   n: 5               # 每任务样本数（all/null/0=全量）
   rounds: 2          # 每轮发言轮数
   seed: 0            # 随机种子（可复现，黄金法则 6）
 
 eval:
-  results_root: runs/lychee   # 结果根目录（叶子=[model]/[method]/[task]）
+  runs_root: runs/lychee   # 结果根目录（叶子=[model]/[method]/[task]）

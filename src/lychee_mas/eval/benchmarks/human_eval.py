@@ -19,12 +19,37 @@ import tempfile
 import traceback
 import urllib.request
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
-from .common import log_download_source, prepared_root, raw_source_dir, restore_prepared_from_raw
-from .source_catalog import other_defaults, provider_ids
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
+from .common import (
+    log_download_source,
+    prepared_benchmark_dir,
+    raw_source_dir,
+    restore_prepared_from_raw,
+)
+from .registry import register_benchmark
 
-URL = other_defaults("human_eval")[0]["id"]
+SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_HUMANEVAL_MODELSCOPE_ID",
+        "default_ids": ["modelscope/humaneval", "opencompass/humaneval"],
+    },
+    "huggingface": {
+        "env": "LYCHEE_HUMANEVAL_HF_ID",
+        "default_ids": ["openai/openai_humaneval"],
+    },
+    "github": {
+        "env": None,
+        "default_ids": ["https://github.com/openai/human-eval/raw/master/data/HumanEval.jsonl.gz"],
+        "source_type": "raw_file",
+        "purpose": "official raw archive fallback",
+    },
+    "other_defaults": [],
+    "fallback_files": [],
+}
+
+URL = resolve_provider_ids(SOURCES, "github")[0]
 DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("LYCHEEMAS_EVAL_TIMEOUT", "20"))
 
 _RUNNER = r"""
@@ -50,7 +75,7 @@ except Exception:
 
 
 def source_archive(root: str | Path | None = None) -> Path:
-    base = Path(root) if root is not None else Path(prepared_root()) / "human_eval"
+    base = Path(root) if root is not None else prepared_benchmark_dir("human_eval")
     return base / "HumanEval.jsonl.gz"
 
 
@@ -106,7 +131,7 @@ def _records_from_dataset(dataset) -> list[dict[str, Any]]:
 def _download_from_huggingface(archive: Path) -> Path:
     from datasets import load_dataset
 
-    dataset_id = provider_ids("human_eval", "huggingface")[0]
+    dataset_id = resolve_provider_ids(SOURCES, "huggingface")[0]
     raw_archive = _raw_archive("huggingface", dataset_id)
     log_download_source("human_eval", "huggingface", dataset_id, raw_archive)
     _write_records_archive(
@@ -119,7 +144,7 @@ def _download_from_modelscope(archive: Path) -> Path:
     from datasets import Dataset
     from modelscope.msdatasets import MsDataset
 
-    dataset_ids = provider_ids("human_eval", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -140,7 +165,7 @@ def _download_from_modelscope(archive: Path) -> Path:
 
 
 def _download_from_github(archive: Path) -> Path:
-    raw_archive = _raw_archive("github_raw", URL)
+    raw_archive = _raw_archive("github", URL)
     log_download_source("human_eval", "github", URL, raw_archive)
     raw_archive.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(URL, headers={"User-Agent": "LycheeMAS/0.1"})
@@ -150,33 +175,24 @@ def _download_from_github(archive: Path) -> Path:
 
 
 def _backend_order(source: str | None) -> list[str]:
-    source = (source or os.environ.get("LYCHEE_DATA_SOURCE") or "auto").lower()
-    if source == "auto":
-        return ["modelscope", "huggingface", "github"]
-    if source == "huggingface":
-        return ["huggingface", "github"]
-    if source == "modelscope":
-        return ["modelscope"]
-    if source == "github":
-        return ["github"]
-    raise ValueError(f"unknown HumanEval source {source!r}")
+    return resolve_source_backend_order("human_eval", SOURCES, source)
 
 
 def _raw_archive_candidates(source: str | None) -> list[tuple[str, str, Path]]:
     candidates: list[tuple[str, str, Path]] = []
     for backend in _backend_order(source):
         if backend == "modelscope":
-            for dataset_id in provider_ids("human_eval", "modelscope"):
+            for dataset_id in resolve_provider_ids(SOURCES, "modelscope"):
                 candidates.append(
                     ("modelscope", dataset_id, _raw_archive("modelscope", dataset_id))
                 )
         elif backend == "huggingface":
-            for dataset_id in provider_ids("human_eval", "huggingface"):
+            for dataset_id in resolve_provider_ids(SOURCES, "huggingface"):
                 candidates.append(
                     ("huggingface", dataset_id, _raw_archive("huggingface", dataset_id))
                 )
         elif backend == "github":
-            candidates.append(("github_raw", URL, _raw_archive("github_raw", URL)))
+            candidates.append(("github", URL, _raw_archive("github", URL)))
     return candidates
 
 
@@ -315,3 +331,72 @@ def parse_eval_output(stdout: str) -> dict[str, Any]:
         if isinstance(value, dict) and "success" in value:
             return value
     return {"success": False, "error": "No JSON evaluation result was produced."}
+
+
+def _prepare(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_source(force_download=force, source=source))
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    if not isinstance(gold, dict) or "test" not in gold or "entry_point" not in gold:
+        return {"score": 0.0, "execution_success": False, "execution_error": "invalid gold"}
+    result = evaluate_answer(prediction, gold)
+    return {
+        "score": 1.0 if result.get("success") else 0.0,
+        "execution_success": bool(result.get("success")),
+        "execution_error": result.get("error"),
+    }
+
+
+def _message_content(message: Any) -> str:
+    value = (
+        message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+    )
+    return value if isinstance(value, str) else str(value)
+
+
+def _message_source(message: Any) -> str:
+    value = (
+        message.get("source", "") if isinstance(message, dict) else getattr(message, "source", "")
+    )
+    return str(value)
+
+
+class HumanEvalBenchmark(Benchmark):
+    def collect_prediction(
+        self,
+        *,
+        query: Any,
+        messages: Sequence[Any],
+        workspace: Path | None,
+        default_text: str,
+    ) -> str:
+        del query, workspace
+        for message in reversed(messages):
+            text = _message_content(message)
+            if _message_source(message) == "Coder" and "```" in text:
+                return text
+        return default_text
+
+
+BENCHMARK = register_benchmark(
+    HumanEvalBenchmark(
+        benchmark_id="human_eval",
+        name="HumanEval",
+        category="coding",
+        sources=SOURCES,
+        full_prepare_target="human_eval",
+        prepare_handlers={"human_eval": _prepare},
+        loaders={"human_eval": load_human_eval},
+        scorer_kinds={"human_eval": "human_eval"},
+        score_handlers={"human_eval": _score},
+        binary_kinds=("human_eval",),
+        capabilities={"required": ["code_generation", "code_execution"]},
+        runtime_defaults={
+            "code_executor": "docker",
+            "code_timeout": 60,
+            "docker_image": "lychee-human-eval:local",
+            "max_turns": 12,
+        },
+    )
+)

@@ -53,7 +53,7 @@ src/lychee_mas/
 ├── trace/             ★ 归因/信用（读侧，顶层包）：FailureAttributor + CreditAssigner（桩）+ store.py（TraceStore：消息级落点 + 决策日志）
 ├── train/             ★ 训练（写侧，顶层包）：Trainer + trainer/maspo（桩）；RL 库放 extra [train]
 ├── layers/
-│   ├── construct/      AgentSelector + TopologyGenerator；templates.py（Role/TEAMS）；topology_generator/static
+│   ├── construct/      AgentSelector + TopologyGenerator；templates.py（Role/ROLE_PROFILES）；topology_generator/static
 │   ├── prune/          GraphPruner + VocabAdapter（桩）
 │   └── processing/     决定跑几次 MAS：serial/（processor/serial 跑 1 次）+ parallel/（processor/parallel 并发 K 次 + aggregator 聚合：self_consistency 可跑 / dynamicagg 桩）
 ├── pipeline.py            Orchestrator.run（端到端编排，按 config 从 REGISTRY 取组件）
@@ -65,8 +65,9 @@ src/lychee_mas/
 ```
 
 > **Benchmark 子系统**（HumanEval / GAIA / choice-QA / MAS 诊断类等）的数据准备、`run_mas.py` 纯推理落
-> `predictions.jsonl`/`spans.jsonl` + `analyze_benchmark_run.py` 事后打分、批量入口 `run_benchmark_batch.py`
-> 及 docker 沙盒，详见 `docs/BENCHMARK_HANDOFF_PUBLIC.md`。重依赖走 `pip install -e ".[benchmark]"`。
+> `predictions.jsonl`/`group_chat.jsonl`/`spans.jsonl` + `analyze_benchmark_run.py` 事后打分、Eval Studio
+> ExperimentInstance 队列及 Docker 沙盒，详见 `docs/BENCHMARK_HANDOFF.md`。重依赖走
+> `pip install -e ".[benchmark]"`。
 
 ---
 
@@ -152,7 +153,7 @@ LLMMessage 历史 ─_to_chat─▶ [{role,content}]
        │                    c2c        ⇒ latent_c2c    = C2CLatentChannel.get_projectors()（懒加载 projector 栈）
        └ channel both   → nl_text + 上面 latent 分量
   ④/⑤ 注入 + 生成（injection client 三分支，优先级 latent_c2c > latent_prefix > 无）：
-       ├ latent_c2c   → source = 上一个 agent 的(输入+输出)（从 ctx.decisions[-1] 组装）→ backend.generate_chat_with_c2c
+       ├ latent_c2c   → source = 上一个 agent 的(输入+输出)（从 case 内 ctx.last_model_exchange 组装，不落 predictions）→ backend.generate_chat_with_c2c
        ├ latent_prefix→ prefix 在 backend embedding 层拼接 → backend.generate_chat_with_prefix
        └ 都无         → backend.generate_chat（none / nl_only）
   ⑥ 记账：bump_turn + RequestUsage + ctx.log_decision（成本/输入/输出/prefix_len，可选写 trace.TraceStore）

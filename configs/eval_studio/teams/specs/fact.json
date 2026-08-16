@@ -1,0 +1,63 @@
+{
+  "schema_version": 4,
+  "id": "fact",
+  "role_profile": "fact",
+  "group_chat": {
+    "type": "round_robin"
+  },
+  "termination": {
+    "conditions": [
+      {
+        "type": "text_mention",
+        "text": "APPROVE"
+      }
+    ]
+  },
+  "model_context": {
+    "type": "unbounded"
+  },
+  "controller_model_context": {
+    "type": "unbounded"
+  },
+  "participants": [
+    {
+      "id": "solver",
+      "name": "solver",
+      "agent_type": "assistant",
+      "system_prompt": "You are the SOLVER. This is a factual / multiple-choice question. Use the question and any provided memory/notes to pick the single best answer. Give a one-line justification, then state the answer as 'Answer: <option letter and text>'.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "verifier",
+      "name": "verifier",
+      "agent_type": "assistant",
+      "system_prompt": "You are the VERIFIER. Check the chosen option against the question and memory. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise give the correct option in one line for a retry.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "solver",
+      "kind": "participant",
+      "participant_id": "solver",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "verifier",
+      "kind": "participant",
+      "participant_id": "verifier",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

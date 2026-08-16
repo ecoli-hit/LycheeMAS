@@ -8,57 +8,50 @@ preparation live in sibling modules, while this file only exposes public
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from ...core.registry import REGISTRY
-from .aftraj import ensure_source as ensure_aftraj_source
-from .aftraj import load_aftraj_audit, load_aftraj_audit_test
-from .agent_collab import ensure_source as ensure_agent_collab_source
-from .agent_collab import (
-    load_agent_collab_clc,
-    load_agent_collab_cpr,
-    load_agent_collab_idr,
-    load_agent_collab_rtd,
+
+# Importing each module registers its BENCHMARK object. Registration is lazy
+# with respect to datasets and heavyweight evaluation dependencies.
+from . import (  # noqa: E402,F401
+    aftraj,
+    agent_collab,
+    aime_2024,
+    bbeh,
+    choice_qa,
+    gaia,
+    gsm8k,
+    hle,
+    human_eval,
+    locomo10,
+    mast_data,
+    open_agent_traces,
+    swe_bench_verified,
+    workbench,
 )
-from .aime_2024 import load_aime_2024, prepare_aime_2024
-from .choice_qa import (
-    load_arc_easy,
-    load_medqa,
-    load_openbookqa,
-    prepare_arc_easy,
-    prepare_medqa,
-    prepare_openbookqa,
+from .base import (
+    STANDARD_SOURCE_PROVIDERS,
+    Benchmark,
+    BenchmarkCase,
+    BenchmarkEvaluationError,
+    CaseMaterialization,
+    EvaluationContext,
+    ToolBundle,
 )
 from .common import DATA_BACKENDS, prepared_root, processed_root, raw_root
-from .gaia import (
-    ensure_full_source as ensure_gaia_full_source,
-)
-from .gaia import (
-    ensure_validation_source as ensure_gaia_validation_source,
-)
-from .gaia import (
-    load_gaia_validation,
-    load_gaia_validation_level_1,
-    load_gaia_validation_level_2,
-    load_gaia_validation_level_3,
-)
-from .gsm8k import load_gsm8k, prepare_gsm8k
-from .human_eval import ensure_source as ensure_human_eval_source
-from .human_eval import load_human_eval
-from .locomo10 import load_locomo10, prepare_locomo10
-from .mast_data import ensure_source as ensure_mast_source
-from .mast_data import load_mast_failure
-from .open_agent_traces import ensure_source as ensure_open_agent_traces_source
-from .open_agent_traces import load_open_agent_traces
+from .registry import BENCHMARKS, get_benchmark
 
 RAW = raw_root()
 PREPARED = prepared_root()
 PROCESSED = processed_root()
 
-REASONING_POLE = ("gsm8k", "aime_2024")
+REASONING_POLE = ("gsm8k", "aime_2024", "bbeh", "hle")
 FACT_POLE = ("medqa", "openbookqa", "arc_easy")
 MEMORY_TASKS = ("locomo10",)
 CODE_TASKS = ("human_eval",)
+SOFTWARE_ENGINEERING_TASKS = ("swe_bench_verified",)
+WORKPLACE_TOOL_TASKS = ("workbench",)
 TOOL_TASKS = (
     "gaia_validation",
     "gaia_validation_level_1",
@@ -78,20 +71,7 @@ MAS_COLLAB_TASKS = (
     "agent_collab_clc",
 )
 
-FULL_PREPARE_TARGETS = (
-    "gsm8k",
-    "aime_2024",
-    "arc_easy",
-    "openbookqa",
-    "medqa",
-    "locomo10",
-    "human_eval",
-    "gaia",
-    "aftraj",
-    "agent_collab",
-    "mast_data",
-    "open_agent_traces",
-)
+FULL_PREPARE_TARGETS = tuple(benchmark.full_prepare_target for benchmark in BENCHMARKS.all())
 
 BENCHMARK_STRUCTURE = [
     {
@@ -204,6 +184,34 @@ BENCHMARK_STRUCTURE = [
         "prepare_targets": ["open_agent_traces"],
         "runnable_tasks": ["open_agent_traces"],
         "kinds": ["mas_deviation"],
+    },
+    {
+        "benchmark_source": "BIG-Bench Extra Hard",
+        "full_prepare_target": "bbeh",
+        "prepare_targets": ["bbeh"],
+        "runnable_tasks": ["bbeh"],
+        "kinds": ["bbeh"],
+    },
+    {
+        "benchmark_source": "Humanity's Last Exam",
+        "full_prepare_target": "hle",
+        "prepare_targets": ["hle"],
+        "runnable_tasks": ["hle"],
+        "kinds": ["hle"],
+    },
+    {
+        "benchmark_source": "SWE-bench Verified",
+        "full_prepare_target": "swe_bench_verified",
+        "prepare_targets": ["swe_bench_verified"],
+        "runnable_tasks": ["swe_bench_verified"],
+        "kinds": ["swe_bench_verified"],
+    },
+    {
+        "benchmark_source": "WorkBench Revisited",
+        "full_prepare_target": "workbench",
+        "prepare_targets": ["workbench"],
+        "runnable_tasks": ["workbench"],
+        "kinds": ["workbench"],
     },
 ]
 
@@ -331,6 +339,26 @@ BENCHMARK_MAPPINGS = {
             "kinds": ["mas_deviation"],
         },
     ],
+    "BIG-Bench Extra Hard": [
+        {"prepare_target": "bbeh", "runnable_tasks": ["bbeh"], "kinds": ["bbeh"]},
+    ],
+    "Humanity's Last Exam": [
+        {"prepare_target": "hle", "runnable_tasks": ["hle"], "kinds": ["hle"]},
+    ],
+    "SWE-bench Verified": [
+        {
+            "prepare_target": "swe_bench_verified",
+            "runnable_tasks": ["swe_bench_verified"],
+            "kinds": ["swe_bench_verified"],
+        },
+    ],
+    "WorkBench Revisited": [
+        {
+            "prepare_target": "workbench",
+            "runnable_tasks": ["workbench"],
+            "kinds": ["workbench"],
+        },
+    ],
 }
 
 
@@ -338,67 +366,24 @@ for _row in BENCHMARK_STRUCTURE:
     _row["mappings"] = BENCHMARK_MAPPINGS[_row["benchmark_source"]]
 
 
-def prepare_human_eval(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_human_eval_source(force_download=force, source=source))
+def _prepare_handler(target: str):
+    def run(force: bool = False, source: Optional[str] = None) -> str:
+        return BENCHMARKS.for_prepare_target(target).prepare(target, force=force, source=source)
+
+    return run
 
 
-def prepare_gaia(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_gaia_full_source(force_download=force, source=source))
-
-
-def prepare_gaia_validation(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_gaia_validation_source(force_download=force, source=source))
-
-
-def prepare_aftraj(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_aftraj_source(force_download=force, source=source))
-
-
-def prepare_agent_collab(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_agent_collab_source(force_download=force, source=source))
-
-
-def prepare_mast_data(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_mast_source(force_download=force, source=source))
-
-
-def prepare_open_agent_traces(force: bool = False, source: Optional[str] = None) -> str:
-    return str(ensure_open_agent_traces_source(force_download=force, source=source))
-
-
-SOURCE_PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
-    "gsm8k": prepare_gsm8k,
-    "aime_2024": prepare_aime_2024,
-    "arc_easy": prepare_arc_easy,
-    "openbookqa": prepare_openbookqa,
-    "medqa": prepare_medqa,
-    "locomo10": prepare_locomo10,
-    "human_eval": prepare_human_eval,
-    "gaia": prepare_gaia,
-    "gaia_validation": prepare_gaia_validation,
-    "aftraj": prepare_aftraj,
-    "agent_collab": prepare_agent_collab,
-    "mast_data": prepare_mast_data,
-    "open_agent_traces": prepare_open_agent_traces,
+SOURCE_PREPARERS = {
+    target: _prepare_handler(target)
+    for benchmark in BENCHMARKS.all()
+    for target in benchmark.direct_prepare_targets
 }
-
-PREPARE_ALIASES: dict[str, str] = {
-    "gaia_validation_level_1": "gaia_validation",
-    "gaia_validation_level_2": "gaia_validation",
-    "gaia_validation_level_3": "gaia_validation",
-    "aftraj_audit": "aftraj",
-    "aftraj_audit_test": "aftraj",
-    "agent_collab_idr": "agent_collab",
-    "agent_collab_rtd": "agent_collab",
-    "agent_collab_cpr": "agent_collab",
-    "agent_collab_clc": "agent_collab",
-    "mast_failure": "mast_data",
+PREPARE_ALIASES = {
+    alias: resolved
+    for benchmark in BENCHMARKS.all()
+    for alias, resolved in benchmark.prepare_aliases.items()
 }
-
-PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
-    **SOURCE_PREPARERS,
-    **{alias: SOURCE_PREPARERS[source] for alias, source in PREPARE_ALIASES.items()},
-}
+PREPARERS = {target: _prepare_handler(target) for target in BENCHMARKS.prepare_targets()}
 
 
 def prepare(task: str, force: bool = False, source: Optional[str] = None) -> str:
@@ -410,30 +395,19 @@ def prepare(task: str, force: bool = False, source: Optional[str] = None) -> str
 
 
 LOADERS = {
-    "gsm8k": load_gsm8k,
-    "aime_2024": load_aime_2024,
-    "arc_easy": load_arc_easy,
-    "openbookqa": load_openbookqa,
-    "medqa": load_medqa,
-    "locomo10": load_locomo10,
-    "human_eval": load_human_eval,
-    "gaia_validation": load_gaia_validation,
-    "gaia_validation_level_1": load_gaia_validation_level_1,
-    "gaia_validation_level_2": load_gaia_validation_level_2,
-    "gaia_validation_level_3": load_gaia_validation_level_3,
-    "aftraj_audit": load_aftraj_audit,
-    "aftraj_audit_test": load_aftraj_audit_test,
-    "agent_collab_idr": load_agent_collab_idr,
-    "agent_collab_rtd": load_agent_collab_rtd,
-    "agent_collab_cpr": load_agent_collab_cpr,
-    "agent_collab_clc": load_agent_collab_clc,
-    "mast_failure": load_mast_failure,
-    "open_agent_traces": load_open_agent_traces,
+    task: (lambda n=None, task=task: BENCHMARKS.for_task(task).load(task, n=n))
+    for task in BENCHMARKS.tasks()
 }
 
 
 def load(task: str, n: Optional[int] = None) -> List[Dict]:
-    return LOADERS[task](n=n)
+    return get_benchmark(task).load(task, n=n)
+
+
+def score(task: str, prediction: str, case: dict, *, record: dict | None = None) -> dict:
+    """Score one prediction with the benchmark that owns ``task``."""
+
+    return get_benchmark(task).score(prediction, case, record=record)
 
 
 class _Benchmark:
@@ -457,8 +431,18 @@ def _register_benchmarks() -> None:
 _register_benchmarks()
 
 __all__ = [
+    "BENCHMARKS",
+    "Benchmark",
+    "BenchmarkCase",
+    "BenchmarkEvaluationError",
+    "CaseMaterialization",
+    "EvaluationContext",
+    "STANDARD_SOURCE_PROVIDERS",
+    "ToolBundle",
+    "get_benchmark",
     "load",
     "prepare",
+    "score",
     "PREPARERS",
     "SOURCE_PREPARERS",
     "PREPARE_ALIASES",
@@ -474,6 +458,8 @@ __all__ = [
     "FACT_POLE",
     "MEMORY_TASKS",
     "CODE_TASKS",
+    "SOFTWARE_ENGINEERING_TASKS",
+    "WORKPLACE_TOOL_TASKS",
     "TOOL_TASKS",
     "MAS_DIAGNOSTIC_TASKS",
     "MAS_COLLAB_TASKS",

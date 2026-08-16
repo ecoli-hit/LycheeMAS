@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "qwen3_8b",
+  "name": "Qwen3-8B",
+  "organization": "Alibaba / Qwen",
+  "family": "Qwen3",
+  "parameter_size": "8B",
+  "license": "Apache-2.0",
+  "gated": false,
+  "capabilities": ["text_generation", "tool_calling", "hf", "vllm", "latent"],
+  "sources": {
+    "modelscope": [{"id": "Qwen/Qwen3-8B", "format": "transformers", "priority": 10}],
+    "huggingface": [{"id": "Qwen/Qwen3-8B", "format": "transformers", "priority": 20}]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "qwen3_4b_instruct_2507",
+  "name": "Qwen3-4B-Instruct-2507",
+  "organization": "Alibaba / Qwen",
+  "family": "Qwen3",
+  "parameter_size": "4B",
+  "license": "Apache-2.0",
+  "gated": false,
+  "capabilities": ["text_generation", "tool_calling", "long_context", "hf", "vllm", "latent"],
+  "sources": {
+    "modelscope": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "format": "transformers", "priority": 10}],
+    "huggingface": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "format": "transformers", "priority": 20}]
+  }
+}

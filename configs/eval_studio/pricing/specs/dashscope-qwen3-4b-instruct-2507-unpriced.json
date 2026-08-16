@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "id": "dashscope-qwen3-4b-instruct-2507-unpriced",
+  "basis": "token_usage",
+  "billing_mode": "provider_token_usage",
+  "rate_card_mode": "flat_or_input_token_tiers",
+  "rate_unit": "per_million_tokens",
+  "supported_deployment_kinds": ["api", "vllm"],
+  "required_rates": ["input", "output"],
+  "optional_rates": ["cached_input", "reasoning_output", "thinking_output"],
+  "currency": "CNY",
+  "rates": {"input": null, "cached_input": null, "output": null, "reasoning_output": null},
+  "rate_tiers": [],
+  "metadata": {
+    "provider": "Alibaba Cloud Bailian",
+    "model_ids": ["Qwen3-4B-Instruct-2507"],
+    "comparison_model": "Qwen3-4B-Instruct-2507",
+    "rate_source": "project_operator",
+    "purpose": "api_equivalent_cost"
+  },
+  "notes": "Fill with the selected Bailian comparison SKU's published rate card before monetary reporting."
+}

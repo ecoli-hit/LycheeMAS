@@ -2,7 +2,8 @@
 
 设计：
 - Role  = 一个角色（agent 名 + system prompt + 可选 model_id）。纯数据，不依赖 backend/runtime。
-- TEAMS = 命名的队伍 profile（每个 = 有序的 Role 列表）。同一 profile 可被多个 task 复用。
+- ROLE_PROFILES = 命名的角色模板（每个 = 有序的 Role 列表）。角色模板不包含拓扑、
+  调度、benchmark 或 deployment；同一模板可被不同 TeamSpec/ExperimentSpec 复用。
 
 各 prompt 的 # INPUT 段引用「上一个 agent 输入」的来源标志 = `PREV_OUTPUT_HEADER`，由 NL 通道注入。
 本文件直接 import 该常量并用它拼 prompt，消除重复字符串（全包唯一来源在 memory/channels/nl.py）。
@@ -12,7 +13,7 @@
   2) 队伍可有任意数量角色；终止轮数按实际 agent 数计算。
   3) 每个 agent 独占一个绑定到自身 role 的注入 client（路由器按 role 条件化），共享 backend + ctx。
 
-注册 `topology_generator/static`：按 team 名产出 AgentSpec 列表（封装成 MASGraph 顺序链）。
+注册 `team_builder/role_profile`：把 RoleProfile 实例化为带显式 GroupChat 配置的 MASGraph。
 prompt 是给模型的指令，保持英文；注释用中文。
 """
 from __future__ import annotations
@@ -121,7 +122,7 @@ APPROVE: \\boxed{{<integer 0-999>}}
 
 
 # ---- 命名队伍 profile（每个 profile 的最后一个角色必须用 APPROVE 收尾）----
-TEAMS: dict[str, List[Role]] = {
+ROLE_PROFILES: dict[str, List[Role]] = {
     # 单模型 baseline：1 个 agent 直接作答（配 method=none 即「单模型、无记忆、单次推理」对照）
     "single": [
         Role("solver",
@@ -199,24 +200,67 @@ TEAMS: dict[str, List[Role]] = {
 
     # GAIA/Magentic-One 风格工具链：文件、网页、代码执行都在同一条 autogen/CDM 主链路中。
     "gaia": [
+        Role("Coder", "", agent_type="coder",
+             description="Writes code to analyze files or compute intermediate results."),
+        Role("ComputerTerminal", "", agent_type="computer_terminal",
+             description="Executes code blocks from the current group-chat buffer in the sandbox."),
         Role("FileSurfer", "", agent_type="file_surfer",
              description="Reads and navigates files available in the case workspace."),
         Role("WebSurfer", "", agent_type="web_surfer",
              description="Browses web pages and performs web search when needed."),
-        Role("Coder", "", agent_type="coder",
-             description="Writes code to analyze files or compute intermediate results."),
-        Role("ComputerTerminal", "", agent_type="computer_terminal",
-             description="Executes code produced by Coder in the sandbox.",
-             meta={"sources": ["Coder"]}),
     ],
 }
 
 
-TEAM_META: dict[str, dict] = {
-    "human_eval": {"team_preset": "coder_executor"},
-    "gaia": {"team_preset": "magentic_one"},
+_APPROVE_TERMINATION = {
+    "conditions": [{"type": "text_mention", "text": "APPROVE"}]
 }
 
+
+ROLE_PROFILE_META: dict[str, dict] = {
+    "single": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "default": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "aime": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "reason": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "fact": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "memory": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": _APPROVE_TERMINATION,
+    },
+    "human_eval": {
+        "recommended_group_chat": {"type": "round_robin"},
+        "termination": {
+            "conditions": [
+                {
+                    "type": "text_mention",
+                    "text": "TERMINATE",
+                    "sources": ["ComputerTerminal"],
+                }
+            ]
+        },
+    },
+    "gaia": {
+        "recommended_group_chat": {
+            "type": "magentic_one",
+            "max_stalls": 3,
+        }
+    },
+}
 
 def _role_description(role: Role) -> str:
     """selector 选发言者用的一句话简介：显式给则用之，否则取 system 里第一句非标题行。"""
@@ -228,10 +272,10 @@ def _role_description(role: Role) -> str:
 
 def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec]:
     """把命名 profile 解析成 AgentSpec 列表（图节点）。未登记则报错。"""
-    if team not in TEAMS:
-        raise ValueError(f"unknown team profile {team}; choices: {list(TEAMS)}")
+    if team not in ROLE_PROFILES:
+        raise ValueError(f"unknown role profile {team}; choices: {list(ROLE_PROFILES)}")
     specs: List[AgentSpec] = []
-    for r in TEAMS[team]:
+    for r in ROLE_PROFILES[team]:
         meta = {"description": _role_description(r), "agent_type": r.agent_type}
         if r.tools:
             meta["tools"] = list(r.tools)
@@ -245,9 +289,9 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
     return specs
 
 
-@REGISTRY.register("topology_generator", "static")
-class StaticTopology:
-    """按 team 名产出 AgentSpec 列表，封装成顺序链 MASGraph（静态拓扑，必做 baseline）。"""
+@REGISTRY.register("team_builder", "role_profile")
+class RoleProfileTeamBuilder:
+    """Build a Team graph from a named RoleProfile and its explicit GroupChat."""
 
     name = "static"
 
@@ -257,9 +301,20 @@ class StaticTopology:
         self.rounds = rounds
 
     def build(self, agents: Optional[List[AgentSpec]] = None, query=None):
-        # agents 显式给则直接用；否则按 team 名生成。返回 MASGraph（顺序链，边留空=声明顺序）。
+        # Explicit agents replace the profile participants but keep the selected Team identity.
         from ...runtime.base import MASGraph  # 惰性导入避免环依赖
 
         nodes = list(agents) if agents else team_to_agentspecs(self.team, self.model)
-        meta = {"team": self.team, **TEAM_META.get(self.team, {})}
+        profile_meta = ROLE_PROFILE_META.get(self.team, {})
+        group_chat = dict(
+            profile_meta.get("recommended_group_chat") or {"type": "round_robin"}
+        )
+        meta = {
+            "team": self.team,
+            "role_profile": self.team,
+            "group_chat": group_chat,
+            "termination": dict(profile_meta.get("termination") or {}),
+            "context_visibility": "shared",
+            "dynamic_topology": False,
+        }
         return MASGraph(nodes=nodes, rounds=self.rounds, meta=meta)

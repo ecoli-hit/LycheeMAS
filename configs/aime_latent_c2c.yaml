@@ -15,6 +15,7 @@ backend:
 
 memory:
   name: dual_channel
+  P: 16
   latent_strategy: c2c            # ★ 用训练好的 C2C 融合器作 latent 通道（替代 soft_token）
   nl_strategy: prev_output
   max_encode_tokens: 4096
@@ -25,7 +26,6 @@ memory:
 
 router:
   method: latent_only             # 纯 latent：channel=latent，不注入 NL
-  P: 16
 
 run:
   task: aime_2024
@@ -35,4 +35,4 @@ run:
   max_new_tokens: 4096
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/lychee_v0_1
+  runs_root: runs/benchmarks

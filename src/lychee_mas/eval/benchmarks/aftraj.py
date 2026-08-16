@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     copy_raw_to_prepared,
     download_hf_files,
@@ -23,10 +24,26 @@ from .common import (
     remove_path,
     restore_prepared_from_raw,
 )
-from .source_catalog import fallback_specs, provider_ids, source_backend_order
+from .registry import register_benchmark
 
-_FALLBACK = fallback_specs("aftraj")[0]
-REPO_ID = provider_ids("aftraj", "huggingface")[0]
+SOURCES = {
+    "modelscope": {"env": "LYCHEE_AFTRAJ_MODELSCOPE_ID", "default_ids": []},
+    "huggingface": {"env": None, "default_ids": ["ZBox008003/AFTraj"]},
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [
+        {
+            "provider": "huggingface_direct",
+            "repo_id": "ZBox008003/AFTraj",
+            "files": ["aftraj_safe.parquet", "aftraj_unsafe.parquet", "splits_test.json"],
+            "strict": True,
+            "purpose": "complete minimal files required by AFTraj loaders",
+        }
+    ],
+}
+
+_FALLBACK = SOURCES["fallback_files"][0]
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 ALLOW_PATTERNS = ["*.parquet", "*.json", "README*", ".gitattributes"]
 REQUIRED_FILES = list(_FALLBACK["files"])
 
@@ -51,7 +68,7 @@ def _download_huggingface(src: Path) -> Path:
 
 
 def _download_modelscope(src: Path) -> Path:
-    dataset_ids = provider_ids("aftraj", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for AFTraj; set LYCHEE_AFTRAJ_MODELSCOPE_ID "
@@ -75,7 +92,7 @@ def _download_modelscope(src: Path) -> Path:
 
 
 def _backend_order(source: str | None) -> list[str]:
-    return source_backend_order("aftraj", source)
+    return resolve_source_backend_order("aftraj", SOURCES, source)
 
 
 def _has_source(src: Path) -> bool:
@@ -363,3 +380,34 @@ def audit_score_details(pred: str, gold: dict[str, Any]) -> dict[str, Any]:
 
 def score_audit(pred: str, gold: dict[str, Any]) -> float:
     return float(audit_score_details(pred, gold)["score"])
+
+
+def _prepare(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_source(force_download=force, source=source))
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    return audit_score_details(prediction, gold if isinstance(gold, dict) else {})
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="aftraj",
+        name="AFTraj-2K",
+        category="safety",
+        sources=SOURCES,
+        full_prepare_target="aftraj",
+        prepare_handlers={"aftraj": _prepare},
+        prepare_aliases={"aftraj_audit": "aftraj", "aftraj_audit_test": "aftraj"},
+        loaders={
+            "aftraj_audit": load_aftraj_audit,
+            "aftraj_audit_test": load_aftraj_audit_test,
+        },
+        scorer_kinds={
+            "aftraj_audit": "mas_audit",
+            "aftraj_audit_test": "mas_audit",
+        },
+        score_handlers={"mas_audit": _score},
+        binary_kinds=("mas_audit",),
+    )
+)

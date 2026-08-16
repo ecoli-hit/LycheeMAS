@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "id": "qwen3.6-27b-local-vllm",
+  "kind": "vllm",
+  "source_spec": {
+    "type": "model",
+    "id": "qwen3_6_27b"
+  },
+  "actual_pricing_spec_id": "reference-a800-on-demand-cny",
+  "api_equivalent_pricing_spec_id": "aliyun-qwen3.6-27b-cn-beijing",
+  "python": ".venvs/vllm-qwen36-0.25.1/bin/python",
+  "library_paths": [],
+  "managed": true,
+  "shared": false,
+  "host": "127.0.0.1",
+  "port": 6100,
+  "trust_env": false,
+  "cuda_visible_devices": "4,5,6,7",
+  "tensor_parallel_size": 2,
+  "data_parallel_size": 2,
+  "gpu_memory_utilization": 0.9,
+  "max_model_len": 131072,
+  "max_num_seqs": 16,
+  "model_info": {
+    "vision": true,
+    "function_calling": true,
+    "json_output": false,
+    "structured_output": false,
+    "context_window": 131072
+  },
+  "per_request_metrics_mode": "auto",
+  "prompt_tokens_details_mode": "auto",
+  "dtype": "auto",
+  "reasoning_parser": "qwen3",
+  "reasoning_config": {
+    "reasoning_start_str": "<think>",
+    "reasoning_end_str": "</think>"
+  },
+  "enable_auto_tool_choice": true,
+  "tool_call_parser": "qwen3_coder",
+  "thinking_protocol": "qwen_chat_template",
+  "enable_prefix_caching": true,
+  "use_flashinfer_sampler": false,
+  "enforce_eager": false,
+  "request_limits": {
+    "max_concurrency": 32,
+    "min_interval_s": 0.0,
+    "scope": "process"
+  },
+  "request_timeout": {
+    "mode": "adaptive",
+    "minimum_s": 120.0,
+    "maximum_s": 2700.0,
+    "base_s": 30.0,
+    "initial_generation_tokens_per_second": 20.0,
+    "observed_tokens_per_second_ceiling": 40.0,
+    "safety_factor": 1.5,
+    "ewma_alpha": 0.25
+  },
+  "max_retries": 0,
+  "capabilities": {
+    "text_generation": true,
+    "vision": true,
+    "tool_calls": true,
+    "reasoning_content": true,
+    "thinking_toggle": true,
+    "preserve_thinking": true,
+    "default_thinking_mode": "enabled",
+    "default_preserve_thinking": "disabled",
+    "native_thinking_budget": true
+  },
+  "notes": "Managed local Qwen3.6-27B vLLM 0.25.1 service on GPUs 4-7 with two TP=2 replicas and 16 sequences per replica.",
+  "updated_at_utc": "2026-08-13T08:09:53.599967+00:00"
+}

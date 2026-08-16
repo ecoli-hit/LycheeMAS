@@ -1,0 +1,6 @@
+{
+  "schema_version": 4,
+  "id": "open_agent_traces",
+  "name": "Open Agent Traces",
+  "category": "agent_trajectories"
+}

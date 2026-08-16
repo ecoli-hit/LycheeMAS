@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "qwen3_6_27b",
+  "name": "Qwen3.6-27B",
+  "organization": "Alibaba / Qwen",
+  "family": "Qwen3.6",
+  "parameter_size": "27B",
+  "license": "Local registered asset",
+  "gated": false,
+  "capabilities": ["text_generation", "tool_calling", "reasoning", "long_context", "hf", "vllm", "latent"],
+  "sources": {},
+  "notes": "Only local import is enabled until an official equivalent provider source is registered."
+}

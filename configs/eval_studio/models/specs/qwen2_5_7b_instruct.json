@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "qwen2_5_7b_instruct",
+  "name": "Qwen2.5-7B-Instruct",
+  "organization": "Alibaba / Qwen",
+  "family": "Qwen2.5",
+  "parameter_size": "7B",
+  "license": "Apache-2.0",
+  "gated": false,
+  "capabilities": ["text_generation", "tool_calling", "long_context", "hf", "vllm", "latent"],
+  "sources": {
+    "modelscope": [{"id": "Qwen/Qwen2.5-7B-Instruct", "format": "transformers", "priority": 10}],
+    "huggingface": [{"id": "Qwen/Qwen2.5-7B-Instruct", "format": "transformers", "priority": 20}]
+  }
+}

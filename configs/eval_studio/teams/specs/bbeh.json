@@ -1,0 +1,30 @@
+{
+  "schema_version": 4,
+  "id": "bbeh",
+  "role_profile": "bbeh",
+  "group_chat": {"type": "round_robin"},
+  "termination": {},
+  "model_context": {"type": "token_limited"},
+  "controller_model_context": {"type": "token_limited"},
+  "participants": [
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "agent_type": "assistant",
+      "system_prompt": "Solve the task carefully. End with one line in the form 'The final answer is: <answer>'.",
+      "description": "Solves one BIG-Bench Extra Hard task.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "Solver",
+      "kind": "participant",
+      "participant_id": "Solver",
+      "required_capabilities": ["text_generation"]
+    }
+  ]
+}

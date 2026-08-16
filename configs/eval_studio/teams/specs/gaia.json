@@ -1,0 +1,93 @@
+{
+  "schema_version": 4,
+  "id": "gaia",
+  "role_profile": "gaia",
+  "group_chat": {
+    "type": "magentic_one",
+    "max_stalls": 3
+  },
+  "termination": {},
+  "model_context": {
+    "type": "token_limited"
+  },
+  "controller_model_context": {
+    "type": "token_limited"
+  },
+  "participants": [
+    {
+      "id": "Coder",
+      "name": "Coder",
+      "agent_type": "coder",
+      "system_prompt": "",
+      "description": "Writes code to analyze files or compute intermediate results.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "ComputerTerminal",
+      "name": "ComputerTerminal",
+      "agent_type": "computer_terminal",
+      "system_prompt": "",
+      "description": "Executes code blocks from the current group-chat buffer in the sandbox.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "FileSurfer",
+      "name": "FileSurfer",
+      "agent_type": "file_surfer",
+      "system_prompt": "",
+      "description": "Reads and navigates files available in the case workspace.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "WebSurfer",
+      "name": "WebSurfer",
+      "agent_type": "web_surfer",
+      "system_prompt": "",
+      "description": "Browses web pages and performs web search when needed.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "Coder",
+      "kind": "participant",
+      "participant_id": "Coder",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "FileSurfer",
+      "kind": "participant",
+      "participant_id": "FileSurfer",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "WebSurfer",
+      "kind": "participant",
+      "participant_id": "WebSurfer",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "Orchestrator",
+      "kind": "controller",
+      "controller_type": "orchestrator",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

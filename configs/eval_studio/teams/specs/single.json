@@ -1,0 +1,45 @@
+{
+  "schema_version": 4,
+  "id": "single",
+  "role_profile": "single",
+  "group_chat": {
+    "type": "round_robin"
+  },
+  "termination": {
+    "conditions": [
+      {
+        "type": "text_mention",
+        "text": "APPROVE"
+      }
+    ]
+  },
+  "model_context": {
+    "type": "unbounded"
+  },
+  "controller_model_context": {
+    "type": "unbounded"
+  },
+  "participants": [
+    {
+      "id": "solver",
+      "name": "solver",
+      "agent_type": "assistant",
+      "system_prompt": "You solve the given problem on your own. Think briefly, then give the final answer. On the FINAL line output exactly 'APPROVE: <final answer>'. For math problems wrap the answer in \\boxed{}, e.g. 'APPROVE: \\boxed{204}'.",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "solver",
+      "kind": "participant",
+      "participant_id": "solver",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

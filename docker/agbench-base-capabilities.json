@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "profile": "agbench_base",
+  "aligned_with": {
+    "source": "src/autogen/python/packages/agbench/src/agbench/res/Dockerfile",
+    "execution_adaptation": "Packages are installed in a host-UID-writable virtual environment"
+  },
+  "commands": [
+    "bash",
+    "curl",
+    "exiftool",
+    "ffmpeg",
+    "git",
+    "pip",
+    "python"
+  ],
+  "python_modules": [
+    "markitdown",
+    "matplotlib",
+    "nltk",
+    "numpy",
+    "pandas",
+    "playwright",
+    "pydub",
+    "pytest",
+    "requests",
+    "seaborn",
+    "sklearn",
+    "speech_recognition",
+    "urllib3",
+    "youtube_transcript_api",
+    "yaml"
+  ],
+  "absent_python_distributions": [
+    "autogen-agentchat",
+    "autogen-core",
+    "autogen-ext"
+  ],
+  "browser_globs": [
+    "/ms-playwright/chromium-*/chrome-linux*/chrome",
+    "/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell"
+  ],
+  "writable_python_prefix": "/opt/lychee-case-venv"
+}

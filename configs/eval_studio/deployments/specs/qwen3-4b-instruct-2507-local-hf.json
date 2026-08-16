@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "id": "qwen3-4b-instruct-2507-local-hf",
+  "kind": "hf",
+  "source_spec": {
+    "type": "model",
+    "id": "qwen3_4b_instruct_2507"
+  },
+  "actual_pricing_spec_id": "reference-a800-on-demand-cny",
+  "api_equivalent_pricing_spec_id": "dashscope-qwen3-4b-instruct-2507-unpriced",
+  "python": ".venv/bin/python",
+  "device": "cuda:0",
+  "cuda_visible_devices": "0",
+  "capabilities": {
+    "text_generation": true,
+    "latent": true
+  }
+}

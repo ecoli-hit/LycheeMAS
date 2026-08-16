@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     copy_raw_to_prepared,
     download_hf_files,
@@ -19,10 +20,28 @@ from .common import (
     remove_path,
     restore_prepared_from_raw,
 )
-from .source_catalog import fallback_specs, provider_ids, source_backend_order
+from .registry import register_benchmark
 
-_FALLBACK = fallback_specs("mast_data")[0]
-REPO_ID = provider_ids("mast_data", "huggingface")[0]
+SOURCES = {
+    "modelscope": {"env": "LYCHEE_MAST_MODELSCOPE_ID", "default_ids": []},
+    "huggingface": {"env": None, "default_ids": ["mcemri/MAST-Data"]},
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [
+        {
+            "provider": "huggingface_direct",
+            "repo_id": "mcemri/MAST-Data",
+            "files": ["MAD_human_labelled_dataset.json"],
+            "optional_full_files_env": "LYCHEE_MAST_DOWNLOAD_FULL",
+            "optional_full_files": ["MAD_full_dataset.json"],
+            "strict": True,
+            "purpose": "default task uses human-labelled data; full dataset is explicit",
+        }
+    ],
+}
+
+_FALLBACK = SOURCES["fallback_files"][0]
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 ALLOW_PATTERNS = ["*.json", "README*", ".gitattributes"]
 DEFAULT_FILES = list(_FALLBACK["files"])
 FULL_FILES = list(_FALLBACK.get("optional_full_files", []))
@@ -51,7 +70,7 @@ def _download_huggingface(src: Path) -> Path:
 
 
 def _download_modelscope(src: Path) -> Path:
-    dataset_ids = provider_ids("mast_data", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for MAST-Data; set LYCHEE_MAST_MODELSCOPE_ID "
@@ -130,7 +149,7 @@ def ensure_source(
 
 
 def _backend_order(source: Optional[str]) -> list[str]:
-    return source_backend_order("mast_data", source)
+    return resolve_source_backend_order("mast_data", SOURCES, source)
 
 
 def _dataset_path(src: Path) -> Path:
@@ -300,3 +319,29 @@ def taxonomy_score_details(pred: str, gold: dict[str, Any]) -> dict[str, Any]:
     tp = len(pred_labels & gold_labels)
     details["score"] = (2 * tp) / (len(pred_labels) + len(gold_labels))
     return details
+
+
+def _prepare(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_source(force_download=force, source=source))
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    expected = gold if isinstance(gold, dict) else {"labels": gold}
+    return taxonomy_score_details(prediction, expected)
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="mast_data",
+        name="MAST-Data",
+        category="collaboration",
+        sources=SOURCES,
+        full_prepare_target="mast_data",
+        prepare_handlers={"mast_data": _prepare},
+        prepare_aliases={"mast_failure": "mast_data"},
+        loaders={"mast_failure": load_mast_failure},
+        scorer_kinds={"mast_failure": "mas_failure_taxonomy"},
+        score_handlers={"mas_failure_taxonomy": _score},
+        capabilities={"required": ["text_generation", "trajectory_analysis"]},
+    )
+)

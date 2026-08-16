@@ -3,7 +3,7 @@
 run_mas.py --samples K 会给每个 case 落 K 份 prediction（同 case_id、不同 k_index）；
 打分侧 analyze_benchmark_run.py 逐份打分后交给 aggregate_samples，按 case 分组补充：
   pass@1 = 各 case 内 K 份得分均值，再对 case 求平均
-  pass@K = 各 case best-of-K 得分，再对 case 求平均（二值打分即「任一正确率」）
+  pass@K = 二值 scorer 的标准估计；连续 scorer 单独报告 best-of-k score
 仅当检测到「样本数 > 去重 case 数」时才写入 pass_at_k，K=1 运行完全不变。
 """
 from lychee_mas.eval.metrics import aggregate_samples
@@ -26,12 +26,16 @@ def test_passk_binary_multi_sample():
     m = aggregate_samples(samples, run_info={"scorer_kind": "exact", "task": "aime_2024"})
     pk = m["pass_at_k"]
     assert pk["num_distinct_cases"] == 2
-    assert pk["max_samples_per_case"] == 3
-    assert pk["samples_per_case"] == 3.0
+    assert pk["max_completed_samples_per_case"] == 3
+    assert pk["mean_completed_samples_per_case"] == 3.0
+    assert pk["is_sampling_complete"] is True
     assert pk["pass@1"] == round((1 / 3 + 0) / 2, 4)   # 0.1667
     assert pk["pass@3"] == 0.5                          # (1 + 0) / 2
     # pass_at_k 字段同时展开到顶层，便于旧读取器直接取
     assert m["pass@1"] == pk["pass@1"] and m["pass@3"] == pk["pass@3"]
+    assert m["num_predictions"] == 6
+    assert m["num_distinct_cases"] == 2
+    assert m["num_cases"] == 2
 
 
 def test_passk_absent_for_single_sample():
@@ -54,9 +58,10 @@ def test_passk_continuous_scorer_best_of_k():
         _s("B", 0.2, 0, 2, kind="f1"), _s("B", 0.0, 1, 2, kind="f1"),
     ]
     m = aggregate_samples(samples, run_info={"scorer_kind": "f1"})
-    pk = m["pass_at_k"]
-    assert pk["pass@1"] == round(((0.4 + 0.9) / 2 + (0.2 + 0.0) / 2) / 2, 4)  # 0.375
-    assert pk["pass@2"] == round((0.9 + 0.2) / 2, 4)                          # 0.55
+    assert "pass_at_k" not in m
+    best = m["best_of_k"]
+    assert best["mean_score_per_prediction"] == 0.375
+    assert best["mean_best_of_k_score"] == round((0.9 + 0.2) / 2, 4)
 
 
 def test_passk_uneven_samples_per_case():
@@ -68,6 +73,8 @@ def test_passk_uneven_samples_per_case():
     m = aggregate_samples(samples, run_info={"scorer_kind": "exact"})
     pk = m["pass_at_k"]
     assert pk["num_distinct_cases"] == 2
-    assert pk["max_samples_per_case"] == 3
+    assert pk["max_completed_samples_per_case"] == 3
+    assert pk["is_sampling_complete"] is False
     assert pk["pass@1"] == round((0.5 + 1 / 3) / 2, 4)   # (A:1/2, B:1/3) 均值
-    assert pk["pass@3"] == 1.0                            # 两个 case 都有命中
+    assert "pass@3" not in pk
+    assert pk["observed_any_correct_rate"] == 1.0

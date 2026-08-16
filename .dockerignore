@@ -1,0 +1,27 @@
+# Benchmark sandbox builds consume docker/ plus the three vendored AutoGen
+# packages used by AgBench GAIA. Models, datasets, runs, and virtualenvs stay
+# outside the Docker build context.
+**
+!docker/
+!docker/**
+!src/
+!src/autogen/
+!src/autogen/python/
+!src/autogen/python/packages/
+!src/autogen/python/packages/autogen-core/
+!src/autogen/python/packages/autogen-core/pyproject.toml
+!src/autogen/python/packages/autogen-core/README.md
+!src/autogen/python/packages/autogen-core/src/
+!src/autogen/python/packages/autogen-core/src/**
+!src/autogen/python/packages/autogen-ext/
+!src/autogen/python/packages/autogen-ext/pyproject.toml
+!src/autogen/python/packages/autogen-ext/README.md
+!src/autogen/python/packages/autogen-ext/src/
+!src/autogen/python/packages/autogen-ext/src/**
+!src/autogen/python/packages/autogen-agentchat/
+!src/autogen/python/packages/autogen-agentchat/pyproject.toml
+!src/autogen/python/packages/autogen-agentchat/README.md
+!src/autogen/python/packages/autogen-agentchat/src/
+!src/autogen/python/packages/autogen-agentchat/src/**
+**/__pycache__/
+**/*.pyc

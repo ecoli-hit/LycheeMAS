@@ -1,0 +1,6 @@
+{
+  "schema_version": 4,
+  "id": "swe_bench_verified",
+  "name": "SWE-bench Verified",
+  "category": "software_engineering"
+}

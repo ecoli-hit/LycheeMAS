@@ -1,0 +1,30 @@
+{
+  "schema_version": 4,
+  "id": "hle",
+  "role_profile": "hle",
+  "group_chat": {"type": "round_robin"},
+  "termination": {},
+  "model_context": {"type": "token_limited"},
+  "controller_model_context": {"type": "token_limited"},
+  "participants": [
+    {
+      "id": "Expert",
+      "name": "Expert",
+      "agent_type": "assistant",
+      "system_prompt": "Your response should be in the following format:\nExplanation: {your explanation for your answer choice}\nAnswer: {your chosen answer}\nConfidence: {your confidence score between 0% and 100% for your answer}",
+      "description": "Answers one text or image question using the official HLE response contract.",
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "Expert",
+      "kind": "participant",
+      "participant_id": "Expert",
+      "required_capabilities": ["text_generation", "vision"]
+    }
+  ]
+}

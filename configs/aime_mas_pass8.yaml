@@ -17,6 +17,7 @@ backend:                         # HF 模型后端
 
 memory:                          # 记忆方法接缝（MAS 走 NL 通道）
   name: dual_channel
+  P: 16
   latent_strategy: soft_token
   nl_strategy: prev_output
   max_encode_tokens: 4096
@@ -25,7 +26,6 @@ memory:                          # 记忆方法接缝（MAS 走 NL 通道）
 
 router:
   method: nl_only
-  P: 16
 
 run:
   task: aime_2024
@@ -37,4 +37,4 @@ run:
   # 不设 aggregator -> 不投票，报 pass@1（平均单样本准确率）
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/lychee_v0_1
+  runs_root: runs/benchmarks

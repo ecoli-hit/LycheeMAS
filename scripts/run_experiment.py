@@ -42,13 +42,23 @@ def _load_questions(args) -> List[TaskQuery]:
     if args.questions:
         return [TaskQuery(question=q, gold=None) for q in args.questions]
     if args.benchmark:
-        bench = REGISTRY.create("benchmark", args.benchmark, n=args.n)
-        items = bench.load()
-        if args.n:
-            items = items[: args.n]
-        return [TaskQuery(question=it["question"], context=it.get("context"),
-                          gold=it.get("gold"), meta={"kind": it.get("kind")})
-                for it in items]
+        from lychee_mas.eval.benchmarks import get_benchmark
+
+        benchmark = get_benchmark(args.benchmark)
+        items = benchmark.load(args.benchmark, n=args.n)
+        return [
+            TaskQuery(
+                question=item["question"],
+                context=item.get("context"),
+                gold=item.get("gold"),
+                meta={
+                    "task": item.get("task"),
+                    "kind": item.get("kind"),
+                    "benchmark_id": benchmark.id,
+                },
+            )
+            for item in items
+        ]
     # 兜底：一个内置示例查询，保证脚本始终可跑（离线）
     return [TaskQuery(question="If a train travels 60 miles in 1 hour, speed? Answer: 60",
                       gold="60")]
@@ -59,11 +69,12 @@ def _score(query: TaskQuery, trajectory: Trajectory) -> Optional[float]:
     kind = query.meta.get("kind")
     if query.gold is None or not kind:
         return None
-    from lychee_mas.eval.metrics import score
+    from lychee_mas.eval.benchmarks import get_benchmark
 
     pred = trajectory.final_answer.content if trajectory.final_answer else ""
     try:
-        return score(kind, pred, query.gold)
+        benchmark = get_benchmark(str(query.meta.get("benchmark_id") or query.meta.get("task")))
+        return float(benchmark.score(pred, {"kind": kind, "gold": query.gold})["score"])
     except Exception:
         return None
 
@@ -127,7 +138,7 @@ def _persist(args, result: dict) -> str:
     bench = args.benchmark or "adhoc"
     from lychee_mas.eval.metrics import result_dir, write_results
 
-    out_dir = result_dir(args.model_tag, method, bench, root=args.runs_root or args.results_root)
+    out_dir = result_dir(args.model_tag, method, bench, root=args.runs_root)
     snapshot = {"args": vars(args), "registry": REGISTRY.snapshot()}
     write_results(out_dir, result["samples"], result["metrics"], snapshot)
     return out_dir
@@ -136,7 +147,7 @@ def _persist(args, result: dict) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="LycheeMAS 实验入口（默认 runtime=mock 可离线跑）")
     ap.add_argument("--runtime", default="mock", help="runtime 名（mock|autogen|...）")
-    ap.add_argument("--team", default="default", help="静态拓扑队伍 profile")
+    ap.add_argument("--team", default="default", help="RoleProfile 名")
     ap.add_argument("--aggregator", default=None, help="可选聚合器名（如 self_consistency）")
     # --- L1 团队组建 selector（给出则由 selector 决定成员，覆盖 --team 的角色）---
     ap.add_argument("--selector", default=None,
@@ -157,10 +168,12 @@ def main() -> None:
     ap.add_argument("--rounds", type=int, default=1, help="每轮发言轮数")
     ap.add_argument("--seed", type=int, default=0, help="随机种子（可复现）")
     ap.add_argument("--model-tag", dest="model_tag", default="mock", help="落盘目录用的模型标签")
-    ap.add_argument("--runs-root", dest="runs_root", default=None,
-                    help="运行结果根目录；优先于 --results-root")
-    ap.add_argument("--results-root", dest="results_root", default=None,
-                    help="旧兼容别名；未指定时使用 LYCHEE_BENCHMARK_RUNS_ROOT 或 runs/benchmarks")
+    ap.add_argument(
+        "--runs-root",
+        dest="runs_root",
+        default=None,
+        help="运行结果根目录；未指定时使用 LYCHEE_BENCHMARK_RUNS_ROOT 或 runs/benchmarks",
+    )
     ap.add_argument("--no-save", action="store_true", help="不落盘（仅打印）")
     args = ap.parse_args()
 

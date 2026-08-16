@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "dashscope-qwen-plus",
+  "name": "Qwen Plus",
+  "provider": "阿里云百炼",
+  "organization": "Alibaba Cloud",
+  "protocol": "openai_compatible",
+  "deployment_kind": "api",
+  "model_id": "qwen-plus",
+  "model_id_editable": false,
+  "default_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "base_url_editable": false,
+  "auth_modes": ["env"],
+  "default_api_key_env": "DASHSCOPE_API_KEY",
+  "trust_env": true,
+  "shared": false,
+  "request_limits": {"max_concurrency": 4, "min_interval_s": 0.0, "scope": "process"},
+  "model_info": {},
+  "capabilities": {"text_generation": true, "tool_calls": true},
+  "thinking_protocol": "dashscope",
+  "notes": "API key may reference an environment variable or be supplied for the current Studio session."
+}

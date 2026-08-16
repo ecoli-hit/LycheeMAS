@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "id": "shared-glm-4.7-flash-unpriced",
+  "basis": "token_usage",
+  "billing_mode": "provider_token_usage",
+  "rate_card_mode": "flat_or_input_token_tiers",
+  "rate_unit": "per_million_tokens",
+  "supported_deployment_kinds": ["api", "vllm"],
+  "required_rates": ["input", "output"],
+  "optional_rates": ["cached_input", "reasoning_output", "thinking_output"],
+  "currency": "CNY",
+  "rates": {"input": null, "cached_input": null, "output": null, "reasoning_output": null},
+  "rate_tiers": [],
+  "metadata": {"provider": "shared_lab_service", "model_ids": ["GLM-4.7-Flash"], "source_spec_ids": ["shared-glm-4.7-flash"], "model": "GLM-4.7-Flash", "rate_source": "service_operator", "purpose": "actual_cost"},
+  "notes": "Fill with the shared service's internal or published token rates before monetary reporting."
+}

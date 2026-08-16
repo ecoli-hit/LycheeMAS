@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     copy_raw_to_prepared,
     download_hf_files,
@@ -25,10 +26,31 @@ from .common import (
     remove_path,
     restore_prepared_from_raw,
 )
-from .source_catalog import fallback_specs, provider_ids, source_backend_order
+from .registry import register_benchmark
 
-_FALLBACK = fallback_specs("agent_collab")[0]
-REPO_ID = provider_ids("agent_collab", "huggingface")[0]
+SOURCES = {
+    "modelscope": {"env": "LYCHEE_AGENTCOLLAB_MODELSCOPE_ID", "default_ids": []},
+    "huggingface": {
+        "env": None,
+        "default_ids": ["AgentCollabBench/AgentCollabBench"],
+    },
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [
+        {
+            "provider": "huggingface_direct_listed",
+            "repo_id": "AgentCollabBench/AgentCollabBench",
+            "patterns": ["TASK-*.json", "data/**", "README*", ".gitattributes"],
+            "strict": False,
+            "purpose": (
+                "listed-file fallback; still validates that task JSON or train.jsonl exists"
+            ),
+        }
+    ],
+}
+
+_FALLBACK = SOURCES["fallback_files"][0]
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 ALLOW_PATTERNS = list(_FALLBACK["patterns"])
 
 METRIC_TO_KIND = {
@@ -54,10 +76,17 @@ def _download_huggingface(src: Path) -> Path:
             repo_id=REPO_ID, repo_type="dataset", local_dir=str(raw), allow_patterns=ALLOW_PATTERNS
         )
     except Exception:
+        pass
+    if not _has_source(raw):
         files = _matching_hf_files()
         if not files:
             raise RuntimeError(f"no AgentCollabBench files matched {ALLOW_PATTERNS}")
         download_hf_files(REPO_ID, files, str(raw))
+    if not _has_source(raw):
+        raise RuntimeError(
+            "AgentCollabBench download completed without data/train.jsonl or TASK-*.json; "
+            "the raw directory only contains download metadata or an incomplete cache"
+        )
     copy_raw_to_prepared(raw, src)
     return src
 
@@ -69,7 +98,7 @@ def _matching_hf_files() -> list[str]:
 
 
 def _download_modelscope(src: Path) -> Path:
-    dataset_ids = provider_ids("agent_collab", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for AgentCollabBench; set "
@@ -85,6 +114,10 @@ def _download_modelscope(src: Path) -> Path:
             snapshot_download(
                 dataset_id, repo_type="dataset", local_dir=str(raw), allow_patterns=ALLOW_PATTERNS
             )
+            if not _has_source(raw):
+                raise RuntimeError(
+                    f"ModelScope source {dataset_id!r} contains no AgentCollabBench task files"
+                )
             copy_raw_to_prepared(raw, src)
             return src
         except Exception as exc:  # pragma: no cover - provider/network dependent
@@ -93,7 +126,7 @@ def _download_modelscope(src: Path) -> Path:
 
 
 def _backend_order(source: str | None) -> list[str]:
-    return source_backend_order("agent_collab", source)
+    return resolve_source_backend_order("agent_collab", SOURCES, source)
 
 
 def _has_source(src: Path) -> bool:
@@ -424,3 +457,60 @@ def agent_collab_score_details(
 def score_agent_collab(pred: str, gold: dict[str, Any], metric: str | None = None) -> float:
     details = agent_collab_score_details(pred, gold, metric=metric)
     return float(details["score"])
+
+
+def _prepare(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_source(force_download=force, source=source))
+
+
+def _score_metric(metric: str):
+    def score(prediction: str, gold, _record) -> dict:
+        expected = gold if isinstance(gold, dict) else {"expected": gold}
+        return agent_collab_score_details(prediction, expected, metric=metric)
+
+    return score
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="agent_collab",
+        name="AgentCollabBench",
+        category="collaboration",
+        sources=SOURCES,
+        full_prepare_target="agent_collab",
+        prepare_handlers={"agent_collab": _prepare},
+        prepare_aliases={
+            "agent_collab_idr": "agent_collab",
+            "agent_collab_rtd": "agent_collab",
+            "agent_collab_cpr": "agent_collab",
+            "agent_collab_clc": "agent_collab",
+        },
+        loaders={
+            "agent_collab_idr": load_agent_collab_idr,
+            "agent_collab_rtd": load_agent_collab_rtd,
+            "agent_collab_cpr": load_agent_collab_cpr,
+            "agent_collab_clc": load_agent_collab_clc,
+        },
+        scorer_kinds={
+            "agent_collab_idr": "mas_instruction_decay",
+            "agent_collab_rtd": "mas_tracer_durability",
+            "agent_collab_cpr": "mas_consensus_pollution",
+            "agent_collab_clc": "mas_context_leakage",
+        },
+        score_handlers={
+            "mas_instruction_decay": _score_metric("IDR"),
+            "mas_tracer_durability": _score_metric("RTD"),
+            "mas_consensus_pollution": _score_metric("CPR"),
+            "mas_context_leakage": _score_metric("CLC"),
+        },
+        binary_kinds=(
+            "mas_instruction_decay",
+            "mas_tracer_durability",
+            "mas_consensus_pollution",
+            "mas_context_leakage",
+        ),
+        capabilities={
+            "required": ["text_generation", "multi_agent_collaboration"],
+        },
+    )
+)

@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "id": "reference-a800-monthly-amortized-cny",
+  "basis": "allocated_gpu_time",
+  "billing_mode": "monthly_node_amortized",
+  "rate_card_mode": "flat",
+  "rate_unit": "per_gpu_hour",
+  "supported_deployment_kinds": ["hf", "vllm"],
+  "required_rates": ["gpu_hour"],
+  "optional_rates": [],
+  "currency": "CNY",
+  "rates": {"gpu_hour": 5.592},
+  "rate_tiers": [],
+  "metadata": {"provider": "reference_gpu_platform", "accelerator": "NVIDIA A800", "quoted_node_month": 32657.28, "node_gpu_count": 8, "derived_gpu_hour": 5.592, "rate_source": "project_operator", "retrieved_at": "2026-08-14", "purpose": "actual_cost"},
+  "amortization_policy": "allocated_gpu_share",
+  "amortization_hours_per_month": 730,
+  "notes": "Reference 8-GPU monthly node price normalized as CNY 32657.28 / 8 GPUs / 730 hours = CNY 5.592 per allocated GPU-hour. This is an experiment cost-allocation estimate, not an incremental provider bill."
+}

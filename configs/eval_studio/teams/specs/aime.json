@@ -1,0 +1,81 @@
+{
+  "schema_version": 4,
+  "id": "aime",
+  "role_profile": "aime",
+  "group_chat": {
+    "type": "round_robin"
+  },
+  "termination": {
+    "conditions": [
+      {
+        "type": "text_mention",
+        "text": "APPROVE"
+      }
+    ]
+  },
+  "model_context": {
+    "type": "unbounded"
+  },
+  "controller_model_context": {
+    "type": "unbounded"
+  },
+  "participants": [
+    {
+      "id": "analyst",
+      "name": "analyst",
+      "agent_type": "assistant",
+      "system_prompt": "# ROLE\nYou are the Problem Analyst for AIME math problems. Parse the problem and produce a short\nsolving plan. You do NOT compute the final answer.\n\n# NOTE\nEvery AIME answer is a single INTEGER between 0 and 999.\n\n# INPUT\nThe math problem to solve (the user's question).\n\n# RULES\n- Restate the problem; list ASKED_FOR, GIVEN_CONDITIONS, implicit constraints.\n- Propose 1-2 concrete strategies. Do NOT solve.\n\n# OUTPUT\nPROBLEM_RESTATEMENT / ASKED_FOR / GIVEN_CONDITIONS / STRATEGIES\n",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "solver",
+      "name": "solver",
+      "agent_type": "assistant",
+      "system_prompt": "# ROLE\nYou are the Solver. Give a full chain-of-thought solution WITHOUT running code.\n\n# INPUT\nThe Analyst's plan, given to you as a note headed \"## Input from the previous agent\".\nFollow that plan together with the original problem.\n\n# RULES\n- Show every non-trivial step.\n- The AIME answer is a SINGLE INTEGER between 0 and 999. Compute it all the way to that\n  integer: evaluate EVERY expression (binomial, factorial, fraction, radical, power, sum) to\n  a concrete number. NEVER leave the answer as an unevaluated expression and NEVER as a\n  decimal.\n- If your result is not an integer in [0, 999], you made an error — recheck before answering.\n- Do NOT declare the official answer (the Verifier does).\n\n# OUTPUT\nSOLUTION_STEPS / SOLVER_ANSWER: \\boxed{<integer 0-999>} /\nKEY_ASSUMPTIONS: [steps a checker should scrutinize]\n",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    },
+    {
+      "id": "verifier",
+      "name": "verifier",
+      "agent_type": "assistant",
+      "system_prompt": "# ROLE\nYou are the Verifier and the ONLY agent that declares the final answer.\n\n# INPUT\nThe Solver's full solution and its SOLVER_ANSWER, given to you as a note headed\n\"## Input from the previous agent\". Follow that solution together with the original problem.\n\n# HARD RULES\n1. INTEGER ONLY: the final answer MUST be a single INTEGER between 0 and 999 inside\n   \\boxed{}. NEVER approve an unevaluated expression or a decimal — if SOLVER_ANSWER is not\n   a concrete integer, compute it to one before approving.\n2. NO ASSUMPTIONS: use only values given in the problem / produced by the Solver.\n3. INDEPENDENT CHECK: re-derive the key step(s) yourself, with a different method if possible.\n   - DEFAULT TO KEEPING SOLVER_ANSWER: approve it unless you find a SPECIFIC, concrete error.\n   - Only change the answer if you found such an error AND can compute the correct integer\n     with confidence — never replace it with a guess.\n\n# OUTPUT\nA one-line justification, then on the FINAL line exactly (a bare integer inside \\boxed):\nAPPROVE: \\boxed{<integer 0-999>}\n",
+      "description": null,
+      "tools": [],
+      "model_id": null,
+      "meta": {}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "analyst",
+      "kind": "participant",
+      "participant_id": "analyst",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "solver",
+      "kind": "participant",
+      "participant_id": "solver",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    },
+    {
+      "id": "verifier",
+      "kind": "participant",
+      "participant_id": "verifier",
+      "required_capabilities": [
+        "text_generation"
+      ]
+    }
+  ]
+}

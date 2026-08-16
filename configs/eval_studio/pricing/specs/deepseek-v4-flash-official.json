@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "id": "deepseek-v4-flash-official",
+  "basis": "token_usage",
+  "billing_mode": "provider_token_usage",
+  "rate_card_mode": "flat_or_input_token_tiers",
+  "rate_unit": "per_million_tokens",
+  "supported_deployment_kinds": ["api", "vllm"],
+  "required_rates": ["input", "output"],
+  "optional_rates": ["cached_input", "reasoning_output", "thinking_output"],
+  "currency": "CNY",
+  "rates": {"input": 1.0, "cached_input": 0.02, "output": 2.0, "reasoning_output": null, "thinking_output": 2.0},
+  "rate_tiers": [],
+  "metadata": {
+    "provider": "DeepSeek",
+    "model_ids": ["deepseek-v4-flash"],
+    "source_spec_ids": ["deepseek-v4-flash"],
+    "rate_source": "official_documentation",
+    "rate_source_url": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+    "retrieved_at": "2026-08-14",
+    "cache_pricing": "automatic_disk_cache",
+    "purpose": "actual_cost"
+  },
+  "notes": "Official DeepSeek API prices per million tokens. Cache hit input is CNY 0.02, cache miss input is CNY 1, and output is CNY 2 in both thinking and non-thinking modes."
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "id": "dashscope-qwen-plus-api",
+  "kind": "api",
+  "source_spec": {
+    "type": "api",
+    "id": "dashscope-qwen-plus"
+  },
+  "actual_pricing_spec_id": "aliyun-qwen-plus-cn-beijing-2025-12-01",
+  "api_equivalent_pricing_spec_id": null,
+  "managed": false,
+  "request_limits": {
+    "max_concurrency": 4,
+    "min_interval_s": 0.0,
+    "scope": "process"
+  },
+  "thinking_protocol": "dashscope",
+  "notes": "OpenAI-compatible DashScope deployment recipe for the registered qwen-plus API."
+}

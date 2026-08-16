@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "llama_3_1_8b_instruct",
+  "name": "Llama-3.1-8B-Instruct",
+  "organization": "Meta",
+  "family": "Llama 3.1",
+  "parameter_size": "8B",
+  "license": "Llama-3.1-Community",
+  "gated": true,
+  "capabilities": ["text_generation", "tool_calling", "long_context", "hf", "vllm", "latent"],
+  "sources": {
+    "huggingface": [{"id": "meta-llama/Llama-3.1-8B-Instruct", "format": "transformers", "priority": 10, "gated": true}]
+  },
+  "notes": "Community or quantized ModelScope variants are not treated as equivalent automatic fallbacks."
+}

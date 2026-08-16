@@ -45,8 +45,7 @@ def main() -> None:
     args = ap.parse_args()
 
     import torch
-    from lychee_mas.eval.benchmarks import load as load_task
-    from lychee_mas.eval.metrics import score
+    from lychee_mas.eval.benchmarks import get_benchmark
     from lychee_mas.memory.channels.c2c_projector import (
         build_projector_stack,
         map_source_to_target_layers,
@@ -93,7 +92,8 @@ def main() -> None:
         while len(chat_ids(solver_sys, "x")) < len(chat_ids(analyst_sys, "x")):
             solver_sys += "\n"
 
-    data = load_task("aime_2024", n=(args.n or None))
+    benchmark = get_benchmark("aime_2024")
+    data = benchmark.load("aime_2024", n=(args.n or None))
     samples, fused_ok, plain_ok = [], 0, 0
     for i, it in enumerate(data):
         prob, gold = it["question"], it["gold"]
@@ -114,7 +114,8 @@ def main() -> None:
                                                       src_span=src_span, tgt_span=tgt_span)
         g_plain = tgt.generate_chat(solver, max_new_tokens=args.max_new_tokens)
         a_f, a_p = extract_int(g_fused.text), extract_int(g_plain.text)
-        c_f, c_p = score("aime", a_f, gold), score("aime", a_p, gold)
+        c_f = float(benchmark.score(a_f, it)["score"])
+        c_p = float(benchmark.score(a_p, it)["score"])
         fused_ok += c_f
         plain_ok += c_p
         samples.append({"q": prob[:200], "gold": gold, "fused_ans": a_f, "fused_correct": c_f,

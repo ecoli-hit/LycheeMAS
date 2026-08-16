@@ -48,7 +48,11 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
 
@@ -88,6 +92,7 @@ nav:
   - 安装: installation.md
   - 快速上手: quickstart.md
   - 架构与设计: DEVELOPMENT.md
+  - Benchmark 交接: BENCHMARK_HANDOFF.md
   - 核心概念:
       - 组件注册与配置: concepts/registry-and-config.md
       - CDM 双通道记忆: concepts/cdm-memory.md

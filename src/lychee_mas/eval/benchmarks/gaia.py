@@ -14,6 +14,7 @@ import string
 from pathlib import Path
 from typing import Any, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     copy_raw_to_prepared,
     log_download_source,
@@ -22,9 +23,20 @@ from .common import (
     raw_source_dir,
     restore_prepared_from_raw,
 )
-from .source_catalog import provider_ids, source_backend_order
+from .registry import register_benchmark
 
-REPO_ID = provider_ids("gaia", "huggingface")[0]
+SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_GAIA_MODELSCOPE_ID",
+        "default_ids": ["gaia-benchmark/GAIA", "AI-ModelScope/GAIA"],
+    },
+    "huggingface": {"env": None, "default_ids": ["gaia-benchmark/GAIA"]},
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [],
+}
+
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 VALIDATION_ALLOW_PATTERNS = [
     "README*",
     ".gitattributes",
@@ -54,7 +66,7 @@ def _download_huggingface(src: Path, allow_patterns: list[str] | None = None) ->
 def _download_modelscope(
     src: Path, allow_patterns: list[str] | None = None, dataset_id: str | None = None
 ) -> Path:
-    dataset_ids = [dataset_id] if dataset_id else provider_ids("gaia", "modelscope")
+    dataset_ids = [dataset_id] if dataset_id else resolve_provider_ids(SOURCES, "modelscope")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -72,7 +84,7 @@ def _download_modelscope(
 
 
 def _backend_order(source: str | None) -> list[str]:
-    return source_backend_order("gaia", source)
+    return resolve_source_backend_order("gaia", SOURCES, source)
 
 
 def _has_metadata(split_dir: Path) -> bool:
@@ -94,7 +106,7 @@ def _download_with_backends(
     for backend in _backend_order(source):
         try:
             if backend == "modelscope":
-                for dataset_id in [x for x in provider_ids("gaia", "modelscope") if x]:
+                for dataset_id in [x for x in resolve_provider_ids(SOURCES, "modelscope") if x]:
                     raw = raw_source_dir("gaia", "modelscope", dataset_id)
                     try:
                         _download_modelscope(
@@ -346,3 +358,86 @@ def extract_final_answer(console_log: str) -> str | None:
     if not matches:
         return None
     return matches[-1].strip()
+
+
+def _prepare_full(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_full_source(force_download=force, source=source))
+
+
+def _prepare_validation(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_validation_source(force_download=force, source=source))
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    expected = gold[0] if isinstance(gold, (list, tuple)) else gold
+    return {"score": 1.0 if gaia_question_scorer(prediction, str(expected)) else 0.0}
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="gaia",
+        name="GAIA",
+        category="general_assistant",
+        sources=SOURCES,
+        full_prepare_target="gaia",
+        prepare_handlers={"gaia": _prepare_full, "gaia_validation": _prepare_validation},
+        prepare_aliases={
+            "gaia_validation_level_1": "gaia_validation",
+            "gaia_validation_level_2": "gaia_validation",
+            "gaia_validation_level_3": "gaia_validation",
+        },
+        loaders={
+            "gaia_validation": load_gaia_validation,
+            "gaia_validation_level_1": load_gaia_validation_level_1,
+            "gaia_validation_level_2": load_gaia_validation_level_2,
+            "gaia_validation_level_3": load_gaia_validation_level_3,
+        },
+        scorer_kinds={
+            "gaia_validation": "gaia",
+            "gaia_validation_level_1": "gaia",
+            "gaia_validation_level_2": "gaia",
+            "gaia_validation_level_3": "gaia",
+        },
+        score_handlers={"gaia": _score},
+        binary_kinds=("gaia",),
+        capabilities={
+            "required": ["file_access", "web_browsing", "code_execution"],
+            "attachments_required": True,
+            "browser_required": True,
+        },
+        sandbox_profiles={
+            "agbench_gaia": {
+                "label": "AgBench GAIA",
+                "docker_image": "lychee-agbench-gaia:local",
+                "description": (
+                    "Default reproduction environment: AgBench base dependencies plus "
+                    "GAIA MagenticOne requirements, without LycheeMAS convenience packages."
+                ),
+            }
+        },
+        runtime_defaults={
+            "code_executor": "docker",
+            "code_timeout": 60,
+            "docker_image": "lychee-agbench-gaia:local",
+            "max_stalls": 3,
+            "max_turns": 20,
+            "save_screenshots": False,
+            "web_headless": True,
+        },
+        network_defaults={
+            "access": "required",
+            "mode": "proxy",
+            "proxy_url": "http://127.0.0.1:7897",
+            "no_proxy": "127.0.0.1,localhost,::1",
+            "docker_bridge_host": "172.17.0.1",
+            "container_proxy_port": 17897,
+            "targets": {
+                "downloads": False,
+                "web_surfer": True,
+                "code_executor": True,
+                "model_backend": False,
+            },
+        },
+        contamination_audit_default=True,
+    )
+)

@@ -47,7 +47,7 @@ def _base_args(cli) -> dict:
     return dict(
         runtime=cli.runtime, team="default", aggregator=None, benchmark=cli.benchmark,
         questions=cli.questions, n=cli.n, rounds=cli.rounds, seed=cli.seed,
-        model_tag=cli.model_tag, results_root=cli.results_root, no_save=True,
+        model_tag=cli.model_tag, runs_root=cli.runs_root, no_save=True,
         selector=None, selector_mode="pool", selector_embedder=cli.selector_embedder,
         selector_critique_rounds=cli.selector_critique_rounds,
         selector_min_roles=None, selector_max_roles=None,
@@ -70,7 +70,7 @@ def main() -> None:
     ap.add_argument("--selector-critique-rounds", dest="selector_critique_rounds",
                     type=int, default=3)
     ap.add_argument("--model-tag", dest="model_tag", default="ablation")
-    ap.add_argument("--results-root", dest="results_root",
+    ap.add_argument("--runs-root", dest="runs_root",
                     default=os.path.join("runs", "ablation"))
     ap.add_argument("--out", default=os.path.join("runs", "ablation", "agentinit_ablation.json"))
     cli = ap.parse_args()

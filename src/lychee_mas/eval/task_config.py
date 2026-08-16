@@ -1,11 +1,10 @@
-"""每个 task 的默认配置：用哪支队伍 + 用哪种答案提取策略（task 级默认，可被覆盖）。
+"""Task-specific answer extraction policies.
 
-迁移自 benchs/task_config.py。集中管理「对应 task 的默认配置」：
-  - team:      该 task 默认用的队伍 profile 名（在 construct/templates.py 的 TEAMS 里解析成角色
-  列表）
-  - extractor: 从 MAS 对话里抽最终答案的策略名（见下方 EXTRACTORS）
+Benchmark loaders and scorers must not select a TeamSpec. Experiment configs
+choose role profiles/teams independently; this module only controls how a
+completed trajectory exposes its candidate answer.
 
-未登记的 task 用 DEFAULT_TEAM / DEFAULT_EXTRACTOR 兜底。纯标准库（仅 re）。
+未登记的 task 用 DEFAULT_EXTRACTOR 兜底。纯标准库（仅 re）。
 """
 
 from __future__ import annotations
@@ -17,13 +16,22 @@ from typing import Callable, Optional
 # ====================== 答案提取策略（按任务分发） ======================
 def _extract_default(messages) -> str:
     """默认策略：优先取最后一条含 'APPROVE:' 的内容；没有则回退最后一条消息。"""
-    for m in reversed(messages):  # 从后往前找第一条 APPROVE
+    visible_messages = [
+        message
+        for message in messages
+        if (
+            message.get("type") if isinstance(message, dict)
+            else getattr(message, "type", type(message).__name__)
+        )
+        != "ThoughtEvent"
+    ]
+    for m in reversed(visible_messages):  # 从后往前找第一条 APPROVE
         c = getattr(m, "content", "") if not isinstance(m, dict) else m.get("content", "")
         if isinstance(c, str) and "APPROVE" in c:
-            mt = re.search(r"APPROVE:\s*(.*)", c, re.DOTALL)  # 抓 APPROVE: 后的全部文本
-            if mt:
-                return mt.group(1).strip()
-    last = messages[-1] if messages else None  # 没 APPROVE（如达轮数上限）就用末条
+            matches = list(re.finditer(r"(?im)^\s*APPROVE:\s*(.+?)\s*$", c))
+            if matches:
+                return matches[-1].group(1).strip()
+    last = visible_messages[-1] if visible_messages else None  # 没 APPROVE 则用末条可见消息
     if last is None:
         return ""
     c = getattr(last, "content", "") if not isinstance(last, dict) else last.get("content", "")
@@ -48,36 +56,21 @@ EXTRACTORS: dict[str, Callable[[list], str]] = {
 
 
 # ====================== 每个 task 的默认配置 ======================
-DEFAULT_TEAM = "default"  # 未登记 task 的默认队伍 profile
 DEFAULT_EXTRACTOR = "default"  # 未登记 task 的默认答案提取策略
 
-# task 名 -> {team: 队伍 profile 名, extractor: 提取策略名}
-TASK_CONFIG: dict[str, dict] = {
-    "gsm8k": {"team": "reason", "extractor": "default"},
-    "aime_2024": {"team": "aime", "extractor": "boxed"},
-    "medqa": {"team": "fact", "extractor": "default"},
-    "arc_easy": {"team": "fact", "extractor": "default"},
-    "openbookqa": {"team": "fact", "extractor": "default"},
-    "locomo10": {"team": "memory", "extractor": "default"},
-    "human_eval": {"team": "human_eval", "extractor": "default"},
-    "gaia_validation": {"team": "gaia", "extractor": "default"},
-    "gaia_validation_level_1": {"team": "gaia", "extractor": "default"},
-    "gaia_validation_level_2": {"team": "gaia", "extractor": "default"},
-    "gaia_validation_level_3": {"team": "gaia", "extractor": "default"},
-    "aftraj_audit": {"team": "reason", "extractor": "default"},
-    "aftraj_audit_test": {"team": "reason", "extractor": "default"},
-    "agent_collab_idr": {"team": "reason", "extractor": "default"},
-    "agent_collab_rtd": {"team": "reason", "extractor": "default"},
-    "agent_collab_cpr": {"team": "reason", "extractor": "default"},
-    "agent_collab_clc": {"team": "reason", "extractor": "default"},
-    "mast_failure": {"team": "reason", "extractor": "default"},
-    "open_agent_traces": {"team": "reason", "extractor": "default"},
-}
+def _registered_task_config() -> dict[str, dict[str, str]]:
+    from .benchmarks import BENCHMARKS
+
+    return {
+        task: {"extractor": benchmark.extractor_names.get(task, DEFAULT_EXTRACTOR)}
+        for benchmark in BENCHMARKS.all()
+        for task in benchmark.runnable_tasks
+    }
 
 
-def team_name_for_task(task: Optional[str]) -> str:
-    """按任务名选出默认队伍 profile 名；未登记回退 DEFAULT_TEAM。"""
-    return TASK_CONFIG.get(task or "", {}).get("team", DEFAULT_TEAM)
+# Compatibility view for callers that inspect task configuration directly.
+# Benchmark objects are the single source of truth.
+TASK_CONFIG: dict[str, dict[str, str]] = _registered_task_config()
 
 
 def extractor_for_task(task: Optional[str]) -> Callable[[list], str]:

@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "id": "reference-a800-on-demand-cny",
+  "basis": "allocated_gpu_time",
+  "billing_mode": "on_demand_gpu_hour",
+  "rate_card_mode": "flat",
+  "rate_unit": "per_gpu_hour",
+  "supported_deployment_kinds": ["hf", "vllm"],
+  "required_rates": ["gpu_hour"],
+  "optional_rates": [],
+  "currency": "CNY",
+  "rates": {"gpu_hour": 6.99},
+  "rate_tiers": [],
+  "metadata": {"provider": "reference_gpu_platform", "accelerator": "NVIDIA A800", "quoted_gpu_hour": 6.99, "rate_source": "project_operator", "retrieved_at": "2026-08-14", "purpose": "actual_cost"},
+  "notes": "Reference on-demand price supplied by the project operator. The platform name and GPU memory capacity were not supplied; verify them before external reporting."
+}

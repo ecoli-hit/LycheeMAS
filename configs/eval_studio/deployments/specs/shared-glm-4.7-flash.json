@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "id": "shared-glm-4.7-flash",
+  "kind": "vllm",
+  "source_spec": {
+    "type": "api",
+    "id": "shared-glm-4.7-flash"
+  },
+  "actual_pricing_spec_id": "shared-glm-4.7-flash-unpriced",
+  "api_equivalent_pricing_spec_id": null,
+  "managed": false,
+  "shared": true,
+  "max_model_len": 202752,
+  "max_num_seqs": 20,
+  "request_limits": {
+    "max_concurrency": 1,
+    "min_interval_s": 2.0,
+    "scope": "host"
+  },
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true,
+    "thinking_toggle": "unverified",
+    "reasoning_content": false,
+    "preserve_thinking": "unverified",
+    "default_thinking_mode": "unknown",
+    "default_preserve_thinking": "unknown",
+    "reasoning_budget": "unavailable"
+  },
+  "notes": "Shared lab vLLM service. Eval Studio may probe and use it, but must not stop, restart, or saturate it."
+}

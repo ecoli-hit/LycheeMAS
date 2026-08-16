@@ -22,6 +22,8 @@ runtime = [
     "autogen-ext[openai]>=0.7,<0.8",
     "torch",
     "transformers",
+    "lm-format-enforcer",
+    "pillow",
 ]
 numeric = ["numpy"]
 config = ["pyyaml", "hydra-core"]
@@ -39,6 +41,11 @@ docs = [
     "mkdocs-section-index>=0.3",
     "mkdocs-include-markdown-plugin>=6.0",
 ]
+# Eval Studio API；React 前端依赖由 apps/eval_studio/frontend/package.json 管理。
+studio = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+]
 # benchmark：数据下载/准备 + 数学打分 + HumanEval/GAIA 工具链 + 分析脚本（重依赖，仅真实跑分需要）。
 benchmark = [
     "datasets",
@@ -55,8 +62,23 @@ benchmark = [
     "sentencepiece",
     "protobuf",
     "beautifulsoup4",
+    "chardet>=5,<6",
+    "docker",
+    "modal",
+    "pre-commit",
+    "python-dotenv",
+    "PyYAML",
+    "tqdm",
     "lxml",
-    "numpy",
+    "numpy>=1.26,<2",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "tenacity>=9.1.4",
+    "GitPython",
+    "ghapi<2",
+    "rich",
+    "typer",
+    "unidiff",
     "openpyxl",
     "xlrd",
     "pdfplumber",
@@ -67,6 +89,7 @@ benchmark = [
     "requests",
     "playwright",
     "imageio-ffmpeg",
+    "prometheus-client",
 ]
 # 全量：上面所有 + 数据/数学评分依赖（datasets / sympy 等供 eval 真实跑分）
 all = [
@@ -75,7 +98,8 @@ all = [
     "autogen-ext[openai]>=0.7,<0.8",
     "torch",
     "transformers",
-    "numpy",
+    "lm-format-enforcer",
+    "numpy>=1.26,<2",
     "vendi_score",
     "tenacity",
     "pyyaml",
@@ -94,6 +118,13 @@ all = [
     "sentencepiece",
     "protobuf",
     "beautifulsoup4",
+    "chardet>=5,<6",
+    "docker",
+    "modal",
+    "pre-commit",
+    "python-dotenv",
+    "PyYAML",
+    "tqdm",
     "lxml",
     "openpyxl",
     "xlrd",
@@ -105,6 +136,16 @@ all = [
     "requests",
     "playwright",
     "imageio-ffmpeg",
+    "prometheus-client",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "GitPython",
+    "ghapi<2",
+    "rich",
+    "typer",
+    "unidiff",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
     "pytest",
     "ruff",
     "mypy",
@@ -115,6 +156,10 @@ where = ["src"]
 include = ["lychee_mas*"]
 # 排除 vendored 的 AutoGen 源码（src/autogen/ 仅作参照，不打包）
 exclude = ["autogen*", "LycheeMAS*"]
+
+[tool.setuptools.package-data]
+"lychee_mas.eval.benchmarks" = ["*.json"]
+"lychee_mas.eval.studio" = ["*.json"]
 
 [tool.ruff]
 line-length = 100

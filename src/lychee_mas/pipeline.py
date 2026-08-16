@@ -1,7 +1,7 @@
 """Orchestrator —— 端到端编排器（CLAUDE.md §0/§12）。
 
 只按 config 从 REGISTRY 取组件，绝不硬编码实现（黄金法则 2：换单一组件即一组对照实验，不改本文件）。
-默认 runtime=mock，可完全离线跑通：构建一张静态 MASGraph + 一个 TaskQuery -> Runtime.run ->
+默认 runtime=mock，可完全离线跑通：构建 Team MASGraph + 一个 TaskQuery -> Runtime.run ->
 Trajectory。
 
 闭环（后续）：在 run 之后接处理层聚合 / 归因→信用→训练→反哺；当前 P0 先打通 construct + runtime。
@@ -23,7 +23,7 @@ class Orchestrator:
 
     参数：
       - runtime: 运行时名（REGISTRY "runtime" 类别），默认 "mock"（离线确定性）。
-      - team:    静态拓扑的队伍 profile 名（topology_generator/static），默认 "default"。
+      - team:    RoleProfile 名，由 team_builder/role_profile 构建，默认 "default"。
       - aggregator: 可选聚合器名（REGISTRY "aggregator"）；给出则对 [trajectory] 聚合出最终 Answer。
       - trace_store: 可选 trace.TraceStore；给出则把每条 Message 通过 runtime.intercept 写入。
       - runtime_kwargs: 透传给 runtime 构造（如 autogen 后端的 backend/ctx）。
@@ -51,10 +51,10 @@ class Orchestrator:
     def build_graph(self, query: Optional[TaskQuery] = None) -> MASGraph:
         """构建一张 MASGraph。
 
-        - 无 selector：按 `team` 名产出顺序链（原行为，零回归）。
+        - 无 selector：按 `team` RoleProfile 产出 participants 与显式 GroupChat。
         - 有 selector：先 `selector.select(query)` 选出团队成员（AgentSpec 列表），再交给
-          StaticTopology 封装成图。**selector 优先**：此时 `team` 的角色被覆盖，仅余 meta 标签
-          （rounds 由 Orchestrator 的 rounds 决定，与 team 无关）。
+          RoleProfileTeamBuilder 封装成 Team 图。**selector 优先**：此时 `team` 的角色被覆盖，
+          仅余 meta 标签（rounds 由 Orchestrator 的 rounds 决定，与 team 无关）。
         """
         agents = None
         if self.selector_name:
@@ -65,9 +65,14 @@ class Orchestrator:
                     self.selector_name, self.team)
             selector = REGISTRY.create("agent_selector", self.selector_name, **self.selector_kwargs)
             agents = selector.select(query) if query is not None else selector.select(TaskQuery())
-        topo = REGISTRY.create("topology_generator", "static",
-                               team=self.team, model=self.model, rounds=self.rounds)
-        return topo.build(agents=agents)
+        builder = REGISTRY.create(
+            "team_builder",
+            "role_profile",
+            team=self.team,
+            model=self.model,
+            rounds=self.rounds,
+        )
+        return builder.build(agents=agents)
 
     async def run(self, query: TaskQuery, hook: Optional[Callable[[Message], None]] = None):
         """端到端：建图 -> 取 runtime -> intercept -> run -> (可选)聚合，返回 Trajectory（或

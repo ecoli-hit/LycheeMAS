@@ -9,6 +9,7 @@ import shutil
 import zipfile
 from typing import Dict, List, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     format_choices,
     json_file_ready,
@@ -16,17 +17,78 @@ from .common import (
     load_parquet,
     log_download_source,
     parquet_ready,
+    prepared_benchmark_dir,
     prepared_root,
     raw_source_dir,
     save_hf_dataset,
     save_modelscope_dataset,
 )
-from .source_catalog import provider_ids, source_backend_order
+from .registry import register_benchmark
+
+ARC_EASY_SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_ARC_MODELSCOPE_ID",
+        "default_ids": ["OmniData/ARC"],
+    },
+    "huggingface": {
+        "env": "LYCHEE_ARC_HF_ID",
+        "default_ids": ["allenai/ai2_arc", "ai2_arc"],
+    },
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [
+        {
+            "provider": "modelscope_dataset",
+            "id": "modelscope/ai2_arc",
+            "purpose": (
+                "ARC-related HF-style ModelScope dataset; validation prepare timed out, "
+                "so it is not a default source"
+            ),
+        }
+    ],
+    "fallback_files": [],
+}
+
+OPENBOOKQA_SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_OPENBOOKQA_MODELSCOPE_ID",
+        "default_ids": ["allenai/openbookqa"],
+    },
+    "huggingface": {
+        "env": "LYCHEE_OPENBOOKQA_HF_ID",
+        "default_ids": ["allenai/openbookqa", "openbookqa"],
+    },
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [],
+}
+
+MEDQA_SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_MEDQA_MODELSCOPE_ID",
+        "default_ids": ["AI-ModelScope/med_qa"],
+    },
+    "huggingface": {
+        "env": "LYCHEE_MEDQA_HF_ID",
+        "default_ids": ["GBaker/MedQA-USMLE-4-options", "GBaker/MedQA-USMLE-4-options-hf"],
+    },
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [
+        {
+            "provider": "modelscope_zip_alt",
+            "id": "cloakone/MedQA",
+            "purpose": (
+                "processed alpaca-style MedQA variant; schema/language differs from the "
+                "default US MedQA source"
+            ),
+        }
+    ],
+    "fallback_files": [],
+}
 
 
 def _download_arc_modelscope() -> str:
     out_dir = os.path.join(prepared_root(), "arc_easy")
-    dataset_ids = provider_ids("arc_easy", "modelscope")
+    dataset_ids = resolve_provider_ids(ARC_EASY_SOURCES, "modelscope")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -95,7 +157,7 @@ def _download_arc_omnidata(dataset_id: str, out_dir: str) -> str:
 
 def _download_arc_huggingface() -> str:
     out_dir = os.path.join(prepared_root(), "arc_easy")
-    dataset_ids = provider_ids("arc_easy", "huggingface")
+    dataset_ids = resolve_provider_ids(ARC_EASY_SOURCES, "huggingface")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -117,7 +179,7 @@ def prepare_arc_easy(force: bool = False, source: Optional[str] = None) -> str:
     if force and os.path.isdir(os.path.join(prepared_root(), "arc_easy")):
         shutil.rmtree(os.path.join(prepared_root(), "arc_easy"))
     errors: list[str] = []
-    for backend in source_backend_order("arc_easy", source):
+    for backend in resolve_source_backend_order("arc_easy", ARC_EASY_SOURCES, source):
         try:
             return (
                 _download_arc_modelscope()
@@ -131,7 +193,7 @@ def prepare_arc_easy(force: bool = False, source: Optional[str] = None) -> str:
 
 def _download_openbookqa_modelscope() -> str:
     out_dir = os.path.join(prepared_root(), "openbookqa")
-    dataset_ids = provider_ids("openbookqa", "modelscope")
+    dataset_ids = resolve_provider_ids(OPENBOOKQA_SOURCES, "modelscope")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -144,7 +206,7 @@ def _download_openbookqa_modelscope() -> str:
 
 def _download_openbookqa_huggingface() -> str:
     out_dir = os.path.join(prepared_root(), "openbookqa")
-    dataset_ids = provider_ids("openbookqa", "huggingface")
+    dataset_ids = resolve_provider_ids(OPENBOOKQA_SOURCES, "huggingface")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
@@ -166,7 +228,7 @@ def prepare_openbookqa(force: bool = False, source: Optional[str] = None) -> str
     if force and os.path.isdir(os.path.join(prepared_root(), "openbookqa")):
         shutil.rmtree(os.path.join(prepared_root(), "openbookqa"))
     errors: list[str] = []
-    for backend in source_backend_order("openbookqa", source):
+    for backend in resolve_source_backend_order("openbookqa", OPENBOOKQA_SOURCES, source):
         try:
             return (
                 _download_openbookqa_modelscope()
@@ -256,7 +318,7 @@ def _save_medqa_dataset(dataset, out_file: str) -> str:
 
 def _download_medqa_modelscope() -> str:
     out_file = os.path.join(prepared_root(), "medqa", "medqa.json")
-    dataset_ids = provider_ids("medqa", "modelscope")
+    dataset_ids = resolve_provider_ids(MEDQA_SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for MedQA; set LYCHEE_MEDQA_MODELSCOPE_ID "
@@ -344,7 +406,7 @@ def _download_medqa_huggingface() -> str:
     from huggingface_hub import snapshot_download
 
     out_file = os.path.join(prepared_root(), "medqa", "medqa.json")
-    dataset_ids = provider_ids("medqa", "huggingface")
+    dataset_ids = resolve_provider_ids(MEDQA_SOURCES, "huggingface")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         for split in ("test", "validation", "train"):
@@ -379,7 +441,7 @@ def prepare_medqa(force: bool = False, source: Optional[str] = None) -> str:
 
 
 def _medqa_backend_order(source: Optional[str]) -> list[str]:
-    return source_backend_order("medqa", source)
+    return resolve_source_backend_order("medqa", MEDQA_SOURCES, source)
 
 
 def _load_arc(subset: str, task: str, n: Optional[int]) -> List[Dict]:
@@ -432,7 +494,7 @@ def load_openbookqa(n: Optional[int] = None) -> List[Dict]:
 
 def load_medqa(n: Optional[int] = None) -> List[Dict]:
     prepare_medqa()
-    with open(os.path.join(prepared_root(), "medqa", "medqa.json")) as f:
+    with open(prepared_benchmark_dir("medqa") / "medqa.json") as f:
         data = json.load(f)
     out = []
     for it in data:
@@ -455,3 +517,56 @@ def load_medqa(n: Optional[int] = None) -> List[Dict]:
         if n and len(out) >= n:
             break
     return out
+
+
+def _score_multiple_choice(prediction: str, gold, _record) -> dict:
+    from ..metrics import score_mc
+
+    text, letter = gold if isinstance(gold, (list, tuple)) else (gold, None)
+    return {"score": score_mc(prediction, str(text), letter)}
+
+
+ARC_EASY_BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="arc_easy",
+        name="ARC-Easy",
+        category="reasoning",
+        sources=ARC_EASY_SOURCES,
+        full_prepare_target="arc_easy",
+        prepare_handlers={"arc_easy": prepare_arc_easy},
+        loaders={"arc_easy": load_arc_easy},
+        scorer_kinds={"arc_easy": "mc"},
+        score_handlers={"mc": _score_multiple_choice},
+        binary_kinds=("mc",),
+    )
+)
+
+OPENBOOKQA_BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="openbookqa",
+        name="OpenBookQA",
+        category="reasoning",
+        sources=OPENBOOKQA_SOURCES,
+        full_prepare_target="openbookqa",
+        prepare_handlers={"openbookqa": prepare_openbookqa},
+        loaders={"openbookqa": load_openbookqa},
+        scorer_kinds={"openbookqa": "mc"},
+        score_handlers={"mc": _score_multiple_choice},
+        binary_kinds=("mc",),
+    )
+)
+
+MEDQA_BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="medqa",
+        name="MedQA",
+        category="domain_knowledge",
+        sources=MEDQA_SOURCES,
+        full_prepare_target="medqa",
+        prepare_handlers={"medqa": prepare_medqa},
+        loaders={"medqa": load_medqa},
+        scorer_kinds={"medqa": "mc"},
+        score_handlers={"mc": _score_multiple_choice},
+        binary_kinds=("mc",),
+    )
+)

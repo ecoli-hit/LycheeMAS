@@ -6,7 +6,10 @@ import os
 import shutil
 from typing import Dict, List, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
+    conversion_only,
+    load_local_dataset_split,
     load_modelscope_dataset,
     load_parquet,
     log_download_source,
@@ -14,7 +17,25 @@ from .common import (
     prepared_root,
     raw_source_dir,
 )
-from .source_catalog import provider_ids, source_backend_order
+from .registry import register_benchmark
+
+SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_AIME_2024_MODELSCOPE_ID",
+        "default_ids": ["AI-ModelScope/AIME_2024", "HuggingFaceH4/aime_2024"],
+    },
+    "huggingface": {
+        "env": "LYCHEE_AIME_2024_HF_ID",
+        "default_ids": [
+            "HuggingFaceH4/aime_2024",
+            "Maxwell-Jia/AIME_2024",
+            "AI-MO/aimo-validation-aime",
+        ],
+    },
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [],
+}
 
 
 def _standardize_columns(dataset):
@@ -48,10 +69,16 @@ def _standardize_columns(dataset):
 
 def _download_modelscope() -> str:
     out_dir = os.path.join(prepared_root(), "aime_2024", "data")
-    dataset_ids = provider_ids("aime_2024", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
+            if conversion_only():
+                src = raw_source_dir("aime_2024", "modelscope", dataset_id)
+                dataset = _standardize_columns(load_local_dataset_split(src, "train"))
+                os.makedirs(out_dir, exist_ok=True)
+                dataset.to_parquet(os.path.join(out_dir, "train-00000-of-00001.parquet"))
+                return out_dir
             from modelscope.hub.snapshot_download import snapshot_download
 
             src = raw_source_dir("aime_2024", "modelscope", dataset_id)
@@ -72,11 +99,16 @@ def _download_huggingface() -> str:
     from huggingface_hub import snapshot_download
 
     out_dir = os.path.join(prepared_root(), "aime_2024", "data")
-    dataset_ids = provider_ids("aime_2024", "huggingface")
+    dataset_ids = resolve_provider_ids(SOURCES, "huggingface")
     errors: list[str] = []
     for dataset_id in [x for x in dataset_ids if x]:
         try:
             src = raw_source_dir("aime_2024", "huggingface", dataset_id)
+            if conversion_only():
+                dataset = _standardize_columns(load_local_dataset_split(src, "train"))
+                os.makedirs(out_dir, exist_ok=True)
+                dataset.to_parquet(os.path.join(out_dir, "train-00000-of-00001.parquet"))
+                return out_dir
             log_download_source("aime_2024", "huggingface", dataset_id, src)
             snapshot_download(repo_id=dataset_id, repo_type="dataset", local_dir=str(src))
             dataset = load_dataset(dataset_id, split="train")
@@ -98,7 +130,7 @@ def prepare_aime_2024(force: bool = False, source: Optional[str] = None) -> str:
     if force and os.path.isdir(os.path.join(prepared_root(), "aime_2024")):
         shutil.rmtree(os.path.join(prepared_root(), "aime_2024"))
     errors: list[str] = []
-    for backend in source_backend_order("aime_2024", source):
+    for backend in resolve_source_backend_order("aime_2024", SOURCES, source):
         try:
             return _download_modelscope() if backend == "modelscope" else _download_huggingface()
         except Exception as exc:
@@ -122,3 +154,27 @@ def load_aime_2024(n: Optional[int] = None) -> List[Dict]:
         if n and len(out) >= n:
             break
     return out
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    from ..metrics import score_aime
+
+    expected = gold[0] if isinstance(gold, (list, tuple)) else gold
+    return {"score": score_aime(prediction, str(expected))}
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="aime_2024",
+        name="AIME 2024",
+        category="math",
+        sources=SOURCES,
+        full_prepare_target="aime_2024",
+        prepare_handlers={"aime_2024": prepare_aime_2024},
+        loaders={"aime_2024": load_aime_2024},
+        scorer_kinds={"aime_2024": "aime"},
+        score_handlers={"aime": _score},
+        binary_kinds=("aime",),
+        extractor_names={"aime_2024": "boxed"},
+    )
+)

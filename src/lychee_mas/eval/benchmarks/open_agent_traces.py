@@ -9,6 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
+from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
     copy_raw_to_prepared,
     download_hf_files,
@@ -20,10 +21,29 @@ from .common import (
     remove_path,
     restore_prepared_from_raw,
 )
-from .source_catalog import fallback_specs, provider_ids, source_backend_order
+from .registry import register_benchmark
 
-_FALLBACK = fallback_specs("open_agent_traces")[0]
-REPO_ID = provider_ids("open_agent_traces", "huggingface")[0]
+SOURCES = {
+    "modelscope": {
+        "env": "LYCHEE_OPENAGENTTRACES_MODELSCOPE_ID",
+        "default_ids": [],
+    },
+    "huggingface": {"env": None, "default_ids": ["juliensimon/open-agent-traces"]},
+    "github": {"env": None, "default_ids": []},
+    "other_defaults": [],
+    "fallback_files": [
+        {
+            "provider": "huggingface_direct_listed",
+            "repo_id": "juliensimon/open-agent-traces",
+            "patterns": ["data/**/*.parquet", "data/*.parquet", "README*", ".gitattributes"],
+            "strict": False,
+            "purpose": "listed-file fallback; loader validates parquet files under data/",
+        }
+    ],
+}
+
+_FALLBACK = SOURCES["fallback_files"][0]
+REPO_ID = resolve_provider_ids(SOURCES, "huggingface")[0]
 ALLOW_PATTERNS = ["data/**", "ocel/**", "README*", ".gitattributes"]
 
 
@@ -56,7 +76,7 @@ def _matching_hf_files() -> list[str]:
 
 
 def _download_modelscope(src: Path) -> Path:
-    dataset_ids = provider_ids("open_agent_traces", "modelscope")
+    dataset_ids = resolve_provider_ids(SOURCES, "modelscope")
     if not any(dataset_ids):
         raise RuntimeError(
             "no known ModelScope mirror for Open Agent Traces; set "
@@ -115,7 +135,7 @@ def ensure_source(
 
 
 def _backend_order(source: Optional[str]) -> list[str]:
-    return source_backend_order("open_agent_traces", source)
+    return resolve_source_backend_order("open_agent_traces", SOURCES, source)
 
 
 def _parquet_files(src: Path) -> list[Path]:
@@ -339,3 +359,28 @@ def deviation_score_details(pred: str, gold: dict[str, Any]) -> dict[str, Any]:
 
 def score_deviation(pred: str, gold: dict[str, Any]) -> float:
     return float(deviation_score_details(pred, gold)["score"])
+
+
+def _prepare(force: bool = False, source: str | None = None) -> str:
+    return str(ensure_source(force_download=force, source=source))
+
+
+def _score(prediction: str, gold, _record) -> dict:
+    return deviation_score_details(prediction, gold if isinstance(gold, dict) else {})
+
+
+BENCHMARK = register_benchmark(
+    Benchmark(
+        benchmark_id="open_agent_traces",
+        name="Open Agent Traces",
+        category="agent_trajectories",
+        sources=SOURCES,
+        full_prepare_target="open_agent_traces",
+        prepare_handlers={"open_agent_traces": _prepare},
+        loaders={"open_agent_traces": load_open_agent_traces},
+        scorer_kinds={"open_agent_traces": "mas_deviation"},
+        score_handlers={"mas_deviation": _score},
+        binary_kinds=("mas_deviation",),
+        capabilities={"required": ["text_generation", "trajectory_analysis"]},
+    )
+)

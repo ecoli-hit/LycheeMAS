@@ -29,4 +29,4 @@ run:                             # 单次实验运行参数
   max_new_tokens: 4096           # AIME 推理较长，给足生成预算
 
 eval:
-  results_root: /data/mxy/Project/CDM/results/autogen_base   # 落 results/.../qwen3-4b/none/aime_2024（与 MAS 同树）
+  runs_root: runs/benchmarks

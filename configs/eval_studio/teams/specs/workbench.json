@@ -1,0 +1,30 @@
+{
+  "schema_version": 4,
+  "id": "workbench",
+  "role_profile": "workbench",
+  "group_chat": {"type": "round_robin"},
+  "termination": {},
+  "model_context": {"type": "token_limited"},
+  "controller_model_context": {"type": "token_limited"},
+  "participants": [
+    {
+      "id": "WorkplaceAgent",
+      "name": "WorkplaceAgent",
+      "agent_type": "assistant",
+      "system_prompt": "Today's date is Thursday, 2023-11-30 and the current time is 00:00:00. Remember the current date and time when completing tasks. Meetings must not start before 9am or end after 6pm.",
+      "description": "Uses the official WorkBench workplace tools against a case-local mutable state.",
+      "tools": ["benchmark:tools"],
+      "model_id": null,
+      "meta": {"max_tool_iterations": 20}
+    }
+  ],
+  "extensions": {},
+  "inference_slots": [
+    {
+      "id": "WorkplaceAgent",
+      "kind": "participant",
+      "participant_id": "WorkplaceAgent",
+      "required_capabilities": ["text_generation", "native_tool_calls"]
+    }
+  ]
+}

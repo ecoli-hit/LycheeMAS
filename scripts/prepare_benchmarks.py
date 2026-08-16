@@ -2,13 +2,15 @@
 
 This command downloads project-owned benchmark data. It does not copy from other
 users' workspaces. It also prepares benchmark-owned runtime resources such as
-HumanEval/GAIA Docker images. Use --source modelscope or --source huggingface to
-force one provider; the default auto mode uses each benchmark's preferred
-provider order.
+benchmark Docker images. Use --source modelscope, --source huggingface, or
+--source github to force one registered provider; the default auto mode uses
+each benchmark's preferred provider order.
 """
+
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -16,28 +18,22 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 
-DOCKER_IMAGE_SPECS = {
-    "python_sandbox": {
-        "image": "lychee-python-sandbox:local",
-        "dockerfile": "docker/python-sandbox.Dockerfile",
-        "deps": [],
-    },
-    "human_eval": {
-        "image": "lychee-human-eval:local",
-        "dockerfile": "docker/human_eval.Dockerfile",
-        "deps": ["python_sandbox"],
-    },
-    "gaia": {
-        "image": "lychee-gaia:local",
-        "dockerfile": "docker/gaia.Dockerfile",
-        "deps": ["python_sandbox"],
-    },
-}
+from lychee_mas.runtime.docker_sandbox import (  # noqa: E402
+    DOCKER_BUILD_ORDER,
+    LOCAL_SANDBOX_SPECS,
+    SANDBOX_SCHEMA_VERSION,
+    SandboxVerificationError,
+    inspect_image,
+    source_fingerprint,
+    verify_local_sandbox,
+)
 
-DOCKER_BUILD_ORDER = ("python_sandbox", "human_eval", "gaia")
+DOCKER_IMAGE_SPECS = LOCAL_SANDBOX_SPECS
 
 
-def _parse_prepare_targets(raw: list[str] | None, preparers: dict, *, all_full: bool, full_targets) -> list[str]:
+def _parse_prepare_targets(
+    raw: list[str] | None, preparers: dict, *, all_full: bool, full_targets
+) -> list[str]:
     if all_full:
         return list(full_targets)
     if not raw:
@@ -73,19 +69,27 @@ def _format_list(values) -> str:
     return ", ".join(str(value) for value in values if value) or "-"
 
 
-def _print_download_sources(catalog: dict) -> None:
-    for name, entry in catalog.items():
-        print(f"Benchmark source: {entry.get('benchmark_source', name)} ({name})")
-        for provider in ("modelscope", "huggingface"):
+def _print_download_sources(benchmarks) -> None:
+    for benchmark in benchmarks:
+        name = benchmark.id
+        entry = benchmark.sources
+        print(f"Benchmark source: {benchmark.name} ({name})")
+        for provider in ("modelscope", "huggingface", "github"):
             section = entry.get(provider, {})
             env_name = section.get("env") or "-"
             defaults = _format_list(section.get("default_ids") or [])
-            print(f"  {provider}: env={env_name}; default_ids={defaults}")
+            revision = section.get("revision") or "provider default"
+            print(f"  {provider}: env={env_name}; default_ids={defaults}; revision={revision}")
         others = entry.get("other_defaults") or []
         if others:
             print("  other defaults:")
             for item in others:
-                print(f"    {item.get('provider', '-')}: {item.get('id', '-')} ({item.get('purpose', '-')})")
+                provider = item.get("provider", "-")
+                source_id = item.get("id", "-")
+                purpose = item.get("purpose", "-")
+                revision = item.get("revision") or "provider default"
+                selectable = "download" if item.get("selectable", False) else "reference"
+                print(f"    {provider}: {source_id} (revision={revision}; {selectable}; {purpose})")
         else:
             print("  other defaults: -")
         fallbacks = entry.get("fallback_files") or []
@@ -94,23 +98,12 @@ def _print_download_sources(catalog: dict) -> None:
             for item in fallbacks:
                 files = _format_list(item.get("files") or item.get("patterns") or [])
                 strict = item.get("strict", "-")
-                print(f"    {item.get('provider', '-')}: {files}; strict={strict}; {item.get('purpose', '-')}")
+                provider = item.get("provider", "-")
+                purpose = item.get("purpose", "-")
+                print(f"    {provider}: {files}; strict={strict}; {purpose}")
         else:
             print("  direct-file fallback: -")
         print()
-
-
-def _docker_image_exists(image: str) -> bool:
-    try:
-        result = subprocess.run(
-            ["docker", "image", "inspect", image],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise SystemExit("Docker CLI not found. Install Docker or use --docker-images never.") from exc
-    return result.returncode == 0
 
 
 def _docker_targets_for_prepare_targets(targets: list[str], aliases: dict[str, str]) -> set[str]:
@@ -121,7 +114,7 @@ def _docker_targets_for_prepare_targets(targets: list[str], aliases: dict[str, s
         if "human_eval" in names:
             docker_targets.add("human_eval")
         if any(name == "gaia" or name.startswith("gaia_") for name in names):
-            docker_targets.add("gaia")
+            docker_targets.add("agbench_gaia")
     return docker_targets
 
 
@@ -142,44 +135,100 @@ def _build_docker_images(
     *,
     apt_mirror: str | None,
     pip_index_url: str,
+    build_proxy_url: str | None,
     no_cache: bool,
     pull_base: bool,
     force: bool,
 ) -> None:
-    for name in _expand_docker_targets(targets):
+    selected = _expand_docker_targets(targets)
+    rebuilt: set[str] = set()
+    for name in selected:
         spec = DOCKER_IMAGE_SPECS[name]
         image = spec["image"]
         dockerfile = spec["dockerfile"]
-        if not force and _docker_image_exists(image):
-            print(f"[prepare:docker] {image} already exists", flush=True)
+        fingerprint = source_fingerprint(_ROOT, spec)
+        try:
+            existing = inspect_image(image)
+        except SandboxVerificationError as exc:
+            raise SystemExit(f"{exc}. Install Docker or use --docker-images never.") from exc
+        current = bool(
+            existing
+            and existing.get("profile") == spec["profile"]
+            and existing.get("schema_version") == SANDBOX_SCHEMA_VERSION
+            and existing.get("fingerprint") == fingerprint
+        )
+        refresh_base = pull_base and not spec["deps"]
+        dependency_changed = any(dep in rebuilt for dep in spec["deps"])
+        if not force and not refresh_base and not dependency_changed and current:
+            print(
+                f"[prepare:docker] {image} current "
+                f"profile={spec['profile']} fingerprint={fingerprint[:12]}",
+                flush=True,
+            )
             continue
+        reason = (
+            "forced"
+            if force
+            else "pull_base"
+            if refresh_base
+            else "dependency_changed"
+            if dependency_changed
+            else "missing"
+            if existing is None
+            else "source_changed"
+        )
 
         cmd = ["docker", "build", "--network=host"]
         if no_cache:
             cmd.append("--no-cache")
-        if pull_base and name == "python_sandbox":
+        if build_proxy_url:
+            for proxy_name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+                cmd.extend(["--build-arg", f"{proxy_name}={build_proxy_url}"])
+            cmd.extend(["--build-arg", "NO_PROXY=127.0.0.1,localhost,::1"])
+            cmd.extend(["--build-arg", "no_proxy=127.0.0.1,localhost,::1"])
+        if refresh_base:
             cmd.append("--pull")
-        if name in {"python_sandbox", "gaia"}:
+        if name in {
+            "python_sandbox",
+            "agbench_base",
+            "agbench_gaia",
+        }:
             cmd.extend(["--build-arg", f"PIP_INDEX_URL={pip_index_url}"])
         if name == "python_sandbox" and apt_mirror:
             cmd.extend(["--build-arg", f"APT_MIRROR={apt_mirror}"])
+        cmd.extend(["--build-arg", f"LYCHEE_SANDBOX_FINGERPRINT={fingerprint}"])
         cmd.extend(["-f", dockerfile, "-t", image, "."])
 
-        print(f"[prepare:docker] building {image} from {dockerfile}", flush=True)
+        print(
+            f"[prepare:docker] building {image} from {dockerfile} "
+            f"reason={reason} fingerprint={fingerprint[:12]}",
+            flush=True,
+        )
         try:
             subprocess.run(cmd, cwd=_ROOT, check=True)
         except subprocess.CalledProcessError as exc:
             raise SystemExit(f"[prepare:docker] failed to build {image}") from exc
+        rebuilt.add(name)
 
-    for name in _expand_docker_targets(targets):
+    for name in selected:
         image = DOCKER_IMAGE_SPECS[name]["image"]
-        if not _docker_image_exists(image):
-            raise SystemExit(f"[prepare:docker] image missing after build: {image}")
-        print(f"[prepare:docker] {image} ready", flush=True)
+        try:
+            report = verify_local_sandbox(image, repo_root=_ROOT)
+        except SandboxVerificationError as exc:
+            raise SystemExit(f"[prepare:docker] {exc}") from exc
+        capabilities = report.get("capabilities") or {}
+        print(
+            f"[prepare:docker] {image} ready profile={report.get('profile')} "
+            f"fingerprint={str(report.get('fingerprint') or '')[:12]} "
+            f"capabilities={capabilities.get('status', 'not_applicable')}",
+            flush=True,
+        )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prepare LycheeMAS benchmark data and runtime resources")
+    parser = argparse.ArgumentParser(
+        description="Prepare LycheeMAS benchmark data and runtime resources"
+    )
     parser.add_argument(
         "--tasks",
         nargs="*",
@@ -205,21 +254,41 @@ def main() -> None:
     )
     parser.add_argument(
         "--source",
-        choices=("auto", "modelscope", "huggingface"),
+        choices=("auto", "modelscope", "huggingface", "github"),
         default="auto",
         help=(
             "Download provider. auto uses benchmark-specific order: confirmed "
-            "ModelScope mirrors first, otherwise HuggingFace."
+            "ModelScope mirrors first when registered, otherwise HuggingFace or official GitHub."
         ),
     )
     parser.add_argument("--force", action="store_true", help="Redownload even if target exists")
+    parser.add_argument(
+        "--conversion-only",
+        action="store_true",
+        help=(
+            "Build Prepared only from an existing managed Raw source or a path override; "
+            "disable downloads."
+        ),
+    )
+    parser.add_argument(
+        "--manifest-hash-mode",
+        choices=("full", "metadata"),
+        default="full",
+        help="Manifest integrity mode: full writes SHA-256; metadata records size/mtime only.",
+    )
+    parser.add_argument(
+        "--verify-manifests",
+        action="store_true",
+        help="Verify existing manifests for selected targets and exit without downloading.",
+    )
     parser.add_argument(
         "--docker-images",
         choices=("auto", "always", "never"),
         default="auto",
         help=(
             "Prepare benchmark Docker images. auto builds images required by selected targets "
-            "(human_eval/gaia); always builds all official benchmark images; never skips Docker."
+            "(human_eval/gaia); GAIA prepares the AgBench-aligned profile; "
+            "always builds every registered benchmark image; never skips Docker."
         ),
     )
     parser.add_argument(
@@ -234,8 +303,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--docker-pip-index-url",
-        default=os.environ.get("LYCHEE_DOCKER_PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple"),
+        default=os.environ.get(
+            "LYCHEE_DOCKER_PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple"
+        ),
         help="Python package index used while building benchmark Docker images.",
+    )
+    parser.add_argument(
+        "--docker-build-proxy-url",
+        default=os.environ.get("LYCHEE_DOCKER_BUILD_PROXY_URL"),
+        help=(
+            "Optional HTTP proxy used only by Docker build RUN steps, for example "
+            "http://127.0.0.1:7897 with --network=host."
+        ),
     )
     parser.add_argument(
         "--docker-no-cache",
@@ -245,7 +324,7 @@ def main() -> None:
     parser.add_argument(
         "--docker-pull-base",
         action="store_true",
-        help="Ask Docker to pull a fresh ubuntu:22.04 base when building the sandbox image.",
+        help="Ask Docker to refresh every root base image and rebuild its dependent images.",
     )
     parser.add_argument(
         "--list-benchmark-sources",
@@ -265,12 +344,18 @@ def main() -> None:
     parser.add_argument(
         "--list-benchmark-structure",
         action="store_true",
-        help="Show benchmark source with prepare target -> runnable task(s) -> kind/scorer mapping and exit",
+        help=(
+            "Show benchmark source with prepare target -> runnable task(s) -> "
+            "kind/scorer mapping and exit"
+        ),
     )
     parser.add_argument(
         "--list-download-sources",
         action="store_true",
-        help="Show ModelScope/HuggingFace/other source candidates and direct-file fallback rules",
+        help=(
+            "Show ModelScope/HuggingFace/GitHub source candidates, other defaults, "
+            "and direct-file fallback rules"
+        ),
     )
     args = parser.parse_args()
 
@@ -279,11 +364,18 @@ def main() -> None:
     if args.prepared_root:
         os.environ["LYCHEE_BENCHMARK_PREPARED_ROOT"] = args.prepared_root
     os.environ["LYCHEE_DATA_SOURCE"] = args.source
+    if args.conversion_only:
+        os.environ.update(
+            LYCHEE_BENCHMARK_CONVERSION_ONLY="1",
+            HF_HUB_OFFLINE="1",
+            HF_DATASETS_OFFLINE="1",
+        )
     if args.all_full_benchmarks:
         os.environ.setdefault("LYCHEE_MAST_DOWNLOAD_FULL", "1")
 
     from lychee_mas.eval.benchmarks import (
         BENCHMARK_STRUCTURE,
+        BENCHMARKS,
         FULL_PREPARE_TARGETS,
         LOADERS,
         PREPARE_ALIASES,
@@ -291,7 +383,11 @@ def main() -> None:
         prepare,
     )
     from lychee_mas.eval.benchmarks.common import prepared_root, raw_root
-    from lychee_mas.eval.benchmarks.source_catalog import source_catalog
+    from lychee_mas.eval.benchmarks.manifest import (
+        benchmark_key_for_target,
+        verify_prepared_manifest,
+        write_prepared_manifest,
+    )
 
     if args.list_benchmark_sources:
         _print_names(row["benchmark_source"] for row in BENCHMARK_STRUCTURE)
@@ -306,12 +402,32 @@ def main() -> None:
         _print_structure(BENCHMARK_STRUCTURE, PREPARE_ALIASES)
         return
     if args.list_download_sources:
-        _print_download_sources(source_catalog())
+        _print_download_sources(BENCHMARKS.all())
         return
 
     targets = _parse_prepare_targets(
         args.tasks, PREPARERS, all_full=args.all_full_benchmarks, full_targets=FULL_PREPARE_TARGETS
     )
+
+    if args.verify_manifests:
+        failures = []
+        for target in targets:
+            key = benchmark_key_for_target(PREPARE_ALIASES.get(target, target))
+            manifest_path = os.path.join(prepared_root(), key, "manifest.json")
+            if not os.path.isfile(manifest_path):
+                failures.append({"target": target, "status": "missing_manifest"})
+                print(f"[manifest] {target}: missing {manifest_path}", flush=True)
+                continue
+            result = verify_prepared_manifest(
+                manifest_path,
+                verify_hashes=args.manifest_hash_mode == "full",
+            )
+            print(f"[manifest] {target}: {result['status']} ({manifest_path})", flush=True)
+            if result["status"] != "ready":
+                failures.append({"target": target, **result})
+        if failures:
+            raise SystemExit(f"manifest verification failed: {failures}")
+        return
 
     print(f"[prepare] raw_root={raw_root()}")
     print(f"[prepare] prepared_root={prepared_root()}")
@@ -320,16 +436,42 @@ def main() -> None:
         print(f"[prepare] all_full_benchmarks={','.join(FULL_PREPARE_TARGETS)}")
     for target in targets:
         print(f"[prepare] {target} ...", flush=True)
+        if args.conversion_only:
+            key = benchmark_key_for_target(PREPARE_ALIASES.get(target, target))
+            managed_raw = os.path.join(raw_root(), key)
+            try:
+                overrides = json.loads(os.environ.get("LYCHEE_BENCHMARK_RAW_OVERRIDES", "[]"))
+            except ValueError:
+                overrides = []
+            overridden = [
+                str(item.get("path"))
+                for item in overrides
+                if isinstance(item, dict) and item.get("benchmark_key") == key and item.get("path")
+            ]
+            available = [path for path in [managed_raw, *overridden] if os.path.exists(path)]
+            if not available:
+                raise SystemExit(
+                    f"[prepare] conversion-only requires existing Raw for {target}; "
+                    f"checked {managed_raw} and this run's Raw path overrides"
+                )
+            print(f"[prepare] conversion_only=true raw={available[0]}", flush=True)
         try:
             location = prepare(target, force=args.force, source=args.source)
         except Exception as exc:
             raise SystemExit(f"[prepare] failed for {target}: {exc}") from exc
         print(f"[prepare] {target} ready at {location}", flush=True)
+        manifest_path = write_prepared_manifest(
+            PREPARE_ALIASES.get(target, target),
+            location,
+            source_mode=args.source,
+            hash_files=args.manifest_hash_mode == "full",
+        )
+        print(f"[manifest] {target} ready at {manifest_path}", flush=True)
 
-    if args.docker_images == "never":
+    if args.conversion_only or args.docker_images == "never":
         docker_targets: set[str] = set()
     elif args.docker_images == "always":
-        docker_targets = {"human_eval", "gaia"}
+        docker_targets = {"human_eval", "agbench_gaia"}
     else:
         docker_targets = _docker_targets_for_prepare_targets(targets, PREPARE_ALIASES)
     if docker_targets:
@@ -339,6 +481,7 @@ def main() -> None:
             docker_targets,
             apt_mirror=args.docker_apt_mirror,
             pip_index_url=args.docker_pip_index_url,
+            build_proxy_url=args.docker_build_proxy_url,
             no_cache=args.docker_no_cache,
             pull_base=args.docker_pull_base,
             force=args.force_docker_images,

@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "id": "aliyun-qwen3.6-27b-cn-beijing",
+  "basis": "token_usage",
+  "billing_mode": "provider_token_usage",
+  "rate_card_mode": "flat_or_input_token_tiers",
+  "rate_unit": "per_million_tokens",
+  "supported_deployment_kinds": ["api", "vllm"],
+  "required_rates": ["input", "output"],
+  "optional_rates": ["cached_input", "reasoning_output", "thinking_output"],
+  "currency": "CNY",
+  "rates": {"input": 3.0, "cached_input": null, "output": 18.0, "reasoning_output": null, "thinking_output": 18.0},
+  "rate_tiers": [],
+  "metadata": {
+    "provider": "Alibaba Cloud Model Studio",
+    "region": "cn-beijing",
+    "billing_mode": "real_time",
+    "model_ids": ["Qwen3.6-27B", "qwen3.6-27b"],
+    "comparison_model": "qwen3.6-27b",
+    "context_cache_supported": false,
+    "cached_input_pricing": "not_applicable",
+    "rate_source": "official_documentation",
+    "rate_source_url": "https://help.aliyun.com/zh/model-studio/qwen3-6-27b",
+    "retrieved_at": "2026-08-14",
+    "purpose": "api_equivalent_cost"
+  },
+  "notes": "Official original prices for public model calls in China (Beijing), up to the model's 256K context. The official model page marks context caching as unsupported and publishes no cached-input rate, so locally observed vLLM prefix-cache hits remain observable but receive no API-equivalent discount. Thinking and non-thinking output use the same published rate. Promotional discounts and free quota are excluded."
+}

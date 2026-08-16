@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "id": "deepseek-v4-pro-api",
+  "kind": "api",
+  "source_spec": {
+    "type": "api",
+    "id": "deepseek-v4-pro"
+  },
+  "actual_pricing_spec_id": "deepseek-v4-pro-official",
+  "api_equivalent_pricing_spec_id": null,
+  "managed": false,
+  "request_limits": {
+    "max_concurrency": 4,
+    "min_interval_s": 0.0,
+    "scope": "process"
+  },
+  "thinking_protocol": "deepseek",
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true,
+    "json_output": true,
+    "reasoning_content": true,
+    "thinking_toggle": true,
+    "preserve_thinking": false,
+    "native_thinking_budget": false,
+    "reasoning_effort_values": ["high", "max"]
+  },
+  "notes": "Official DeepSeek-V4-Pro API deployment recipe."
+}

@@ -1,0 +1,15 @@
+# AutoGenBench default image packages installed after the AutoGen preload step.
+markitdown
+SpeechRecognition
+pydub
+youtube-transcript-api==0.6.0
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+requests
+urllib3
+nltk
+pytest
+playwright
