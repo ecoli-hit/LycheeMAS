@@ -187,6 +187,20 @@ def _attach_costing(metrics: dict, samples: list[dict], run_dir: str) -> dict:
     return attach_cost_metrics(metrics, samples, run_dir)
 
 
+def _attach_evidence_coverage(
+    metrics: dict[str, Any],
+    run_dir: str,
+    *,
+    write: bool,
+) -> dict[str, Any]:
+    from lychee_mas.eval.evidence import normalize_run_evidence
+
+    report = normalize_run_evidence(run_dir, write=write)
+    metrics["evidence_coverage"] = report["summary"]
+    metrics["evidence_artifacts"] = report["artifacts"]
+    return metrics
+
+
 def _should_audit_contamination(task: str | None, mode: str) -> bool:
     if mode == "on":
         return True
@@ -284,6 +298,13 @@ def _score_prediction_mode(args, run_dir: str, config_path: str) -> dict:
     )
     if not args.no_write:
         M.write_outputs(run_dir, scored)
+    if not args.skip_evidence_normalization:
+        metrics = _attach_evidence_coverage(
+            metrics,
+            run_dir,
+            write=not args.no_write,
+        )
+    if not args.no_write:
         M.write_metrics(run_dir, metrics)
     return metrics
 
@@ -335,6 +356,8 @@ def _analyze_outputs_mode(args, run_dir: str, config_path: str) -> dict:
     )
     if args.rewrite_outputs:
         M.write_outputs(run_dir, samples)
+    if not args.skip_evidence_normalization:
+        metrics = _attach_evidence_coverage(metrics, run_dir, write=args.write)
     if args.write:
         M.write_metrics(run_dir, metrics)
     return metrics
@@ -393,6 +416,11 @@ def main() -> None:
         choices=("auto", "run", "skip"),
         default="auto",
         help="HLE/SWE-bench 官方外部评测器策略；auto 与 run 都执行所需评测器",
+    )
+    parser.add_argument(
+        "--skip-evidence-normalization",
+        action="store_true",
+        help="Skip evidence.jsonl and evidence_coverage.json generation",
     )
     BENCHMARKS.add_analysis_arguments(parser)
     args = parser.parse_args()

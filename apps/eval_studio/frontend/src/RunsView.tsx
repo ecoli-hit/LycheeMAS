@@ -4,6 +4,7 @@ import { api } from './api'
 import type { Json } from './types'
 
 const EVENT_WINDOW_SIZE = 500
+type EventView = 'group-chat' | 'spans' | 'evidence'
 
 export default function RunsView({ initialRuns }: { initialRuns: Json[] }) {
   const [runs, setRuns] = useState(initialRuns)
@@ -17,19 +18,19 @@ export default function RunsView({ initialRuns }: { initialRuns: Json[] }) {
   const [replaying, setReplaying] = useState(false)
   const [loadingEvents, setLoadingEvents] = useState(false)
   const [eventError, setEventError] = useState('')
-  const [eventView, setEventView] = useState<'group-chat' | 'spans'>('group-chat')
+  const [eventView, setEventView] = useState<EventView>('group-chat')
   const [showFullEvent, setShowFullEvent] = useState(false)
   const stream = useRef<EventSource | null>(null)
   const loadSequence = useRef(0)
   const selectedRun = runs.find((run) => run.id === selectedId)
 
-  const requestEvents = (runId: string, view: 'group-chat' | 'spans', startLine: number) => (
-    view === 'group-chat'
-      ? api.groupChat(runId, startLine, EVENT_WINDOW_SIZE)
-      : api.events(runId, startLine, EVENT_WINDOW_SIZE)
-  )
+  const requestEvents = (runId: string, view: EventView, startLine: number) => {
+    if (view === 'group-chat') return api.groupChat(runId, startLine, EVENT_WINDOW_SIZE)
+    if (view === 'evidence') return api.evidence(runId, startLine, EVENT_WINDOW_SIZE)
+    return api.events(runId, startLine, EVENT_WINDOW_SIZE)
+  }
 
-  const loadEvents = async (runId: string, view: 'group-chat' | 'spans') => {
+  const loadEvents = async (runId: string, view: EventView) => {
     if (!runId) return
     const sequence = ++loadSequence.current
     stream.current?.close()
@@ -110,7 +111,7 @@ export default function RunsView({ initialRuns }: { initialRuns: Json[] }) {
   }, [activeLine, replaying, totalEvents])
 
   const startLive = async () => {
-    if (!selectedId) return
+    if (!selectedId || eventView === 'evidence') return
     if (totalEvents) await goToEvent(totalEvents - 1)
     stream.current?.close()
     const streamPath = eventView === 'group-chat' ? 'group-chat/stream' : 'events/stream'
@@ -180,8 +181,9 @@ export default function RunsView({ initialRuns }: { initialRuns: Json[] }) {
             <div className="segmented" aria-label="运行记录类型">
               <button className={eventView === 'group-chat' ? 'active' : ''} onClick={() => setEventView('group-chat')}>GroupChat</button>
               <button className={eventView === 'spans' ? 'active' : ''} onClick={() => setEventView('spans')}>Spans</button>
+              <button className={eventView === 'evidence' ? 'active' : ''} onClick={() => setEventView('evidence')}>Evidence</button>
             </div>
-            <button className={live ? 'primary live' : 'secondary'} onClick={() => { void (live ? Promise.resolve(stopLive()) : startLive()) }}>{live ? <CircleStop size={15} /> : <Radio size={15} />}{live ? '停止实时显示' : '实时显示'}</button>
+            <button className={live ? 'primary live' : 'secondary'} disabled={eventView === 'evidence'} title={eventView === 'evidence' ? 'Evidence 在离线分析后生成，不提供实时流' : undefined} onClick={() => { void (live ? Promise.resolve(stopLive()) : startLive()) }}>{live ? <CircleStop size={15} /> : <Radio size={15} />}{live ? '停止实时显示' : '实时显示'}</button>
             <button className="secondary" onClick={() => { void startReplay() }}><RotateCcw size={15} />从头回放</button>
             <button className="icon-button" title={replaying ? '暂停回放' : '继续回放'} disabled={!totalEvents} onClick={() => setReplaying(!replaying)}>{replaying ? <Pause size={16} /> : <Play size={16} />}</button>
           </div>
@@ -195,6 +197,8 @@ export default function RunsView({ initialRuns }: { initialRuns: Json[] }) {
           <Metric label="API 等价成本" value={formatCost(selectedRun?.metrics?.costing?.api_equivalent_cost)} />
           <Metric label="污染审计" value={selectedRun?.metrics?.contamination_audit?.num_suspected_cases ?? selectedRun?.contamination_summary?.num_suspected_cases ?? '—'} />
           <Metric label="审计覆盖率" value={formatRate(selectedRun?.metrics?.contamination_audit?.audit_coverage ?? selectedRun?.contamination_summary?.audit_coverage)} />
+          <Metric label="证据状态" value={selectedRun?.evidence_coverage?.overall_status ?? selectedRun?.metrics?.evidence_coverage?.overall_status ?? '未分析'} />
+          <Metric label="证据事件" value={selectedRun?.evidence_coverage?.total_events ?? selectedRun?.metrics?.evidence_coverage?.total_events ?? '—'} />
           <Metric label="事件总数" value={totalEvents} />
           <Metric label="已加载窗口" value={loadedRange} />
         </div>
@@ -271,15 +275,15 @@ function displayRole(event?: Json) {
 function eventCategory(kind: string) {
   if (!kind) return 'neutral'
   if (kind.includes('error') || kind === 'invalid_jsonl') return 'error'
-  if (kind === 'model_call_start') return 'model-start'
-  if (kind === 'model_call_end') return 'model-end'
-  if (kind === 'case_start' || kind === 'case_attempt_start') return 'case-start'
-  if (kind === 'case_end') return 'case-end'
-  if (kind === 'run_start' || kind === 'runtime_start' || kind === 'group_chat_start') return 'runtime-start'
-  if (kind === 'run_end' || kind === 'runtime_end' || kind === 'group_chat_end') return 'runtime-end'
-  if (kind === 'autogen_message' || kind === 'message') return 'message'
+  if (kind === 'model_call_start' || kind === 'model_call.start') return 'model-start'
+  if (kind === 'model_call_end' || kind === 'model_call.end') return 'model-end'
+  if (['case_start', 'case_attempt_start', 'case.start', 'case_attempt.start'].includes(kind)) return 'case-start'
+  if (kind === 'case_end' || kind === 'case.end') return 'case-end'
+  if (['run_start', 'runtime_start', 'group_chat_start', 'run.start', 'runtime.start', 'group_chat.start'].includes(kind)) return 'runtime-start'
+  if (['run_end', 'runtime_end', 'group_chat_end', 'run.end', 'runtime.end', 'group_chat.end'].includes(kind)) return 'runtime-end'
+  if (kind === 'autogen_message' || kind === 'message' || kind === 'agent.message') return 'message'
   if (kind.includes('tool')) return 'tool'
-  if (kind === 'group_chat_selected') return 'selection'
+  if (kind === 'group_chat_selected' || kind === 'group_chat.selected') return 'selection'
   return 'neutral'
 }
 
@@ -302,7 +306,7 @@ function primaryContent(event?: Json) {
   return event?.content ?? event?.output_preview ?? event?.final_answer ?? event?.error_message ?? event?.reason
 }
 
-function eventContent(event: Json | undefined, view: 'group-chat' | 'spans') {
+function eventContent(event: Json | undefined, view: EventView) {
   if (!event) return '等待事件'
   if (view === 'spans') return JSON.stringify(event, null, 2)
   const value = primaryContent(event)

@@ -164,4 +164,8 @@ export const api = {
     request<Json>(`/api/runs/${runId}/events?start_line=${startLine}&limit=${limit}`),
   groupChat: (runId: string, startLine = 0, limit = 1000) =>
     request<Json>(`/api/runs/${runId}/group-chat?start_line=${startLine}&limit=${limit}`),
+  evidence: (runId: string, startLine = 0, limit = 1000) =>
+    request<Json>(`/api/runs/${runId}/evidence?start_line=${startLine}&limit=${limit}`),
+  evidenceCoverage: (runId: string) =>
+    request<Json>(`/api/runs/${runId}/evidence-coverage`),
 }

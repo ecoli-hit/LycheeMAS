@@ -216,8 +216,10 @@ class StudioCatalog:
                 status = _read_json(status_path)
                 metrics = _read_json(run_dir / "metrics.json")
                 contamination_summary = _read_json(run_dir / "contamination_summary.json")
+                evidence_coverage = _read_json(run_dir / "evidence_coverage.json")
                 spans_path = run_dir / "spans.jsonl"
                 group_chat_path = run_dir / "group_chat.jsonl"
+                evidence_path = run_dir / "evidence.jsonl"
                 rows.append(
                     {
                         "id": (
@@ -231,12 +233,17 @@ class StudioCatalog:
                         "status": status,
                         "metrics": metrics,
                         "contamination_summary": contamination_summary,
+                        "evidence_coverage": evidence_coverage.get("summary", {}),
                         "has_predictions": (run_dir / "predictions.jsonl").is_file(),
                         "has_spans": spans_path.is_file(),
                         "span_bytes": spans_path.stat().st_size if spans_path.is_file() else 0,
                         "has_group_chat": group_chat_path.is_file(),
                         "group_chat_bytes": (
                             group_chat_path.stat().st_size if group_chat_path.is_file() else 0
+                        ),
+                        "has_evidence": evidence_path.is_file(),
+                        "evidence_bytes": (
+                            evidence_path.stat().st_size if evidence_path.is_file() else 0
                         ),
                         "updated_at": status_path.stat().st_mtime,
                     }

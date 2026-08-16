@@ -962,6 +962,36 @@ def create_app(repo_root: str | os.PathLike | None = None):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return read_jsonl_events(run_dir / "group_chat.jsonl", start_line=start_line, limit=limit)
 
+    @app.get("/api/runs/{run_id}/evidence")
+    def run_evidence(
+        run_id: str,
+        start_line: int = Query(default=0, ge=0),
+        limit: int = Query(default=500, ge=1, le=5000),
+    ):
+        try:
+            run_dir = catalog.run_dir(run_id, roots=registered_runs_roots())
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return read_jsonl_events(run_dir / "evidence.jsonl", start_line=start_line, limit=limit)
+
+    @app.get("/api/runs/{run_id}/evidence-coverage")
+    def run_evidence_coverage(run_id: str):
+        try:
+            run_dir = catalog.run_dir(run_id, roots=registered_runs_roots())
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        coverage_path = run_dir / "evidence_coverage.json"
+        if coverage_path.is_file():
+            try:
+                value = json.loads(coverage_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            if isinstance(value, dict):
+                return value
+        from ..evidence import normalize_run_evidence
+
+        return normalize_run_evidence(run_dir, write=False)
+
     @app.get("/api/runs/{run_id}/events/stream")
     async def stream_events(run_id: str, start_line: int = Query(default=0, ge=0)):
         try:

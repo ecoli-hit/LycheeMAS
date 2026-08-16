@@ -691,6 +691,8 @@ python scripts/run_mas.py \
 | `predictions.jsonl` | 每个 prediction 完成或失败后追加 | inference-only 结果，不含 gold/score |
 | `vllm_metrics.jsonl` | 启用采集时周期写入 | 服务级 queue、KV cache、preemption 和吞吐时间线 |
 | `outputs.jsonl` | 离线评分后 | prediction + gold + score + score details |
+| `evidence.jsonl` | 离线评分/分析时 | 跨框架统一的 case、模型、消息、工具、prediction 和 evaluation 事件 |
+| `evidence_coverage.json` | 离线评分/分析时 | 原始来源、字段完整性、已观察能力和不可测原因 |
 | `metrics.json` | 离线评分后 | run 聚合质量、效率、工具和成本指标 |
 
 `launch_dir` 位于 `runs/eval_studio/launches/<launch_id>`，保存 launcher 自己的 `job.json`、`launch.log` 和
@@ -752,6 +754,44 @@ reasoning 和最终回答分别记录为 provider reasoning content 与 content�
 
 Magentic-One Orchestrator 的 ledger 是 controller 内部结构化规划调用，不会作为普通 participant 发言逐条发布；它仍能在
 model spans 中看到。不要用 GroupChat 行数推断模型调用总数。
+
+### 9.5 统一证据与 Coverage Report
+
+`src/lychee_mas/eval/evidence/` 是评分后的只读规范化层，不修改推理和 AutoGen 行为。它读取
+`spans.jsonl`、`group_chat.jsonl`、`predictions.jsonl` 和 `outputs.jsonl`，生成统一 event envelope：
+
+```text
+event_id / event_type / case_id / sample_index
+actor / receivers / visible_to / parent_event_id / correlation_id
+status / content / attributes / provenance
+```
+
+原始 artifact 始终保留。`evidence.jsonl` 保存指标常用的真实内容和字段；完整模型上下文、provider payload、traceback、
+代码块等大字段不重复复制，而是在 `provenance.omitted_fields` 中声明，并可通过 `source_artifact + source_line` 回到原记录。
+这不会改变 `compact/full` span 的真实内容保存约定，只避免分析产物再次成倍复制相同 payload。
+
+GroupChat message 内嵌的 `tool_requests/tool_executions` 会展开为独立 `tool_call.request` 和
+`tool_execution.end` 事件；相同操作通过 `tool_call_id` 关联，请求和执行通过 `parent_event_id` 连接。已有更完整
+GroupChat 时，span 中仅用于计数的 `autogen_message/tool_event` 摘要不会重复进入统一事件流。
+
+`evidence_coverage.json` 对每个要求分别记录 `eligible_events`、`present_events`、`coverage_ratio` 和状态：
+
+- `complete`：所有适用事件都有该字段；
+- `partial`：只有部分事件具有；
+- `missing`：存在适用事件，但字段全部缺失；
+- `not_observed`：本次 run 没有观察到这类事件，尚不能直接解释为 `not_applicable`。
+
+当前覆盖项包括事件身份/provenance、case ID、消息 sender/content/visibility、模型调用父子关系与 token、reasoning/answer
+token 拆分、工具 correlation/status、prediction final answer 和 official score。`not_observed` 是否进一步解释为
+`not_applicable`，必须等 Metric Contract/Evaluation Profile 根据 Team 和 benchmark 能力判断。
+
+`analyze_benchmark_run.py` 默认生成这两个文件，并把 Coverage 摘要写入 `metrics.json`。仅在排查旧 artifact 或性能问题时
+使用 `--skip-evidence-normalization`；该选项不应成为正式研究运行的默认值。Eval Studio 同时提供：
+
+```text
+GET /api/runs/{run_id}/evidence
+GET /api/runs/{run_id}/evidence-coverage
+```
 
 ---
 
