@@ -1,0 +1,5 @@
+# post_run_plugin/attribution —— 归因 + 信用分配挂成运行后插件。
+# 用法（Orchestrator）：post_plugins=[("attribution", {"attributor": "all_at_once"})]
+plugin: attribution
+attributor: all_at_once        # attributor 类别注册名（all_at_once / step_by_step / binary_search）
+credit_assigner: attribution_guided
