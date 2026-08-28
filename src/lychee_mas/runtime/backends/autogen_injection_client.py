@@ -7,13 +7,11 @@ AutoGen 的 AssistantAgent 持有一个 `model_client`（必须是 `ChatCompleti
 调用，
 完成「路由 + 记忆注入」再真正生成。
 
-【每次 create() 做的事（整条流水线的汇合点）】
-  1. 把 LLMMessage 列表转成 [{role, content}] 给 HF chat 模板
-  2. memory.observe(history)                       —— 更新记忆库（方法接缝）
-  3. router.decide(role, task, turn, sender, ...)  —— 决定本轮记忆通道（触发接缝）
-  4. memory.recall(decision, query) -> MemoryBundle—— 物化出要注入的 NL 文本 / latent prefix
-  5. 注入：NL 文本进 prompt（system 消息）；latent prefix 进 backend 的 embedding 层
-  6. 用共享 HF backend 生成，包成 AutoGen 期望的 CreateResult 返回
+【每次 create() 做的事】
+  1. 把 LLMMessage 列表转成 [{role, content}] 给 HF chat 模板（AutoGen 专属转换）
+  2. 组装 AutoGen 专属的额外 system 段（JSON 指令 / 工具提示）与后处理回调
+  3. 调共享注入引擎 `runtime/injection.py::run_injection_step`（记忆六步的唯一实现）
+  4. 把引擎产出转换成 AutoGen 期望的 CreateResult（工具调用转 FunctionCall）
 
 【实例关系】每个 agent 独占一个 InjectionClient（绑定各自 role）；所有 client 共享 backend +
 RoutingContext。
@@ -32,10 +30,21 @@ import uuid
 from typing import Any, Mapping, Optional, Sequence
 
 from ...core.registry import REGISTRY
+from ..injection import (
+    InjectionRequest,
+    PostProcessed,
+    ToolCallRequest,
+    run_injection_step,
+)
 
-# 注：NL 注入内容的来源标志由 NLMemory.recall 产出（见 memory/channels/nl.py 的
-# PREV_OUTPUT_HEADER），
-# 本文件把 bundle.NL_Channel 原样作为 system 消息插入。
+# 注：NL 注入内容由共享注入引擎（runtime/injection.py）作为 system 消息插入；
+# 本文件只负责 AutoGen 专属的类型转换、工具调用格式与 JSON 修复。
+
+_JSON_SYSTEM_INSTRUCTION = (
+    "Return exactly one valid JSON object and nothing else. "
+    "Do not wrap JSON in markdown fences. If a JSON string "
+    "needs to mention code, do not use triple-backtick code fences."
+)
 
 
 def _content_to_text(content: Any) -> str:
@@ -374,7 +383,8 @@ def _repair_magentic_one_ledger(
     return json.dumps(ledger, ensure_ascii=False), True, "; ".join(repaired_reasons)
 
 
-def _parse_tool_calls(text: str, tools: Sequence[Any]):
+def _parse_tool_call_requests(text: str, tools: Sequence[Any]) -> Optional[list[ToolCallRequest]]:
+    """从输出文本解析工具调用，产出运行时无关的 ToolCallRequest（不构造 autogen 类型）。"""
     if not tools:
         return None
     data = _extract_json_object(text)
@@ -386,9 +396,7 @@ def _parse_tool_calls(text: str, tools: Sequence[Any]):
         raw_calls = [call for call in data["tool_calls"] if isinstance(call, dict)]
     elif data.get("tool") or data.get("name"):
         raw_calls = [data]
-    calls = []
-    from autogen_core import FunctionCall
-
+    calls: list[ToolCallRequest] = []
     for raw in raw_calls:
         function = raw.get("function")
         if isinstance(function, Mapping):
@@ -403,16 +411,9 @@ def _parse_tool_calls(text: str, tools: Sequence[Any]):
             args_text = args
         else:
             args_text = json.dumps(args or {}, ensure_ascii=False)
-        calls.append(FunctionCall(id=raw.get("id") or f"call_{uuid.uuid4().hex[:12]}",
-                                  name=str(name), arguments=args_text))
+        calls.append(ToolCallRequest(id=raw.get("id") or f"call_{uuid.uuid4().hex[:12]}",
+                                     name=str(name), arguments=args_text))
     return calls or None
-
-
-def _preview_text(text: str, head: int = 60, tail: int = 60) -> str:
-    compact = text.replace("\n", "\\n")
-    if len(compact) <= head + tail + 5:
-        return compact
-    return f"{compact[:head]} ... {compact[-tail:]}"
 
 
 def _build_injection_client_class():
@@ -420,7 +421,7 @@ def _build_injection_client_class():
 
     autogen_core 仅在调用本工厂时导入，从而 import 本模块不需要 autogen。
     """
-    from autogen_core import CancellationToken  # noqa: F401
+    from autogen_core import CancellationToken, FunctionCall  # noqa: F401
     from autogen_core.models import (
         ChatCompletionClient,
         CreateResult,
@@ -428,11 +429,6 @@ def _build_injection_client_class():
         ModelInfo,
         RequestUsage,
     )
-
-    # RouterInputs 是纯 dataclass（无 autogen/torch），从触发接缝直接复用；
-    # LatentMemory.FUSION_STRATEGIES = latent 走 KV 融合(而非 prefix 拼接)的策略集（单一事实来源）。
-    from ...memory.channels.latent import LatentMemory
-    from ...memory.routing.base import RouterInputs
 
     class InjectionClient(ChatCompletionClient):
         """实现 AutoGen 的 ChatCompletionClient 接口。一个 agent 一个实例（绑定其 role）。"""
@@ -450,227 +446,46 @@ def _build_injection_client_class():
                          json_output=None, extra_create_args: Mapping[str, Any] = {},
                          cancellation_token: Optional[Any] = None) -> CreateResult:
             chat = _to_chat(messages)
-            # sender = 最近一条非 system 消息的发言者；query = 其内容
-            sender, query = None, ""
-            for m in reversed(chat):
-                if m["role"] != "system":
-                    sender = m.get("source")
-                    query = m.get("content", "")
-                    break
 
-            # ① 观察：把当前历史交给记忆库更新
-            self.ctx.memory.observe(chat)
-            # ② 记忆通道决策：按 (role×task×turn×sender×可用性×同模型对) 决定本轮通道
-            turn = self.ctx.turn_of(self.role)
-            decision = self.ctx.router.decide(RouterInputs(
-                role=self.role, task=self.ctx.task, turn=turn, sender=sender,
-                query=query if isinstance(query, str) else str(query),
-                availability=self.ctx.availability,
-                same_model_pair=self.ctx.same_model_pair(sender, self.role)))
-            # ③ 召回：按决策物化要注入的 NL 文本 / latent prefix
-            bundle = self.ctx.memory.recall(decision, query if isinstance(query, str) else "")
-
-            # ---- 注入 ----
-            send_msgs = list(chat)
+            # AutoGen 专属的额外 system 段（引擎按序插到 leading system 段末尾，记忆文本恒在其后）
+            extra_system: list[str] = []
             if json_output:
-                insert_at = 0
-                while insert_at < len(send_msgs) and send_msgs[insert_at]["role"] == "system":
-                    insert_at += 1
-                send_msgs.insert(insert_at, {
-                    "role": "system",
-                    "content": (
-                        "Return exactly one valid JSON object and nothing else. "
-                        "Do not wrap JSON in markdown fences. If a JSON string "
-                        "needs to mention code, do not use triple-backtick code fences."
-                    ),
-                })
-
+                extra_system.append(_JSON_SYSTEM_INSTRUCTION)
             if tools:
-                insert_at = 0
-                while insert_at < len(send_msgs) and send_msgs[insert_at]["role"] == "system":
-                    insert_at += 1
-                send_msgs.insert(insert_at, {"role": "system", "content": _tool_prompt(tools)})
+                extra_system.append(_tool_prompt(tools))
 
-            if bundle.NL_Channel:
-                # NL 通道：把记忆作为一条 system 消息，插在开头 system 提示之后、对话之前
-                insert_at = 0
-                while insert_at < len(send_msgs) and send_msgs[insert_at]["role"] == "system":
-                    insert_at += 1
-                send_msgs.insert(insert_at, {"role": "system", "content": bundle.NL_Channel})
+            def _postprocess(raw_text: str, send_msgs: list[dict[str, Any]]) -> PostProcessed:
+                if not json_output:
+                    return PostProcessed(text=raw_text)
+                text, normalized = _normalise_json_response(raw_text)
+                text, repaired, repair_reason = _repair_magentic_one_ledger(text, send_msgs)
+                return PostProcessed(text=text, normalized=normalized,
+                                     repaired=repaired, repair_reason=repair_reason)
 
-            trace_model_calls = bool(getattr(self.ctx, "trace_model_calls", True))
-            input_chars = sum(len(str(m.get("content", ""))) for m in send_msgs)
-            input_messages = [{"role": m["role"], "content": m["content"]} for m in send_msgs]
-            span_id = self.ctx.log_span(
-                "model_call_start",
+            def _parse(text: str) -> Optional[list[ToolCallRequest]]:
+                return _parse_tool_call_requests(text, tools)
+
+            res = run_injection_step(self.backend, self.ctx, InjectionRequest(
                 role=self.role,
-                turn=turn,
-                sender=sender,
-                message_count=len(send_msgs),
-                input_chars=input_chars,
+                chat=chat,
+                max_new_tokens=self.max_new_tokens,
+                extra_system_messages=extra_system,
+                json_output=bool(json_output),
                 tool_count=len(tools),
                 tool_choice=tool_choice,
-                json_output_requested=bool(json_output),
-                max_new_tokens=self.max_new_tokens,
-                memory_channel=decision.channel,
-                routing_reason=decision.reason,
-                nl_memory_chars=len(bundle.NL_Channel or ""),
-                input_messages=input_messages,
-            )
-            if trace_model_calls:
-                print(
-                    f"[model:{self.role}] start turn={turn} sender={sender or '-'} "
-                    f"messages={len(send_msgs)} chars={input_chars} tools={len(tools)} "
-                    f"max_new_tokens={self.max_new_tokens}",
-                    flush=True,
-                )
+                postprocess=_postprocess,
+                parse_tool_calls=_parse if tools else None,
+            ))
 
-            try:
-                if bundle.Latent_Channel is None:
-                    # 无 latent：走普通文本生成（none / nl_only 都走这里）
-                    g = self.backend.generate_chat(send_msgs, max_new_tokens=self.max_new_tokens)
-                elif bundle.Latent_strategy in LatentMemory.FUSION_STRATEGIES:
-                    # 融合类（c2c）：Latent_Channel=projector 栈；source=上一个 agent 的输入+输出
-                    # （从 ctx 取），经 projector 把其 KV 融进本 agent 生成；
-                    # 首个 agent 无前驱则退回普通生成。
-                    src_msgs = self._c2c_source()
-                    if src_msgs is not None:
-                        g = self.backend.generate_chat_with_c2c(
-                            send_msgs, src_msgs, bundle.Latent_Channel,
-                            max_new_tokens=self.max_new_tokens)
-                    else:
-                        g = self.backend.generate_chat(
-                            send_msgs, max_new_tokens=self.max_new_tokens)
-                else:
-                    # prefix 类（soft_token 等）：Latent_Channel=(1,P,H) 张量，拼到 embedding 层最前
-                    g = self.backend.generate_chat_with_prefix(send_msgs, bundle.Latent_Channel,
-                                                               max_new_tokens=self.max_new_tokens)
-            except Exception as exc:
-                from ...runtime.spans import exception_record
-
-                self.ctx.log_span(
-                    "model_call_error",
-                    parent_span_id=span_id,
-                    role=self.role,
-                    turn=turn,
-                    sender=sender,
-                    **exception_record(exc),
-                )
-                raise
-
-            output_text = g.text
-            json_output_normalized = False
-            json_output_repaired = False
-            json_output_repair_reason = ""
-            if json_output:
-                output_text, json_output_normalized = _normalise_json_response(g.text)
-                output_text, json_output_repaired, json_output_repair_reason = (
-                    _repair_magentic_one_ledger(output_text, send_msgs)
-                )
-
-            # ④ 记账与记录
-            self.ctx.bump_turn(self.role)
-            latent_prefix_positions = int(g.prefix_len or 0)
-            input_positions = int(g.n_prompt_pos)
-            output_tokens = int(g.n_gen_tokens)
-            generation_latency_s = round(g.latency_s, 3)
             self._usage = RequestUsage(
-                prompt_tokens=input_positions, completion_tokens=output_tokens)
-            self.ctx.log_decision(self.role, turn, sender, decision, {
-                "input_positions": input_positions,
-                "text_input_tokens": max(0, input_positions - latent_prefix_positions),
-                "latent_prefix_positions": latent_prefix_positions,
-                "output_tokens": output_tokens,
-                "model_generation_latency_s": generation_latency_s,
-                "original_prompt_positions": int(
-                    getattr(g, "original_prompt_pos", None) or input_positions),
-                "prompt_truncated": bool(getattr(g, "prompt_truncated", False)),
-                "dropped_messages": int(getattr(g, "dropped_messages", 0)),
-                "nl_memory_chars": len(bundle.NL_Channel or ""),
-                # CDM 通道方法（供消融分析：本轮用了哪种 NL / latent 策略）
-                "nl_strategy": bundle.NL_strategy, "latent_strategy": bundle.Latent_strategy,
-                "input_chat_messages": input_messages,
-                "output_text": output_text,
-                "json_output_normalized": json_output_normalized,
-                "json_output_repaired": json_output_repaired,
-                "json_output_repair_reason": json_output_repair_reason,
-                # Backward-compatible aliases for older analysis scripts.
-                "prompt_pos": input_positions, "gen_tokens": output_tokens,
-                "prefix_len": latent_prefix_positions, "nl_chars": len(bundle.NL_Channel or ""),
-                "latency_s": generation_latency_s,
-                "input_messages": input_messages,
-                "output": output_text,
-                **({"raw_output_text": g.text}
-                   if (json_output_normalized or json_output_repaired) else {})})
-            tool_calls = _parse_tool_calls(output_text, tools)
-            self.ctx.log_span(
-                "model_call_end",
-                parent_span_id=span_id,
-                role=self.role,
-                turn=turn,
-                sender=sender,
-                input_total_positions=input_positions,
-                input_text_tokens=max(0, input_positions - latent_prefix_positions),
-                input_latent_positions=latent_prefix_positions,
-                output_text_tokens=output_tokens,
-                model_latency_s=generation_latency_s,
-                original_prompt_positions=int(
-                    getattr(g, "original_prompt_pos", None) or input_positions),
-                prompt_truncated=bool(getattr(g, "prompt_truncated", False)),
-                dropped_messages=int(getattr(g, "dropped_messages", 0)),
-                tool_call_count=len(tool_calls or []),
-                tool_call_request=[
-                    {"id": call.id, "name": call.name, "arguments": call.arguments}
-                    for call in (tool_calls or [])
-                ],
-                json_output_requested=bool(json_output),
-                json_output_normalized=json_output_normalized,
-                json_output_repaired=json_output_repaired,
-                json_output_repair_reason=json_output_repair_reason,
-                output_text=output_text,
-                **({"raw_output_text": g.text}
-                   if (json_output_normalized or json_output_repaired) else {}),
-            )
-            if trace_model_calls:
-                preview = _preview_text(output_text)
-                print(
-                    f"[model:{self.role}] done turn={turn} input_pos={input_positions} "
-                    f"output_tokens={output_tokens} latency_s={generation_latency_s} "
-                    f"truncated={bool(getattr(g, 'prompt_truncated', False))} "
-                    f"dropped_messages={int(getattr(g, 'dropped_messages', 0))} "
-                    f"tool_calls={len(tool_calls or [])} "
-                    f"json_normalized={json_output_normalized} "
-                    f"json_repaired={json_output_repaired} preview={preview!r}",
-                    flush=True,
-                )
-            if tool_calls:
-                self.ctx.decisions[-1]["tool_call_request"] = [
-                    {"id": call.id, "name": call.name, "arguments": call.arguments}
-                    for call in tool_calls
-                ]
-                return CreateResult(finish_reason="function_calls", content=tool_calls,
+                prompt_tokens=res.input_positions, completion_tokens=res.output_tokens)
+            if res.tool_calls:
+                calls = [FunctionCall(id=c.id, name=c.name, arguments=c.arguments)
+                         for c in res.tool_calls]
+                return CreateResult(finish_reason="function_calls", content=calls,
                                     usage=self._usage, cached=False)
-            return CreateResult(finish_reason="stop", content=output_text, usage=self._usage,
+            return CreateResult(finish_reason="stop", content=res.text, usage=self._usage,
                                 cached=False)
-
-        def _c2c_source(self):
-            """C2C 的 source = 上一个 agent 的「输入消息 + 其输出」（从 ctx.decisions 取）。
-
-            ctx.log_decision 在每个 agent 生成后落了 input_messages 与 output；本 agent 发言时
-            decisions[-1] 即上一个发言者。无前驱（首个 agent）返回 None ⇒ 注入 client 退回普通生成。
-            """
-            decs = getattr(self.ctx, "decisions", None)
-            if not decs:
-                return None
-            prev = decs[-1]
-            inp = prev.get("input_messages")
-            if not inp:
-                return None
-            src = [{"role": m["role"], "content": m["content"]} for m in inp]
-            out = prev.get("output")
-            if isinstance(out, str) and out.strip():
-                src.append({"role": "assistant", "content": out})  # 带上前驱的实际输出
-            return src
 
         async def create_stream(self, messages, *, tools=[], tool_choice="auto",
                                 json_output=None, extra_create_args={}, cancellation_token=None):
