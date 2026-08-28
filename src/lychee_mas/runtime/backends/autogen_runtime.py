@@ -16,7 +16,6 @@ autogen_agentchat 的导入全部惰性化到方法内部，保证 import 本模
 """
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import time
@@ -26,6 +25,7 @@ from typing import Any, Callable, List, Optional, Sequence
 from ...core.registry import REGISTRY
 from ...core.types import Answer, Message, TaskQuery, Trajectory
 from ..base import BaseRuntime, MASGraph
+from ._common import content_to_text, extract_final_answer, jsonable
 
 GAIA_FINAL_ANSWER_PROMPT = """\
 We have completed the following task:
@@ -51,56 +51,10 @@ def _safe_id(value: str) -> str:
     return safe or "case"
 
 
-def _content_to_text(content: Any) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(_content_to_text(item) for item in content)
-    if hasattr(content, "model_dump"):
-        try:
-            return json.dumps(content.model_dump(mode="json"), ensure_ascii=False)
-        except Exception:
-            return str(content)
-    if hasattr(content, "__dict__"):
-        try:
-            return json.dumps(vars(content), ensure_ascii=False, default=str)
-        except Exception:
-            return str(content)
-    return str(content)
-
-
-def _jsonable(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, list):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, tuple):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json")
-    if hasattr(value, "__dict__"):
-        return _jsonable(vars(value))
-    return str(value)
-
-
-def _extract_final_answer(messages: list[Any], *, prefer_code_from: Optional[str] = None) -> str:
-    if prefer_code_from:
-        for msg in reversed(messages):
-            source = getattr(msg, "source", "")
-            text = _content_to_text(getattr(msg, "content", ""))
-            if source == prefer_code_from and "```" in text:
-                return text.strip()
-
-    for msg in reversed(messages):
-        text = _content_to_text(getattr(msg, "content", ""))
-        match = re.search(r"FINAL ANSWER\s*:\s*(.*)", text, flags=re.IGNORECASE | re.DOTALL)
-        if match:
-            return match.group(1).strip()
-    return ""
+# 纯函数移至 _common.py（与 langgraph 后端共享）；保留原名引用，本模块内用法不变。
+_content_to_text = content_to_text
+_jsonable = jsonable
+_extract_final_answer = extract_final_answer
 
 
 def _agent_type(node) -> str:

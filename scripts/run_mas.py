@@ -304,8 +304,8 @@ async def run_one(cfg: dict, args) -> dict:
     from lychee_mas.runtime.spans import JsonlSpanLogger, exception_record
 
     runtime_name = args.runtime or _get(cfg, "runtime.name", "autogen")
-    if runtime_name != "autogen":
-        raise SystemExit(f"unknown runtime.name {runtime_name!r}; use autogen")
+    if runtime_name not in ("autogen", "langgraph"):
+        raise SystemExit(f"unknown runtime.name {runtime_name!r}; use autogen|langgraph")
 
     # ---- 解析参数（命令行 > YAML）----
     backend_provider = args.backend or _get(cfg, "backend.provider", "hf")
@@ -441,17 +441,28 @@ async def run_one(cfg: dict, args) -> dict:
     router = fixed_channel_router(FIXED[method])
     # ---- 共享 ctx + runtime（每样本 ctx.reset；同一 backend/graph 复用）----
     ctx = RoutingContext(task=task, router=router, memory=memory, team=profile)
-    runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
-                             max_rounds=max_rounds, model_id=model_tag,
-                             max_turns=max_turns,
-                             max_stalls=int(_get(cfg, "runtime.max_stalls", 3)),
-                             work_root=work_root,
-                             code_executor=code_executor,
-                             docker_image=docker_image,
-                             code_timeout=code_timeout,
-                             web_headless=_as_bool(_get(cfg, "runtime.web_headless", True), default=True),
-                             save_screenshots=_as_bool(_get(cfg, "runtime.save_screenshots", False), default=False),
-                             trace_model_calls=trace_model_calls)
+    if runtime_name == "langgraph":
+        if uses_tool_team:
+            raise SystemExit(
+                "runtime/langgraph 目前仅支持纯文本 assistant 团队；工具型团队请用 --runtime autogen")
+        from lychee_mas.runtime.backends.langgraph_runtime import LangGraphRuntime
+
+        runtime = LangGraphRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
+                                   max_rounds=max_rounds, model_id=model_tag,
+                                   max_turns=max_turns,
+                                   trace_model_calls=trace_model_calls)
+    else:
+        runtime = AutoGenRuntime(backend=backend, ctx=ctx, max_new_tokens=max_new_tokens,
+                                 max_rounds=max_rounds, model_id=model_tag,
+                                 max_turns=max_turns,
+                                 max_stalls=int(_get(cfg, "runtime.max_stalls", 3)),
+                                 work_root=work_root,
+                                 code_executor=code_executor,
+                                 docker_image=docker_image,
+                                 code_timeout=code_timeout,
+                                 web_headless=_as_bool(_get(cfg, "runtime.web_headless", True), default=True),
+                                 save_screenshots=_as_bool(_get(cfg, "runtime.save_screenshots", False), default=False),
+                                 trace_model_calls=trace_model_calls)
     # 落盘标签：强制队伍时用 "{team}_{method}"（如单模型 baseline=single_none），避免撞目录
     run_label = f"{profile}_{method}" if (team_profile or uses_tool_team) else method
     out_dir = M.result_dir(model_tag, run_label, task, root=results_root)
@@ -477,7 +488,8 @@ async def run_one(cfg: dict, args) -> dict:
     ctx.span_logger = span_logger
     n = len(data)
     snapshot = {"config_file": args.config, "config": cfg,
-                "resolved": {"task": task, "backend_provider": backend_provider,
+                "resolved": {"task": task, "runtime": runtime_name,
+                             "backend_provider": backend_provider,
                              "method": method, "team": profile,
                              "P": P, "n": n, "start_index": start_index,
                              "samples": k_samples,
@@ -714,7 +726,7 @@ async def run_one(cfg: dict, args) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description="LycheeMAS 真实 MAS 推理驱动（新框架版）")
     ap.add_argument("--config", required=True, help="YAML 配置（backend/memory/router/run/eval）")
-    ap.add_argument("--runtime", default=None, choices=("autogen",),
+    ap.add_argument("--runtime", default=None, choices=("autogen", "langgraph"),
                     help="覆盖 runtime.name；工具能力也走 autogen 主链路")
     ap.add_argument("--task", default=None, help="覆盖 run.task")
     ap.add_argument("--method", default=None, help="none|nl_only|latent_only|both")

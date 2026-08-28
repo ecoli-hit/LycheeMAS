@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lychee-mas"
 version = "0.1.0"
-description = "LycheeMAS — 基于 AutoGen 的多智能体系统研究框架（统一图抽象 G=(V,E,W,T,M)）"
+description = "LycheeMAS — 运行时可插拔的多智能体系统研究框架（统一图抽象 G=(V,E,W,T,M)）"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -23,6 +23,8 @@ runtime = [
     "torch",
     "transformers",
 ]
+# LangGraph 执行后端（runtime/langgraph）。仅 runtime/backends/langgraph_runtime.py 需要。
+langgraph = ["langgraph>=1.0,<2"]
 numeric = ["numpy"]
 config = ["pyyaml", "hydra-core"]
 # L1 construct / AgentInit 选择器：多目标 Pareto 选择（官方同款 vendi_score，不自实现）。
@@ -73,6 +75,7 @@ all = [
     "autogen-agentchat>=0.7,<0.8",
     "autogen-core>=0.7,<0.8",
     "autogen-ext[openai]>=0.7,<0.8",
+    "langgraph>=1.0,<2",
     "torch",
     "transformers",
     "numpy",

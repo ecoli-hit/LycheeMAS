@@ -45,7 +45,7 @@ snapshot:
 
 # 验证零重依赖：import 框架后不应加载 torch/autogen 等（应输出 HEAVY LOADED: NONE）
 selfcheck:
-> PYTHONPATH=src python -c "import sys, lychee_mas; print('HEAVY LOADED:', [m for m in ('torch','transformers','autogen_core','autogen_agentchat','numpy','yaml','sympy','datasets') if m in sys.modules] or 'NONE')"
+> PYTHONPATH=src python -c "import sys, lychee_mas; print('HEAVY LOADED:', [m for m in ('torch','transformers','autogen_core','autogen_agentchat','langgraph','langchain_core','numpy','yaml','sympy','datasets') if m in sys.modules] or 'NONE')"
 
 # ---- 文档站（MkDocs Material + mkdocstrings；griffe 静态解析，构建不 import 框架，无需 torch/autogen）----
 # DISABLE_MKDOCS_2_WARNING：屏蔽 gen-files/literate-nav/section-index 依赖的 properdocs 打的推广横幅。

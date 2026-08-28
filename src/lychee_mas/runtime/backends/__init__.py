@@ -12,6 +12,7 @@ from __future__ import annotations
 from . import (
     autogen_injection_client,  # noqa: F401  -> model_client/injection
     autogen_runtime,  # noqa: F401  -> runtime/autogen
+    langgraph_runtime,  # noqa: F401  -> runtime/langgraph
     mock_runtime,  # noqa: F401  -> runtime/mock
     vllm_client,  # noqa: F401  -> model_client/vllm
 )
