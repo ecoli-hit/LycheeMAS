@@ -36,7 +36,7 @@ src/lychee_mas/                       # ★ 框架本体（import 即触发全�
 │       ├── autogen_injection_client.py #  model_client/injection（记忆注入+路由的 ChatCompletionClient）
 │       ├── hf_backend.py             #   HFBackend（生成 + latent 注入；torch/transformers 惰性）
 │       └── vllm_client.py            #   model_client/vllm（桩）
-├── memory/                           # ★ 记忆层 CDM（当前主线，顶层包）
+├── memory/                           # 记忆层（运行时组件，顶层包）
 │   ├── base.py                       #   MemoryManager 接缝 + MemoryBundle（NL_Channel/Latent_Channel + strategy）
 │   ├── context.py                    #   RoutingContext（跨 agent 共享的路由状态 + 决策日志）
 │   ├── store.py                      #   MemoryStore（key→value 缓存）
@@ -46,7 +46,7 @@ src/lychee_mas/                       # ★ 框架本体（import 即触发全�
 │   │   ├── c2c_channel.py            #     C2CLatentChannel（懒加载训练好的 projector 栈）
 │   │   └── c2c_projector.py          #     C2CProjector（逐层 KV 融合器）
 │   ├── managers/
-│   │   ├── DualChannelMemory.py      #     memory_manager/cdm（双通道，主线）
+│   │   ├── DualChannelMemory.py      #     memory_manager/cdm（双通道）
 │   │   └── external.py               #     memory_manager/{mem0, ama}（外部基线桩）
 │   └── routing/                      #   触发接缝：本轮用哪个通道
 │       ├── base.py                   #     MemoryRouter + RouterInputs + RouteDecision + Channel
@@ -87,29 +87,24 @@ configs/    组件分组 YAML（runtime/ memory/ topology/ aggregator/ agents/ �
 examples/   可运行示例（离线 mock 优先）
 scripts/    实验入口（run_experiment / run_mas / C2C 训练评测 / AgentInit 消融）
 tests/      pytest（离线、零重依赖）
-docs/       MkDocs 文档站（本站）+ 开发文档（DEVELOPMENT.md / dev/*）
+docs/       MkDocs 文档站（本站）+ DESIGN.md（唯一架构设计文档）
 ```
 
 ## 四个设计原则
 
 - **可插拔可消融**：每个算法 = 注册一个类（`@REGISTRY.register(category, name)`）+ 由 config/CLI 选择，换单一组件即一组对照实验，**不改编排器**。
-- **Runtime 抽象隔离 AutoGen**：业务层只依赖 `runtime.Runtime` 协议；AutoGen 调用全部封装在 `runtime/backends/autogen_*.py`。
+- **Runtime 抽象隔离执行引擎**：业务层只依赖 `runtime.Runtime` 协议；引擎调用（autogen / langgraph 双后端）全部封装在 `runtime/backends/` 之后。
 - **性能-成本联合度量**：评测同时报 accuracy / token / latency。
 - **可复现**：固定随机种子；落 config 快照 + git SHA 到 `runs/`。
-
-## 当前研究主线 = 记忆层 CDM
-
-**CDM**（`lychee_mas.memory`）= 双通道记忆（自然语言 `nl` + 隐空间 `latent`）+ 运行时动态通道选择。隐空间通道两种物化策略：`soft_token`（免训练自压缩）与 `c2c`（训练好的 Cache-to-Cache 逐层 KV 融合）。详见 **[CDM 双通道记忆](concepts/cdm-memory.md)**。
 
 ## 从这里开始
 
 <div class="grid cards" markdown>
 
 - :material-download: **[安装](installation.md)** —— conda + uv，extras（dev / all / construct / docs）
-- :material-rocket-launch: **[快速上手](quickstart.md)** —— `make demo` / 离线 CLI / 带 CDM 的 AIME 实验
-- :material-sitemap: **[架构与设计](DEVELOPMENT.md)** —— 目录职责 + CDM 数据流 + 迁移映射
-- :material-puzzle: **[组件开发](dev/README.md)** —— 六步配方：注册一个类 = 一组消融
-- :material-brain: **[CDM 双通道记忆](concepts/cdm-memory.md)** —— 当前研究主线的数据流
+- :material-rocket-launch: **[快速上手](quickstart.md)** —— `make demo` / 离线 CLI / 真实 benchmark 实验
+- :material-sitemap: **[架构设计](DESIGN.md)** —— 模块职责 + 接口契约 + 组件全景
+- :material-puzzle: **[开发指南](contributing.md)** —— 六步配方：注册一个类 = 一组消融
 - :material-book-open-variant: **[API Reference](reference/lychee_mas/)** —— 每个模块一页，与源码同步
 
 </div>

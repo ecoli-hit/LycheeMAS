@@ -87,16 +87,6 @@ nav:
   - 首页: index.md
   - 安装: installation.md
   - 快速上手: quickstart.md
-  - 架构与设计: DEVELOPMENT.md
-  - 核心概念:
-      - 组件注册与配置: concepts/registry-and-config.md
-      - CDM 双通道记忆: concepts/cdm-memory.md
-      - 处理层（serial / parallel）: concepts/processing.md
-  - 组件开发:
-      - 概览: dev/README.md
-      - AgentInit: dev/01-agentinit.md
-      - AgentDropout: dev/02-agentdropout.md
-      - AgentVocab: dev/03-agentvocab.md
-      - MASPO: dev/04-maspo.md
+  - 架构设计: DESIGN.md
   - 开发指南: contributing.md
   - API Reference: reference/
