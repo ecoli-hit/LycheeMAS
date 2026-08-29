@@ -23,7 +23,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {
         "env": "LYCHEE_OPENAGENTTRACES_MODELSCOPE_ID",
         "default_ids": [],

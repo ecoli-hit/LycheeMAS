@@ -1,0 +1,543 @@
+{
+  "schema_version": 14,
+  "id": "gaia-centralized",
+  "metadata": {
+    "name": "gaia-centralized",
+    "description": "Controlled model-routed GAIA team, distinct from Magentic-One.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "Beyond Rule-Based Workflows",
+          "url": "https://arxiv.org/abs/2601.09883",
+          "scope": "central information-flow orchestration"
+        },
+        {
+          "title": "COLA",
+          "url": "https://arxiv.org/abs/2503.09263",
+          "scope": "dynamic capability-based scheduling"
+        }
+      ],
+      "notes": "The portable model-selector contract is a controlled abstraction, not either paper's native implementation."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Researcher",
+      "name": "Researcher",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Searches the web and inspects case-local evidence.",
+      "instructions": "Gather reliable evidence from the web and case-local files. Cite the evidence needed by the solver and do not guess.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Combines evidence and computes a candidate answer.",
+      "instructions": "Solve the task from the available evidence. Use tools for calculations and verification. Keep exact names, dates, units, and formatting.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Verifier",
+      "name": "Verifier",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Checks evidence and produces the final short answer.",
+      "instructions": "Independently check the candidate answer against evidence and the original question. If evidence is incomplete, state the exact missing evidence so Researcher or Solver can continue. When verified, end with exactly: FINAL ANSWER: <short answer>",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Selector",
+      "name": "Selector",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "selector",
+        "options": {}
+      },
+      "purpose": "Coordination Node that selects the next member Node.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "coordinate",
+        "select_next"
+      ],
+      "operations": [
+        {
+          "type": "select_next",
+          "options": {
+            "mode": "model",
+            "max_attempts": 3,
+            "allow_repeat": true,
+            "finish": {
+              "allowed": true,
+              "requires_result": true
+            }
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Selector",
+      "to": "Researcher",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Selector",
+      "to": "Solver",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Selector",
+      "to": "Verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Researcher-return-Selector",
+      "from": "Researcher",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Solver-return-Selector",
+      "from": "Solver",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Verifier-return-Selector",
+      "from": "Verifier",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Researcher",
+        "Solver",
+        "Verifier",
+        "Selector"
+      ],
+      "writers": [
+        "Researcher",
+        "Solver",
+        "Verifier",
+        "Selector"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Selector",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

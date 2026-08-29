@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "id": "qwen3_5_9b",
+  "name": "Qwen3.5-9B",
+  "organization": "Alibaba / Qwen",
+  "family": "Qwen3.5",
+  "parameter_size": "9B",
+  "license": "Local registered asset",
+  "gated": false,
+  "capabilities": {
+    "text_generation": true,
+    "vision": true,
+    "tool_calls": true,
+    "json_output": true,
+    "structured_output": true,
+    "reasoning_content": true,
+    "thinking_toggle": true,
+    "preserve_thinking": true,
+    "native_thinking_budget": true,
+    "default_thinking_mode": "enabled",
+    "default_preserve_thinking": "disabled"
+  },
+  "model_info": {
+    "context_window": 131072,
+    "vision": true,
+    "function_calling": true,
+    "json_output": true,
+    "structured_output": true
+  },
+  "thinking_protocol": "qwen_chat_template",
+  "supported_backends": ["hf", "vllm"],
+  "provider_model_ids": {},
+  "sources": {},
+  "notes": "Registered from the complete local Qwen3.5-9B Transformers checkpoint."
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.input_tokens",
+  "name": "Input tokens",
+  "description": "Total effective text input tokens consumed by completed model calls.",
+  "category": "efficiency",
+  "construct": "model_input_consumption",
+  "unit": "tokens",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.role", "model_call.input_tokens"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["any"],
+  "known_confounders": ["tokenizer_revision", "prompt_template", "cache_accounting"],
+  "na_policy": {
+    "no_model_calls": "not_applicable",
+    "missing_usage": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "efficiency.input_tokens"
+  }
+}

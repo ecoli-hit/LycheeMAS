@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.controller_output_token_ratio",
+  "name": "Controller output-token ratio",
+  "description": "Share of model output tokens consumed by Nodes executing coordination operations.",
+  "category": "coordination",
+  "construct": "controller_token_overhead",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.controller", "model_call.output_tokens"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls", "controller_attribution", "token_usage"],
+  "applicable_systems": ["model_coordinated_team"],
+  "known_confounders": ["controller_prompt", "reasoning_mode", "tokenizer"],
+  "na_policy": {
+    "zero_output_tokens": "not_applicable",
+    "missing_controller_or_token_count": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.controller_output_token_ratio"
+  }
+}

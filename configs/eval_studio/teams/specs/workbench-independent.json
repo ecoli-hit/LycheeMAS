@@ -1,0 +1,126 @@
+{
+  "schema_version": 14,
+  "id": "workbench-independent",
+  "metadata": {
+    "name": "workbench-independent",
+    "description": "Controlled native-tool single-agent WorkBench anchor.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "WorkBench",
+          "url": "https://arxiv.org/abs/2405.00823",
+          "scope": "single-agent tool-use protocol"
+        },
+        {
+          "title": "EvoMAS WorkBench single configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/workbench/email/single_codeagent.yaml",
+          "scope": "executable single-agent comparison anchor"
+        },
+        {
+          "title": "Capable language models can outgrow the benefits of collaboration",
+          "url": "https://www.nature.com/articles/s42256-026-01268-y",
+          "scope": "WorkBench SAS baseline under matched system budgets"
+        }
+      ],
+      "notes": "The tool and scorer contract follow WorkBench, while the exact model scaffold remains LycheeMAS-controlled. The matrix key independent means this one-node SAS baseline, not the paper's multi-agent Independent ensemble."
+    }
+  },
+  "nodes": [
+    {
+      "id": "WorkplaceAgent",
+      "name": "WorkplaceAgent",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Official-style single workplace agent baseline.",
+      "instructions": "Today's date is Thursday, 2023-11-30 and the current time is 00:00:00. Meetings must not start before 9am or end after 6pm. Complete the workplace request with the registered tools. Inspect tool results and correct mistakes. When the requested final state is achieved, reply TASK COMPLETE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "benchmark:tools",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    }
+  ],
+  "relations": [],
+  "shared_state": [
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "WorkplaceAgent"
+      ],
+      "writers": [
+        "WorkplaceAgent"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "WorkplaceAgent",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "WorkplaceAgent",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

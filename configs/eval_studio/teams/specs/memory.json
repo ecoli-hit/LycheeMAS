@@ -1,81 +1,312 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "memory",
-  "role_profile": "memory",
-  "group_chat": {
-    "type": "round_robin"
+  "metadata": {
+    "name": "memory",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
   },
-  "termination": {
-    "conditions": [
-      {
-        "type": "text_mention",
-        "text": "APPROVE"
-      }
-    ]
-  },
-  "model_context": {
-    "type": "token_limited"
-  },
-  "controller_model_context": {
-    "type": "token_limited"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "retriever",
       "name": "retriever",
-      "agent_type": "assistant",
-      "system_prompt": "You are the RETRIEVER. You are given long conversation history / notes as memory. Extract and quote ONLY the facts from that memory that are relevant to the question. Do NOT answer the question yet.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "retriever",
+      "instructions": "You are the RETRIEVER. You are given long conversation history / notes as memory. Extract and quote ONLY the facts from that memory that are relevant to the question. Do NOT answer the question yet.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "answerer",
       "name": "answerer",
-      "agent_type": "assistant",
-      "system_prompt": "You are the ANSWERER. Using the retriever's quoted facts and the question, give a short, direct answer grounded in the memory. If the memory does not contain it, say so explicitly.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "answerer",
+      "instructions": "You are the ANSWERER. Using the retriever's quoted facts and the question, give a short, direct answer grounded in the memory. If the memory does not contain it, say so explicitly.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "verifier",
       "name": "verifier",
-      "agent_type": "assistant",
-      "system_prompt": "You are the VERIFIER. Check that the answer is actually supported by the retrieved memory facts. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise correct it in one line.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "verifier",
+      "instructions": "You are the VERIFIER. Check that the answer is actually supported by the retrieved memory facts. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise correct it in one line.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [
     {
-      "id": "retriever",
-      "kind": "participant",
-      "participant_id": "retriever",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "relation-1",
+      "from": "answerer",
+      "to": "verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
     },
     {
-      "id": "answerer",
-      "kind": "participant",
-      "participant_id": "answerer",
-      "required_capabilities": [
-        "text_generation"
-      ]
-    },
-    {
-      "id": "verifier",
-      "kind": "participant",
-      "participant_id": "verifier",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "relation-2",
+      "from": "retriever",
+      "to": "answerer",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "writers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "writers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TeamMemory",
+      "kind": "memory",
+      "description": "Explicit trial-scoped chronological memory shared by the three reasoning Nodes.",
+      "readers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "writers": [
+        "retriever",
+        "answerer",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": 16,
+        "max_tokens": 8192,
+        "overflow": "drop_oldest"
+      },
+      "memory": {
+        "retrieval": {
+          "mode": "chronological",
+          "top_k": 8,
+          "score_threshold": null,
+          "query_source": "task_and_node_input"
+        },
+        "write": {
+          "policy": "node_output",
+          "source": "source.output"
+        },
+        "injection": {
+          "target": "model_context",
+          "template": "Relevant memory from {memory_id}:\n{items}"
+        }
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "retriever",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

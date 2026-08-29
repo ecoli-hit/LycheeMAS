@@ -1,0 +1,126 @@
+{
+  "schema_version": 14,
+  "id": "livecodebench-independent",
+  "metadata": {
+    "name": "livecodebench-independent",
+    "description": "Controlled independent TeamSpec for livecodebench.",
+    "tags": [
+      "livecodebench",
+      "independent",
+      "teamspec-v14"
+    ],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "LiveCodeBench",
+          "url": "https://arxiv.org/abs/2403.07974",
+          "scope": "code-generation task, prompt, data release, and official checker"
+        },
+        {
+          "title": "LiveCodeBench official repository",
+          "url": "https://github.com/LiveCodeBench/LiveCodeBench",
+          "scope": "release-v6 code_generation_lite prompt and evaluator"
+        }
+      ],
+      "notes": "Portable team variants are controlled LycheeMAS adaptations, not official LiveCodeBench multi-agent recipes."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Developer",
+      "name": "Developer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Solves the programming task end to end.",
+      "instructions": "Solve the LiveCodeBench task independently. You may execute small local checks. Return the complete final Python program in exactly one fenced Python code block.",
+      "capabilities": [
+        "reason",
+        "execute_code"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 12
+      }
+    }
+  ],
+  "relations": [],
+  "shared_state": [
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Developer"
+      ],
+      "writers": [
+        "Developer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Developer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Developer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

@@ -10,6 +10,7 @@
 真实跑分（需 extras [all]：autogen + torch + datasets ...）：
   PYTHONPATH=src python scripts/run_experiment.py --runtime autogen --benchmark gsm8k --n 20
 """
+
 from __future__ import annotations
 
 import argparse
@@ -31,8 +32,13 @@ from lychee_mas.trace import TraceStore  # noqa: E402
 
 def _git_sha() -> str:
     try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
-                                       cwd=_ROOT, stderr=subprocess.DEVNULL).decode().strip()
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"], cwd=_ROOT, stderr=subprocess.DEVNULL
+            )
+            .decode()
+            .strip()
+        )
     except Exception:
         return "nogit"
 
@@ -60,8 +66,9 @@ def _load_questions(args) -> List[TaskQuery]:
             for item in items
         ]
     # 兜底：一个内置示例查询，保证脚本始终可跑（离线）
-    return [TaskQuery(question="If a train travels 60 miles in 1 hour, speed? Answer: 60",
-                      gold="60")]
+    return [
+        TaskQuery(question="If a train travels 60 miles in 1 hour, speed? Answer: 60", gold="60")
+    ]
 
 
 def _score(query: TaskQuery, trajectory: Trajectory) -> Optional[float]:
@@ -95,18 +102,27 @@ def _selector_kwargs(args) -> Optional[dict]:
 
 async def _run(args) -> dict:
     trace = TraceStore()
-    orch = Orchestrator(runtime=args.runtime, team=args.team,
-                        aggregator=args.aggregator, trace_store=trace, rounds=args.rounds,
-                        selector=args.selector, selector_kwargs=_selector_kwargs(args))
+    orch = Orchestrator(
+        runtime=args.runtime,
+        team=args.team,
+        aggregator=args.aggregator,
+        trace_store=trace,
+        rounds=args.rounds,
+        selector=args.selector,
+        selector_kwargs=_selector_kwargs(args),
+    )
 
     queries = _load_questions(args)
-    samples, q_sum, scored, tok_sum, team_sum = [], 0.0, 0, 0, 0
+    trials, q_sum, scored, tok_sum, team_sum = [], 0.0, 0, 0, 0
     for i, q in enumerate(queries):
         trace.reset()
         traj = await orch.run(q)
         # 聚合器开启时 orch.run 返回 Answer；统一取文本
-        final = traj.final_answer.content if isinstance(traj, Trajectory) and traj.final_answer \
+        final = (
+            traj.final_answer.content
+            if isinstance(traj, Trajectory) and traj.final_answer
             else getattr(traj, "content", "")
+        )
         s = _score(q, traj) if isinstance(traj, Trajectory) else None
         tok = traj.total_tokens if isinstance(traj, Trajectory) else 0
         # 团队规模 = 该轨迹里出现过的不同发言者数（对齐论文消融的 team size 指标）
@@ -116,31 +132,114 @@ async def _run(args) -> dict:
         if s is not None:
             q_sum += s
             scored += 1
-        samples.append({"question": q.question[:300], "final_answer": final,
-                        "gold": q.gold, "correct": s, "total_tokens": tok, "team_size": team})
+        trials.append(
+            {
+                "question": q.question[:300],
+                "prediction": final,
+                "gold": q.gold,
+                "correct": s,
+                "total_tokens": tok,
+                "team_size": team,
+            }
+        )
         print(f"  [{i + 1}/{len(queries)}] correct={s} tokens={tok} team={team} ans={final[:50]!r}")
 
     metrics = {
-        "runtime": args.runtime, "team": args.team, "aggregator": args.aggregator,
-        "selector": args.selector, "selector_mode": args.selector_mode if args.selector else None,
-        "benchmark": args.benchmark, "n": len(queries),
+        "runtime": args.runtime,
+        "team": args.team,
+        "aggregator": args.aggregator,
+        "selector": args.selector,
+        "selector_mode": args.selector_mode if args.selector else None,
+        "benchmark": args.benchmark,
+        "n": len(queries),
         "quality": round(q_sum / scored, 4) if scored else None,
         "total_tokens_mean": round(tok_sum / len(queries), 1) if queries else 0,
         "team_size_mean": round(team_sum / len(queries), 2) if queries else 0,
-        "git_sha": _git_sha(), "seed": args.seed,
+        "git_sha": _git_sha(),
+        "seed": args.seed,
     }
-    return {"samples": samples, "metrics": metrics}
+    return {"trials": trials, "metrics": metrics}
 
 
 def _persist(args, result: dict) -> str:
-    method = (f"{args.selector}-{args.selector_mode}" if args.selector
-              else args.aggregator or args.team)
+    method = (
+        f"{args.selector}-{args.selector_mode}" if args.selector else args.aggregator or args.team
+    )
     bench = args.benchmark or "adhoc"
-    from lychee_mas.eval.metrics import result_dir, write_results
+    import json
+    import time
+
+    from lychee_mas.eval.evaluation.metrics import result_dir, write_config, write_metrics
+    from lychee_mas.runtime.events.store import RunEventWriter, run_events_path
 
     out_dir = result_dir(args.model_tag, method, bench, root=args.runs_root)
     snapshot = {"args": vars(args), "registry": REGISTRY.snapshot()}
-    write_results(out_dir, result["samples"], result["metrics"], snapshot)
+    writer = RunEventWriter(run_events_path(out_dir))
+    run_event_id = writer.log_event(
+        "run.started", num_cases=len(result["trials"]), runtime=args.runtime
+    )
+    for dataset_index, trial in enumerate(result["trials"]):
+        case_id = str(dataset_index)
+        trial_started_id = writer.log_event(
+            "trial.started",
+            parent_event_id=run_event_id,
+            case_id=case_id,
+            dataset_index=dataset_index,
+            trial_index=0,
+            task=bench,
+        )
+        trial_event_id = writer.record_trial(
+            {
+                "case_id": case_id,
+                "dataset_index": dataset_index,
+                "trial_index": 0,
+                "operation_id": trial_started_id,
+                "parent_event_id": run_event_id,
+                "task": bench,
+                "final_output": trial.get("prediction", ""),
+                "status": "completed",
+                "total_tokens": trial.get("total_tokens"),
+                "team_size": trial.get("team_size"),
+            }
+        )
+        if trial.get("correct") is not None:
+            writer.record_evaluation(
+                {
+                    "case_id": case_id,
+                    "dataset_index": dataset_index,
+                    "trial_index": 0,
+                    "parent_event_id": trial_event_id,
+                    "trial_event_id": trial_event_id,
+                    "task": bench,
+                    "gold": trial.get("gold"),
+                    "score": trial.get("correct"),
+                    "correct": trial.get("correct"),
+                    "evaluation_status": "completed",
+                }
+            )
+    writer.log_event(
+        "run.completed",
+        operation_id=run_event_id,
+        num_trials=len(result["trials"]),
+        run_status="complete",
+    )
+    write_metrics(out_dir, result["metrics"])
+    write_config(out_dir, snapshot)
+    with open(os.path.join(out_dir, "run_status.json"), "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "schema_version": 1,
+                "status": "complete",
+                "task": bench,
+                "expected_trials": len(result["trials"]),
+                "successful_trials": len(result["trials"]),
+                "finished_at_unix_s": time.time(),
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+        handle.write("\n")
     return out_dir
 
 
@@ -150,18 +249,43 @@ def main() -> None:
     ap.add_argument("--team", default="default", help="RoleProfile 名")
     ap.add_argument("--aggregator", default=None, help="可选聚合器名（如 self_consistency）")
     # --- L1 团队组建 selector（给出则由 selector 决定成员，覆盖 --team 的角色）---
-    ap.add_argument("--selector", default=None,
-                    help="agent_selector 名（如 agentinit）；不给=沿用 --team 模板")
-    ap.add_argument("--selector-mode", dest="selector_mode", default="pool",
-                    choices=["pool", "generate"], help="agentinit 模式（mode 的唯一来源）")
-    ap.add_argument("--selector-embedder", dest="selector_embedder", default=None,
-                    help="generate 模式的句向量编码器路径（覆盖 config）")
-    ap.add_argument("--selector-critique-rounds", dest="selector_critique_rounds",
-                    type=int, default=3, help="generate 模式 CreateRoles↔Check 迭代上限")
-    ap.add_argument("--selector-min-roles", dest="selector_min_roles", type=int, default=None,
-                    help="团队规模下界（消融/扫描用；默认走 selector 默认 1）")
-    ap.add_argument("--selector-max-roles", dest="selector_max_roles", type=int, default=None,
-                    help="团队规模上界（消融/扫描用；默认走 selector 默认 5）")
+    ap.add_argument(
+        "--selector", default=None, help="agent_selector 名（如 agentinit）；不给=沿用 --team 模板"
+    )
+    ap.add_argument(
+        "--selector-mode",
+        dest="selector_mode",
+        default="pool",
+        choices=["pool", "generate"],
+        help="agentinit 模式（mode 的唯一来源）",
+    )
+    ap.add_argument(
+        "--selector-embedder",
+        dest="selector_embedder",
+        default=None,
+        help="generate 模式的句向量编码器路径（覆盖 config）",
+    )
+    ap.add_argument(
+        "--selector-critique-rounds",
+        dest="selector_critique_rounds",
+        type=int,
+        default=3,
+        help="generate 模式 CreateRoles↔Check 迭代上限",
+    )
+    ap.add_argument(
+        "--selector-min-roles",
+        dest="selector_min_roles",
+        type=int,
+        default=None,
+        help="团队规模下界（消融/扫描用；默认走 selector 默认 1）",
+    )
+    ap.add_argument(
+        "--selector-max-roles",
+        dest="selector_max_roles",
+        type=int,
+        default=None,
+        help="团队规模上界（消融/扫描用；默认走 selector 默认 5）",
+    )
     ap.add_argument("--benchmark", default=None, help="benchmark 名（gsm8k|aime_2024|...）")
     ap.add_argument("--questions", nargs="*", default=None, help="离线自检：直接给若干问题")
     ap.add_argument("--n", type=int, default=5, help="样本数上限")
@@ -178,8 +302,10 @@ def main() -> None:
     args = ap.parse_args()
 
     _sel = f"{args.selector}({args.selector_mode})" if args.selector else None
-    print(f"[LycheeMAS] runtime={args.runtime} team={args.team} selector={_sel} "
-          f"aggregator={args.aggregator} benchmark={args.benchmark}")
+    print(
+        f"[LycheeMAS] runtime={args.runtime} team={args.team} selector={_sel} "
+        f"aggregator={args.aggregator} benchmark={args.benchmark}"
+    )
     result = asyncio.run(_run(args))
     print("[metrics]", result["metrics"])
     if not args.no_save:

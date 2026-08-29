@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "id": "glm4_7_flash",
+  "name": "GLM-4.7-Flash",
+  "organization": "Zhipu AI",
+  "family": "GLM 4.7",
+  "parameter_size": "provider managed",
+  "license": "shared service",
+  "gated": true,
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true,
+    "thinking_toggle": "unverified",
+    "reasoning_content": false,
+    "preserve_thinking": "unverified",
+    "reasoning_budget": "unavailable"
+  },
+  "model_info": {
+    "context_window": 202752
+  },
+  "thinking_protocol": null,
+  "provider_model_ids": {
+    "lab_shared_glm": "GLM-4.7-Flash"
+  },
+  "sources": {},
+  "notes": "Logical model identity for the laboratory shared GLM service."
+}

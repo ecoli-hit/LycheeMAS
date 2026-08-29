@@ -1,0 +1,283 @@
+{
+  "schema_version": 14,
+  "id": "bbeh-sequential",
+  "metadata": {
+    "name": "bbeh-sequential",
+    "description": "Controlled analyst-solver-verifier reasoning workflow.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "EvoMAS",
+          "url": "https://arxiv.org/abs/2602.06511",
+          "scope": "direct BBEH evaluation with staged peer-review and other MAS pools"
+        },
+        {
+          "title": "EvoMAS BBEH peer-review configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/bbeh/peer_review.yaml",
+          "scope": "creator-reviewer-reviser-aggregator workflow"
+        }
+      ],
+      "notes": "This three-node analyst-solver-verifier pipeline is a reduced controlled adaptation of staged solve/review workflows. It does not reproduce EvoMAS agent count, fan-out, prompts, models, or aggregation."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Analyst",
+      "name": "Analyst",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Decomposes the hard reasoning task.",
+      "instructions": "Analyze the task, identify its exact answer contract, and give the Solver a concise plan. Do not give the final answer.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Executes the analysis and derives an answer.",
+      "instructions": "Use the task and Analyst's plan to solve carefully. Show the decisive reasoning and give a candidate answer, but do not emit the final-answer marker.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Verifier",
+      "name": "Verifier",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently verifies and publishes the answer.",
+      "instructions": "Independently check the proposed solution against the original task. Correct it when necessary. End with exactly one line: The final answer is: <answer>",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Analyst",
+      "to": "Solver",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Solver",
+      "to": "Verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Analyst",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

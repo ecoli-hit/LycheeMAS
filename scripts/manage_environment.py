@@ -89,7 +89,7 @@ def main() -> None:
             raise SystemExit(f"Python executable not found: {python}")
         _create_readme_environment(repo_root, args)
     sys.path.insert(0, str(repo_root / "src"))
-    from lychee_mas.eval.studio.environment import installation_command
+    from lychee_mas.eval.environment.service import installation_command
 
     command = installation_command(repo_root, str(python), profiles)
     print(f"[progress] percent=15 installing profiles={','.join(profiles)}", flush=True)

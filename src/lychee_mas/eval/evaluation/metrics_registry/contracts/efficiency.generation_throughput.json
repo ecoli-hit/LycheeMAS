@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.generation_throughput",
+  "name": "Generation throughput",
+  "description": "Total output tokens divided by total provider generation time within one Trial.",
+  "category": "efficiency",
+  "construct": "model_generation_rate",
+  "unit": "tokens_per_second",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.output_tokens", "model_call.generation_latency"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["provider_metrics_backend"],
+  "known_confounders": ["batching", "concurrency", "speculative_decoding", "output_length"],
+  "na_policy": {
+    "no_model_calls": "not_applicable",
+    "provider_does_not_expose_generation_time": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "efficiency.generation_throughput"
+  }
+}

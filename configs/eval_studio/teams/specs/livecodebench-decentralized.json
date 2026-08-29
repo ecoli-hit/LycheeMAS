@@ -1,0 +1,412 @@
+{
+  "schema_version": 14,
+  "id": "livecodebench-decentralized",
+  "metadata": {
+    "name": "livecodebench-decentralized",
+    "description": "Controlled decentralized TeamSpec for livecodebench.",
+    "tags": [
+      "livecodebench",
+      "decentralized",
+      "teamspec-v14"
+    ],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "LiveCodeBench",
+          "url": "https://arxiv.org/abs/2403.07974",
+          "scope": "code-generation task, prompt, data release, and official checker"
+        },
+        {
+          "title": "LiveCodeBench official repository",
+          "url": "https://github.com/LiveCodeBench/LiveCodeBench",
+          "scope": "release-v6 code_generation_lite prompt and evaluator"
+        }
+      ],
+      "notes": "Portable team variants are controlled LycheeMAS adaptations, not official LiveCodeBench multi-agent recipes."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Investigator",
+      "name": "Investigator",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Analyzes constraints, examples, and algorithmic risks.",
+      "instructions": "Analyze the problem, infer the required algorithm and edge cases, and give the Implementer a precise plan. Do not publish the final program.",
+      "capabilities": [
+        "reason",
+        "handoff",
+        "execute_code"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 4
+      }
+    },
+    {
+      "id": "Implementer",
+      "name": "Implementer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Implements a complete candidate program.",
+      "instructions": "Use the original problem and current team state to write a complete Python solution. You may execute local checks. Share a candidate fenced Python program, but let the Reviewer submit the final result.",
+      "capabilities": [
+        "reason",
+        "handoff",
+        "execute_code"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 8
+      }
+    },
+    {
+      "id": "Reviewer",
+      "name": "Reviewer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Audits the candidate and submits the final program.",
+      "instructions": "Check correctness, complexity, input/output handling, and edge cases. Repair the candidate when needed. End with exactly one complete fenced Python code block containing the final program.",
+      "capabilities": [
+        "reason",
+        "handoff",
+        "execute_code"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 6
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Investigator",
+      "to": "Implementer",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Implementer",
+      "to": "Reviewer",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Reviewer",
+      "to": "Investigator",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Reviewer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Implementer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Investigator",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Reviewer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

@@ -1,7 +1,8 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "id": "dashscope-qwen-plus-api",
   "kind": "api",
+  "model_spec_id": "qwen_plus",
   "source_spec": {
     "type": "api",
     "id": "dashscope-qwen-plus"
@@ -14,6 +15,5 @@
     "min_interval_s": 0.0,
     "scope": "process"
   },
-  "thinking_protocol": "dashscope",
   "notes": "OpenAI-compatible DashScope deployment recipe for the registered qwen-plus API."
 }

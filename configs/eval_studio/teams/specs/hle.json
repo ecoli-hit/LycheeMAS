@@ -1,30 +1,105 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "hle",
-  "role_profile": "hle",
-  "group_chat": {"type": "round_robin"},
-  "termination": {},
-  "model_context": {"type": "token_limited"},
-  "controller_model_context": {"type": "token_limited"},
-  "participants": [
+  "metadata": {
+    "name": "hle",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
+  },
+  "nodes": [
     {
       "id": "Expert",
       "name": "Expert",
-      "agent_type": "assistant",
-      "system_prompt": "Your response should be in the following format:\nExplanation: {your explanation for your answer choice}\nAnswer: {your chosen answer}\nConfidence: {your confidence score between 0% and 100% for your answer}",
-      "description": "Answers one text or image question using the official HLE response contract.",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Answers one text or image question using the official HLE response contract.",
+      "instructions": "Your response should be in the following format:\nExplanation: {your explanation for your answer choice}\nAnswer: {your chosen answer}\nConfidence: {your confidence score between 0% and 100% for your answer}",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [],
+  "shared_state": [
     {
-      "id": "Expert",
-      "kind": "participant",
-      "participant_id": "Expert",
-      "required_capabilities": ["text_generation", "vision"]
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Expert"
+      ],
+      "writers": [
+        "Expert"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     }
-  ]
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Expert",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Expert",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

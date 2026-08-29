@@ -127,7 +127,7 @@ class C2CProjector(nn.Module):
         """指数退火门控温度（1.0 -> final，anneal_steps 步内）；训练每 optimizer step 调一次。"""
         ratio = min(step / self.anneal_steps, 1.0)
         rel = (self.final_temperature / self.initial_temperature) ** ratio
-        self.gate_temperature.fill_(self.initial_temperature * rel)
+        getattr(self, "gate_temperature").fill_(self.initial_temperature * rel)
 
     def _one_side(self, source_flat: Tensor, target_flat: Tensor, target_kv: Tensor,
                   lin_in, mlp1, scalar_mlp2, scalar_head, proj_mlp2, proj_out,

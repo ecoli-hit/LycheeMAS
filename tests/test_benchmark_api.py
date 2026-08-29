@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +18,7 @@ from lychee_mas.eval.benchmarks import (
     hle,
     swe_bench_verified,
 )
-from lychee_mas.eval.task_config import TASK_CONFIG
+from lychee_mas.eval.benchmarks.task_config import TASK_CONFIG
 
 
 def _record(*, task: str = "toy", kind: str = "exact") -> dict:
@@ -129,6 +131,8 @@ def test_registered_benchmarks_share_three_standard_source_providers():
 def test_benchmark_descriptor_owns_runtime_scoring_and_capability_contracts():
     gaia = BENCHMARKS.get("gaia").descriptor()
     bbeh = BENCHMARKS.get("bbeh").descriptor()
+    swe_bench = BENCHMARKS.get("swe_bench_verified").descriptor()
+    workbench = BENCHMARKS.get("workbench").descriptor()
 
     assert gaia["runtime_defaults"]["docker_image"] == "lychee-agbench-gaia:local"
     assert gaia["network_defaults"]["access"] == "required"
@@ -137,6 +141,10 @@ def test_benchmark_descriptor_owns_runtime_scoring_and_capability_contracts():
     assert bbeh["task_contracts"]["bbeh"]["scoring"]["profiles"]["official"]["parameters"] == {
         "evaluator": "pinned_official_deterministic"
     }
+    assert bbeh["runtime_defaults"]["max_rounds"] == 1
+    assert swe_bench["runtime_defaults"]["max_rounds"] == 50
+    assert workbench["runtime_defaults"]["max_rounds"] == 1
+    assert workbench["capabilities"]["required"] == ["text_generation", "tool_calls"]
 
 
 def test_benchmark_declares_scorer_and_answer_extractor():
@@ -145,6 +153,24 @@ def test_benchmark_declares_scorer_and_answer_extractor():
 
     assert benchmark.scorer_kinds["aime_2024"] == "aime"
     assert benchmark.extract_messages("aime_2024", messages) == "42"
+
+
+def test_default_extractor_accepts_structured_autogen_content():
+    benchmark = get_benchmark("swe_bench_verified")
+    messages = [
+        {
+            "type": "ToolCallSummaryMessage",
+            "content": [
+                {"type": "TextMessage", "text": "patch prepared"},
+                {"tool": "runtime:python_code", "status": "completed"},
+            ],
+        }
+    ]
+
+    extracted = benchmark.extract_messages("swe_bench_verified", messages)
+
+    assert "patch prepared" in extracted
+    assert "runtime:python_code" in extracted
 
 
 def test_analysis_arguments_are_registered_by_the_owning_benchmarks():
@@ -156,6 +182,7 @@ def test_analysis_arguments_are_registered_by_the_owning_benchmarks():
     assert args.swebench_max_workers == 4
     assert args.swebench_timeout == 1800
     assert args.hle_judge_workers == 8
+    assert args.hle_judge_auth_mode == "env"
 
 
 def test_hle_official_judge_is_owned_by_hle_benchmark(monkeypatch, tmp_path):
@@ -179,6 +206,7 @@ def test_hle_official_judge_is_owned_by_hle_benchmark(monkeypatch, tmp_path):
             options={
                 "model": "judge",
                 "base_url": "http://judge.test/v1",
+                "auth_mode": "env",
                 "api_key_env": "JUDGE_KEY",
                 "api_key": None,
                 "workers": 2,
@@ -190,6 +218,7 @@ def test_hle_official_judge_is_owned_by_hle_benchmark(monkeypatch, tmp_path):
 
     assert called["run_dir"] == tmp_path
     assert called["options"]["model"] == "judge"
+    assert called["options"]["auth_mode"] == "env"
     assert predictions[0]["hle_judge_response"]["correct"] == "yes"
 
 
@@ -214,11 +243,136 @@ def test_swebench_official_harness_is_owned_by_swebench(monkeypatch, tmp_path):
         ),
     )
 
-    assert called == {
-        "run_dir": tmp_path,
-        "options": {"model_name": "model-under-test", "max_workers": 3, "timeout": 120},
-    }
+    assert called["run_dir"] == tmp_path
+    assert called["options"]["model_name"] == "model-under-test"
+    assert called["options"]["max_workers"] == 3
+    assert called["options"]["timeout"] == 120
+    assert called["options"]["image_refs_by_case"] == {}
+    assert isinstance(
+        called["options"]["image_cache"],
+        swe_bench_verified.ProjectDockerImageCache,
+    )
     assert predictions[0]["swebench_harness"]["resolved"] is True
+
+
+def test_swebench_harness_uses_prepared_parquet_without_remote_dataset(monkeypatch, tmp_path):
+    prepared = tmp_path / "prepared"
+    dataset = prepared / "dataset/test-00000-of-00001.parquet"
+    dataset.parent.mkdir(parents=True)
+    dataset.touch()
+    (prepared / "harness").mkdir()
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.touch()
+    called = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        called["cwd"] = kwargs["cwd"]
+        (report_dir / "model.run-local.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(swe_bench_verified, "ensure_source", lambda: prepared)
+    monkeypatch.setattr(swe_bench_verified.subprocess, "run", fake_run)
+    monkeypatch.setattr(swe_bench_verified, "_remove_harness_containers", lambda _run_id: [])
+
+    swe_bench_verified.run_official_harness(
+        predictions,
+        report_dir,
+        run_id="run-local",
+    )
+
+    dataset_index = called["command"].index("--dataset_name") + 1
+    assert called["command"][dataset_index] == str(dataset)
+    assert called["command"][dataset_index] != swe_bench_verified.dataset_id()
+    predictions_index = called["command"].index("--predictions_path") + 1
+    assert Path(called["command"][predictions_index]).is_absolute()
+    assert called["cwd"] == report_dir.resolve()
+
+
+def test_swebench_harness_always_cleans_its_run_containers(monkeypatch, tmp_path):
+    prepared = tmp_path / "prepared"
+    dataset = prepared / "dataset/test-00000-of-00001.parquet"
+    dataset.parent.mkdir(parents=True)
+    dataset.touch()
+    (prepared / "harness").mkdir()
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    predictions = tmp_path / "predictions.jsonl"
+    predictions.touch()
+    cleaned = []
+
+    monkeypatch.setattr(swe_bench_verified, "ensure_source", lambda: prepared)
+    monkeypatch.setattr(
+        swe_bench_verified.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("harness failed")),
+    )
+    monkeypatch.setattr(
+        swe_bench_verified,
+        "_remove_harness_containers",
+        lambda run_id: cleaned.append(run_id) or [],
+    )
+
+    with pytest.raises(RuntimeError, match="harness failed"):
+        swe_bench_verified.run_official_harness(
+            predictions,
+            report_dir,
+            run_id="unique-run-id",
+        )
+
+    assert cleaned == ["unique-run-id"]
+
+
+def test_swebench_official_harness_batches_images_for_bounded_cleanup(
+    monkeypatch, tmp_path
+):
+    calls = []
+
+    def fake_run(predictions_path, _report_dir, **options):
+        rows = [
+            json.loads(line)
+            for line in Path(predictions_path).read_text(encoding="utf-8").splitlines()
+        ]
+        calls.append({"rows": rows, "options": options})
+        return {
+            "resolved_ids": [row["instance_id"] for row in rows],
+            "infra_failure_ids": [],
+            "incomplete_ids": [],
+            "empty_patch_ids": [],
+            "error_ids": [],
+            "failure_reasons": {},
+        }
+
+    monkeypatch.setattr(swe_bench_verified, "run_official_harness", fake_run)
+    predictions = [
+        {"case_id": f"case-{index}", "prediction": f"patch-{index}"}
+        for index in range(5)
+    ]
+    cache = SimpleNamespace(policy=SimpleNamespace(max_images=2))
+
+    swe_bench_verified.attach_official_harness_results(
+        predictions,
+        tmp_path,
+        model_name="test-model",
+        max_workers=4,
+        timeout=120,
+        image_refs_by_case={f"case-{index}": f"image-{index}" for index in range(5)},
+        image_cache=cache,
+    )
+
+    assert [len(call["rows"]) for call in calls] == [2, 2, 1]
+    assert [call["options"]["image_refs"] for call in calls] == [
+        ["image-0", "image-1"],
+        ["image-2", "image-3"],
+        ["image-4"],
+    ]
+    assert all(item["swebench_harness"]["resolved"] for item in predictions)
+    aggregate = list(
+        (tmp_path / "official_evaluation/swe_bench_verified").glob("aggregate.*.json")
+    )
+    assert len(aggregate) == 1
+    assert json.loads(aggregate[0].read_text(encoding="utf-8"))["parts"] == 3
 
 
 def test_humaneval_prediction_collection_is_owned_by_humaneval():

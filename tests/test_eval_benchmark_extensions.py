@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from lychee_mas import REGISTRY
 from lychee_mas.core.types import TaskQuery
 from lychee_mas.eval import benchmarks  # noqa: F401
@@ -16,8 +17,19 @@ from lychee_mas.eval.benchmarks import (
     open_agent_traces,
     workbench,
 )
-from lychee_mas.eval.metrics import result_dir, score, score_details
-from lychee_mas.runtime.backends.autogen_runtime import AutoGenRuntime
+from lychee_mas.eval.evaluation.metrics import result_dir, score, score_details
+from lychee_mas.runtime.adapters.frameworks.autogen.runtime import AutoGenRuntime
+
+
+def test_public_score_api_uses_current_benchmark_metric_modules():
+    assert score("exact", "42", "42") == 1.0
+    assert score("aime", "42", "42") == 1.0
+    assert score("f1", "Paris", "Paris") == 1.0
+
+
+@pytest.mark.parametrize("letter", ["A", "B", "C", "D"])
+def test_multiple_choice_letter_scoring_preserves_option_a(letter: str):
+    assert score("mc", letter, ["unrelated choice text", letter]) == 1.0
 
 
 def test_extended_benchmarks_registered():

@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import builtins
 from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
@@ -45,10 +46,10 @@ class Registry:
     def create(self, category: str, name: str, **kwargs: Any) -> Any:
         return self.get(category, name)(**kwargs)
 
-    def list(self, category: str) -> list[str]:
+    def list(self, category: str) -> builtins.list[str]:
         return sorted(self._items.get(category, {}).keys())
 
-    def snapshot(self) -> dict[str, list[str]]:
+    def snapshot(self) -> dict[str, builtins.list[str]]:
         return {c: self.list(c) for c in sorted(self._items)}
 
 

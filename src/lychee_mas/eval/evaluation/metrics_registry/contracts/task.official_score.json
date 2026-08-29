@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "task.official_score",
+  "name": "Official task score",
+  "description": "Benchmark-native score for one Trial prediction.",
+  "category": "task",
+  "construct": "task_outcome_quality",
+  "unit": "benchmark_score",
+  "level": "trial",
+  "scope": "official_evaluations",
+  "required_evidence": ["evaluation.score"],
+  "optional_evidence": ["trial.prediction"],
+  "required_capabilities": ["official_evaluations"],
+  "applicable_systems": ["any"],
+  "known_confounders": ["benchmark_evaluator_revision", "incomplete_case_denominator"],
+  "na_policy": {
+    "no_official_evaluator": "not_applicable",
+    "missing_score_record": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "benchmark_native",
+    "entrypoint": "Benchmark.score"
+  }
+}

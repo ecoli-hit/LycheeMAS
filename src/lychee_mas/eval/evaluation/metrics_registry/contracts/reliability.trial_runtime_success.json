@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.trial_runtime_success",
+  "name": "Trial runtime success",
+  "description": "Binary indicator that a Trial produced a Prediction instead of exhausting its runtime Attempts.",
+  "category": "reliability",
+  "construct": "runtime_completion_reliability",
+  "unit": "binary",
+  "level": "trial",
+  "scope": "trial_lifecycle",
+  "required_evidence": ["trial.terminal_status"],
+  "optional_evidence": ["trial.prediction"],
+  "required_capabilities": [],
+  "applicable_systems": ["any"],
+  "known_confounders": ["attempt_retry_policy", "on_trial_error_policy"],
+  "na_policy": {"missing_terminal_trial": "missing_evidence"},
+  "validation_status": "validated",
+  "evaluator": {"kind": "deterministic", "entrypoint": "reliability.trial_runtime_success"}
+}

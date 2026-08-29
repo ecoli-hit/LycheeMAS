@@ -1,0 +1,335 @@
+{
+  "schema_version": 14,
+  "id": "swe-bench-verified-sequential",
+  "metadata": {
+    "name": "swe-bench-verified-sequential",
+    "description": "Controlled investigate-implement-review software workflow.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "MASAI",
+          "url": "https://openreview.net/forum?id=94L33aYLJd",
+          "scope": "issue reproduction, localization, fixing, and ranking decomposition"
+        },
+        {
+          "title": "BOAD",
+          "url": "https://openreview.net/forum?id=b15b95d6d3c681bbed2fa9991f931fc0605e2139",
+          "scope": "hierarchical SWE subagent decomposition"
+        },
+        {
+          "title": "EvoMAS ChatDev SWE-bench configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/swebench/chatdev.yaml",
+          "scope": "CEO-CTO-programmer-reviewer-tester staged software workflow"
+        }
+      ],
+      "notes": "The three-stage workflow is a reduced controlled adaptation, not an exact MASAI, BOAD, ChatDev, or EvoMAS reproduction; role count, prompts, tools, stage loops, and aggregation differ."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Investigator",
+      "name": "Investigator",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Localizes the defect and proposes a patch plan.",
+      "instructions": "Investigate the SWE-bench issue in repo/. Inspect code and tests with list_workspace/read_text_file and use CodeExecutor for diagnostics. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Identify the root cause and give Implementer a concrete exact-text patch plan. Do not modify files and do not finish the task.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    },
+    {
+      "id": "Implementer",
+      "name": "Implementer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Edits the repository and runs focused tests.",
+      "instructions": "Implement a complete minimal fix in repo/. Use replace_text_file for exact edits and CodeExecutor for diagnostics and focused tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Verify git diff and report the exact changes and results. Do not emit TERMINATE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 30
+      }
+    },
+    {
+      "id": "Reviewer",
+      "name": "Reviewer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Reviews the diff, repairs gaps, and terminates.",
+      "instructions": "Review the current git diff in repo/ against the original issue. Use replace_text_file to repair exact defects and CodeExecutor to run focused tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Once the repository contains a complete validated patch, reply exactly TERMINATE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 25
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Implementer",
+      "to": "Reviewer",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Investigator",
+      "to": "Implementer",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Investigator",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Reviewer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

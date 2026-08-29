@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.tool_execution_latency",
+  "name": "Tool execution latency",
+  "description": "Sum of observed terminal tool execution durations in one Trial.",
+  "category": "efficiency",
+  "construct": "tool_runtime_cost",
+  "unit": "seconds",
+  "level": "trial",
+  "scope": "tool_executions",
+  "required_evidence": ["tool_execution.latency"],
+  "optional_evidence": ["tool_execution.parent_link"],
+  "required_capabilities": ["tool_executions"],
+  "applicable_systems": ["tool_using_agent"],
+  "known_confounders": ["network_availability", "sandbox_startup", "tool_retry_policy"],
+  "na_policy": {
+    "no_tool_execution": "not_applicable",
+    "missing_duration": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "efficiency.tool_execution_latency"
+  }
+}

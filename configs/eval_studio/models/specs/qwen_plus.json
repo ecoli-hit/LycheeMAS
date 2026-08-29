@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "id": "qwen_plus",
+  "name": "Qwen Plus",
+  "organization": "Alibaba Cloud / Qwen",
+  "family": "Qwen",
+  "parameter_size": "provider managed",
+  "license": "commercial API",
+  "gated": true,
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true
+  },
+  "model_info": {},
+  "thinking_protocol": "dashscope",
+  "provider_model_ids": {
+    "dashscope": "qwen-plus"
+  },
+  "sources": {},
+  "notes": "Logical model identity for the DashScope Qwen Plus service."
+}

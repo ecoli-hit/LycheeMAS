@@ -1,0 +1,390 @@
+{
+  "schema_version": 14,
+  "id": "bbeh-decentralized",
+  "metadata": {
+    "name": "bbeh-decentralized",
+    "description": "Controlled peer-coordination reasoning hypothesis.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "EvoMAS",
+          "url": "https://arxiv.org/abs/2602.06511",
+          "scope": "direct BBEH evaluation with multi-round debate"
+        },
+        {
+          "title": "EvoMAS BBEH debate configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/bbeh/debate.yaml",
+          "scope": "all-to-all debate rounds followed by a moderator"
+        }
+      ],
+      "notes": "The published BBEH debate pool motivates peer information exchange. This three-node handoff cycle is a smaller controlled adaptation, not the paper's all-to-all multi-round debate reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Analyst",
+      "name": "Analyst",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Produces an independent decomposition and reasoning path.",
+      "instructions": "Independently analyze the task, identify its governing rules, and derive a concise candidate or partial result for the final verifier. Do not assume another participant's reasoning and do not publish the final answer.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Produces an independent solution path in parallel.",
+      "instructions": "Independently solve the original task and provide a precise candidate with enough derivation for a verifier. Do not assume another participant's reasoning and do not publish the final answer.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Verifier",
+      "name": "Verifier",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Reconciles the two peer analyses and publishes the answer.",
+      "instructions": "Reconcile the independent Analyst and Solver results, correct disagreements, and end with exactly one line: The final answer is: <answer>",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Analyst",
+      "to": "Solver",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Solver",
+      "to": "Verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Verifier",
+      "to": "Analyst",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Verifier",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Solver",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Analyst",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

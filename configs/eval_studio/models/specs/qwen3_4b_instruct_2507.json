@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "qwen3_4b_instruct_2507",
   "name": "Qwen3-4B-Instruct-2507",
   "organization": "Alibaba / Qwen",
@@ -7,7 +7,15 @@
   "parameter_size": "4B",
   "license": "Apache-2.0",
   "gated": false,
-  "capabilities": ["text_generation", "tool_calling", "long_context", "hf", "vllm", "latent"],
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true,
+    "latent": true
+  },
+  "model_info": {},
+  "thinking_protocol": null,
+  "supported_backends": ["hf", "vllm"],
+  "provider_model_ids": {},
   "sources": {
     "modelscope": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "format": "transformers", "priority": 10}],
     "huggingface": [{"id": "Qwen/Qwen3-4B-Instruct-2507", "format": "transformers", "priority": 20}]

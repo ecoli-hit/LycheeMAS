@@ -1,0 +1,60 @@
+{
+  "schema_version": 3,
+  "id": "qwen3.5-9b-local-vllm",
+  "kind": "vllm",
+  "model_spec_id": "qwen3_5_9b",
+  "source_spec": {
+    "type": "model",
+    "id": "qwen3_5_9b"
+  },
+  "actual_pricing_spec_id": "reference-a800-on-demand-cny",
+  "api_equivalent_pricing_spec_id": null,
+  "python": ".venvs/vllm-qwen36-0.25.1/bin/python",
+  "library_paths": [],
+  "managed": true,
+  "shared": false,
+  "host": "127.0.0.1",
+  "port": 6200,
+  "trust_env": false,
+  "cuda_visible_devices": "4,5",
+  "tensor_parallel_size": 1,
+  "data_parallel_size": 2,
+  "gpu_memory_utilization": 0.9,
+  "max_model_len": 131072,
+  "max_num_seqs": 32,
+  "per_request_metrics_mode": "auto",
+  "prompt_tokens_details_mode": "auto",
+  "dtype": "auto",
+  "reasoning_parser": "qwen3",
+  "enable_auto_tool_choice": true,
+  "tool_call_parser": "qwen3_coder",
+  "enable_prefix_caching": true,
+  "use_flashinfer_sampler": false,
+  "enforce_eager": false,
+  "request_limits": {
+    "max_concurrency": 64,
+    "min_interval_s": 0.0,
+    "scope": "process"
+  },
+  "admission_control": {
+    "mode": "auto",
+    "minimum": 8,
+    "initial": 32,
+    "maximum": 64,
+    "increase_step": 4,
+    "decrease_factor": 0.75,
+    "healthy_polls_required": 3
+  },
+  "request_timeout": {
+    "mode": "adaptive",
+    "minimum_s": 120.0,
+    "maximum_s": 3600.0,
+    "base_s": 30.0,
+    "initial_generation_tokens_per_second": 10.0,
+    "observed_tokens_per_second_ceiling": 80.0,
+    "safety_factor": 1.5,
+    "ewma_alpha": 0.25
+  },
+  "max_retries": 0,
+  "notes": "Qwen3.5-9B on GPUs 4-5 as two TP=1 replicas (DP=2); max_num_seqs=32 is per replica, while deployment admission starts at 32 concurrent requests and adapts up to the 64-request hard limit from vLLM pressure signals."
+}

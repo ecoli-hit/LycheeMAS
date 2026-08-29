@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from lychee_mas.eval.infrastructure.docker_image_cache import (
+    DockerImageCachePolicy,
+    ProjectDockerImageCache,
+    swebench_image_usage_from_runs,
+)
+
 from .base import (
     Benchmark,
     BenchmarkEvaluationError,
@@ -31,7 +37,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": None, "default_ids": []},
     "huggingface": {
         "env": "LYCHEE_SWEBENCH_VERIFIED_HF_ID",
@@ -214,6 +220,7 @@ def load_swe_bench_verified(n: Optional[int] = None) -> list[dict[str, Any]]:
                     "version": row.get("version"),
                     "official_dataset_id": dataset_id(),
                     "official_harness_revision": HARNESS_REVISION,
+                    "official_image": str(row["image"]),
                 },
             }
         )
@@ -279,10 +286,31 @@ def prepare_case_workspace(metadata: dict[str, Any], workspace: Path) -> Path:
 
     checkout = workspace / "repo"
     remove_path(checkout)
+    checkout.mkdir(parents=True)
+    subprocess.run(["git", "init", "--quiet", str(checkout)], check=True)
     subprocess.run(
-        ["git", "clone", "--shared", "--no-checkout", str(cache), str(checkout)], check=True
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "fetch",
+            "--no-tags",
+            "--depth",
+            "1",
+            str(cache),
+            commit,
+        ],
+        check=True,
     )
-    subprocess.run(["git", "-C", str(checkout), "checkout", "--detach", commit], check=True)
+    alternates = checkout / ".git" / "objects" / "info" / "alternates"
+    if alternates.exists():
+        remove_path(checkout)
+        raise RuntimeError("SWE-bench case checkout unexpectedly depends on a Git alternates store")
+    subprocess.run(["git", "-C", str(checkout), "checkout", "--detach", "FETCH_HEAD"], check=True)
+    subprocess.run(
+        ["git", "-C", str(checkout), "remote", "add", "origin", f"https://github.com/{repo}.git"],
+        check=True,
+    )
     status = subprocess.run(
         ["git", "-C", str(checkout), "status", "--porcelain"],
         text=True,
@@ -310,11 +338,12 @@ def collect_model_patch(workspace: Path) -> str:
     )
     result = subprocess.run(
         ["git", "-C", str(repo), "diff", "--binary"],
-        text=True,
         capture_output=True,
         check=True,
     )
-    return result.stdout
+    # A valid binary patch can contain arbitrary bytes. Preserve the patch
+    # instead of failing the whole Trial during Python's implicit UTF-8 decode.
+    return result.stdout.decode("utf-8", errors="surrogateescape")
 
 
 def write_harness_predictions(
@@ -327,7 +356,7 @@ def write_harness_predictions(
                 json.dumps(
                     {
                         "instance_id": str(record["case_id"]),
-                        "model_patch": str(record.get("final_answer") or ""),
+                        "model_patch": str(record.get("prediction") or ""),
                         "model_name_or_path": model_name,
                     },
                     ensure_ascii=False,
@@ -337,6 +366,29 @@ def write_harness_predictions(
     return destination
 
 
+def _remove_harness_containers(run_id: str) -> list[str]:
+    """Remove only SWE-bench containers created for one unique harness Run."""
+
+    listed = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"name={run_id}"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        return []
+    container_ids = [item for item in listed.stdout.splitlines() if item]
+    if not container_ids:
+        return []
+    removed = subprocess.run(
+        ["docker", "rm", "-f", *container_ids],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return removed.stdout.splitlines() if removed.returncode == 0 else []
+
+
 def run_official_harness(
     predictions_path: Path,
     report_dir: Path,
@@ -344,9 +396,13 @@ def run_official_harness(
     run_id: str,
     max_workers: int = 4,
     timeout: int = 1800,
+    image_refs: Sequence[str] = (),
+    image_cache: ProjectDockerImageCache | None = None,
 ) -> dict[str, Any]:
-    prepared = ensure_source()
+    prepared = ensure_source().resolve()
     harness = prepared / "harness"
+    predictions_path = predictions_path.resolve()
+    report_dir = report_dir.resolve()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(harness) + os.pathsep + env.get("PYTHONPATH", "")
     command = [
@@ -354,7 +410,7 @@ def run_official_harness(
         "-m",
         "swebench.harness.run_evaluation",
         "--dataset_name",
-        dataset_id(),
+        str(_prepared_dataset(prepared).resolve()),
         "--split",
         "test",
         "--predictions_path",
@@ -368,7 +424,36 @@ def run_official_harness(
         "--report_dir",
         str(report_dir),
     ]
-    subprocess.run(command, cwd=report_dir, env=env, check=True)
+    lease = None
+    try:
+        if image_cache is None:
+            try:
+                subprocess.run(command, cwd=report_dir, env=env, check=True)
+            finally:
+                _remove_harness_containers(run_id)
+        else:
+            with image_cache.lease(image_refs, owner=run_id) as active_lease:
+                lease = active_lease
+                try:
+                    subprocess.run(command, cwd=report_dir, env=env, check=True)
+                finally:
+                    _remove_harness_containers(run_id)
+    finally:
+        if lease is not None:
+            (report_dir / f"docker_image_cache.{run_id}.json").write_text(
+                json.dumps(
+                    {
+                        "lease_id": lease.lease_id,
+                        "owner": lease.owner,
+                        "images": list(lease.images),
+                        "reports": lease.reports,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
     reports = sorted(report_dir.glob(f"*.{run_id}.json"))
     if not reports:
         raise RuntimeError("SWE-bench harness completed without a run report")
@@ -382,6 +467,8 @@ def attach_official_harness_results(
     model_name: str,
     max_workers: int,
     timeout: int,
+    image_refs_by_case: Mapping[str, str],
+    image_cache: ProjectDockerImageCache,
 ) -> None:
     """Run the official harness and attach one normalized result per prediction."""
 
@@ -393,20 +480,71 @@ def attach_official_harness_results(
         model_name=model_name,
     )
     raw_run_id = f"lychee-{run_dir.name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    run_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_run_id).strip("-")
-    report = run_official_harness(
-        official_predictions,
-        evaluation_dir,
-        run_id=run_id,
-        max_workers=max_workers,
-        timeout=timeout,
+    base_run_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_run_id).strip("-")
+    configured_batch_size = image_cache.policy.max_images
+    batch_size = configured_batch_size if configured_batch_size > 0 else max_workers
+    batch_size = max(1, batch_size)
+    reports: list[dict[str, Any]] = []
+    run_id_by_case: dict[str, str] = {}
+    for batch_index, start in enumerate(range(0, len(predictions), batch_size), start=1):
+        batch = predictions[start : start + batch_size]
+        run_id = f"{base_run_id}-part-{batch_index:04d}"
+        batch_path = (
+            official_predictions
+            if len(predictions) <= batch_size
+            else write_harness_predictions(
+                batch,
+                evaluation_dir / f"predictions.part-{batch_index:04d}.jsonl",
+                model_name=model_name,
+            )
+        )
+        case_ids = [str(item.get("case_id") or "") for item in batch]
+        image_refs = [image_refs_by_case[item] for item in case_ids if item in image_refs_by_case]
+        reports.append(
+            run_official_harness(
+                batch_path,
+                evaluation_dir,
+                run_id=run_id,
+                max_workers=max_workers,
+                timeout=timeout,
+                image_refs=image_refs,
+                image_cache=image_cache,
+            )
+        )
+        run_id_by_case.update({case_id: run_id for case_id in case_ids})
+
+    def _merged_ids(key: str) -> set[str]:
+        return {str(item) for report in reports for item in report.get(key) or []}
+
+    resolved = _merged_ids("resolved_ids")
+    infra = _merged_ids("infra_failure_ids")
+    incomplete = _merged_ids("incomplete_ids")
+    empty = _merged_ids("empty_patch_ids")
+    errors = _merged_ids("error_ids")
+    reasons = {
+        str(case_id): reason
+        for report in reports
+        for case_id, reason in dict(report.get("failure_reasons") or {}).items()
+    }
+    (evaluation_dir / f"aggregate.{base_run_id}.json").write_text(
+        json.dumps(
+            {
+                "run_id": base_run_id,
+                "parts": len(reports),
+                "batch_size": batch_size,
+                "resolved_ids": sorted(resolved),
+                "infra_failure_ids": sorted(infra),
+                "incomplete_ids": sorted(incomplete),
+                "empty_patch_ids": sorted(empty),
+                "error_ids": sorted(errors),
+                "failure_reasons": reasons,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
     )
-    resolved = set(report.get("resolved_ids") or [])
-    infra = set(report.get("infra_failure_ids") or [])
-    incomplete = set(report.get("incomplete_ids") or [])
-    empty = set(report.get("empty_patch_ids") or [])
-    errors = set(report.get("error_ids") or [])
-    reasons = dict(report.get("failure_reasons") or {})
     for prediction in predictions:
         case_id = str(prediction.get("case_id") or "")
         status = (
@@ -423,7 +561,7 @@ def attach_official_harness_results(
             "resolved": case_id in resolved,
             "infrastructure_failure": case_id in infra,
             "failure_reason": reasons.get(case_id),
-            "run_id": run_id,
+            "run_id": run_id_by_case.get(case_id, base_run_id),
         }
 
 
@@ -475,11 +613,23 @@ class SWEBenchVerifiedBenchmark(Benchmark):
     def add_analysis_arguments(self, parser: Any) -> None:
         parser.add_argument("--swebench-max-workers", type=int, default=4)
         parser.add_argument("--swebench-timeout", type=int, default=1800)
+        parser.add_argument(
+            "--swebench-image-cache-mode",
+            choices=("bounded", "keep", "remove_after_use"),
+            default="bounded",
+        )
+        parser.add_argument("--swebench-image-cache-max-images", type=int, default=24)
+        parser.add_argument("--swebench-image-cache-min-free-gib", type=float, default=12.0)
+        parser.add_argument("--swebench-image-cache-target-free-gib", type=float, default=20.0)
 
     def evaluation_options(self, args: Any) -> dict[str, Any]:
         return {
             "max_workers": args.swebench_max_workers,
             "timeout": args.swebench_timeout,
+            "image_cache_mode": args.swebench_image_cache_mode,
+            "image_cache_max_images": args.swebench_image_cache_max_images,
+            "image_cache_min_free_gib": args.swebench_image_cache_min_free_gib,
+            "image_cache_target_free_gib": args.swebench_image_cache_target_free_gib,
         }
 
     def prepare_evaluation(
@@ -488,16 +638,43 @@ class SWEBenchVerifiedBenchmark(Benchmark):
         gold_by_id: Mapping[str, dict[str, Any]],
         context: EvaluationContext,
     ) -> None:
-        del gold_by_id
         if context.external_evaluator == "skip":
             raise BenchmarkEvaluationError(
                 "SWE-bench Verified requires the official Docker harness."
             )
+        policy = DockerImageCachePolicy(
+            mode=str(context.options.get("image_cache_mode", "bounded")),
+            max_images=int(context.options.get("image_cache_max_images", 24)),
+            min_free_gib=float(context.options.get("image_cache_min_free_gib", 12.0)),
+            target_free_gib=float(context.options.get("image_cache_target_free_gib", 20.0)),
+        )
+        image_cache = ProjectDockerImageCache(policy=policy)
+        if not image_cache.manifest_path.exists():
+            runs_root = Path(
+                os.environ.get("LYCHEE_BENCHMARK_RUNS_ROOT", "runs/benchmarks")
+            )
+            image_cache.adopt(
+                swebench_image_usage_from_runs(
+                    dataset_path=_prepared_dataset(),
+                    runs_root=runs_root,
+                )
+            )
+        image_refs_by_case = {}
+        for prediction in predictions:
+            case_id = str(prediction.get("case_id") or "")
+            item = gold_by_id.get(case_id) or {}
+            metadata = dict(item.get("metadata") or {})
+            image = str(metadata.get("official_image") or "").strip()
+            if image:
+                image_refs_by_case[case_id] = image
         attach_official_harness_results(
             predictions,
             context.run_dir,
             model_name=str(context.run_info.get("model") or "lychee-mas"),
-            **context.options,
+            max_workers=int(context.options.get("max_workers", 4)),
+            timeout=int(context.options.get("timeout", 1800)),
+            image_refs_by_case=image_refs_by_case,
+            image_cache=image_cache,
         )
 
 
@@ -513,6 +690,8 @@ BENCHMARK = register_benchmark(
         scorer_kinds={"swe_bench_verified": "swe_bench_verified"},
         score_handlers={"swe_bench_verified": _score},
         binary_kinds=("swe_bench_verified",),
+        evaluation_mode="batch_final",
+        result_kind="patch",
         capabilities={"required": ["code_generation", "file_access", "code_execution"]},
         sandbox_profiles={
             "generation": {
@@ -529,7 +708,8 @@ BENCHMARK = register_benchmark(
             "code_timeout": 60,
             "docker_image": "lychee-python-sandbox:local",
             "max_new_tokens": 32768,
-            "max_turns": 20,
+            "max_rounds": 50,
+            "max_turns": 100,
         },
         network_defaults={"access": "required", "mode": "direct"},
         scoring_profiles={

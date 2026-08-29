@@ -1,0 +1,532 @@
+{
+  "schema_version": 14,
+  "id": "swe-bench-verified-centralized",
+  "metadata": {
+    "name": "swe-bench-verified-centralized",
+    "description": "Controlled model-routed software-engineering team.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "BOAD",
+          "url": "https://openreview.net/forum?id=b15b95d6d3c681bbed2fa9991f931fc0605e2139",
+          "scope": "orchestrator and specialized SWE subagents"
+        },
+        {
+          "title": "Capable language models can outgrow the benefits of collaboration",
+          "url": "https://www.nature.com/articles/s42256-026-01268-y",
+          "scope": "SWE-bench Verified centralized topology under matched system budgets"
+        },
+        {
+          "title": "EvoMAS SWE-bench majority-vote configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/swebench/majority_vote.yaml",
+          "scope": "parallel SWE workers reporting to an aggregator"
+        }
+      ],
+      "notes": "The shared model-selector contract is simpler than BOAD, the Nature hierarchical orchestrator, and EvoMAS majority vote; it is intended for controlled cross-framework comparison, not exact reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Investigator",
+      "name": "Investigator",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Localizes defects and gathers repository evidence.",
+      "instructions": "Investigate the issue in repo/ with list_workspace/read_text_file and CodeExecutor. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Localize the root cause and communicate concrete exact-text evidence. Do not modify files and do not terminate.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    },
+    {
+      "id": "Implementer",
+      "name": "Implementer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Implements and tests repository changes.",
+      "instructions": "Use the full discussion to implement a complete minimal patch in repo/. Apply exact edits with replace_text_file, use CodeExecutor for diagnostics and focused tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Revise when needed and report results. Do not emit TERMINATE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 30
+      }
+    },
+    {
+      "id": "Reviewer",
+      "name": "Reviewer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Audits the patch and owns completion.",
+      "instructions": "Review the current repository state and git diff against the issue. Use replace_text_file to repair exact defects and CodeExecutor for focused tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Reply exactly TERMINATE only when the patch is complete and validated.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 25
+      }
+    },
+    {
+      "id": "Selector",
+      "name": "Selector",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "selector",
+        "options": {}
+      },
+      "purpose": "Coordination Node that selects the next member Node.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "coordinate",
+        "select_next"
+      ],
+      "operations": [
+        {
+          "type": "select_next",
+          "options": {
+            "mode": "model",
+            "max_attempts": 3,
+            "allow_repeat": true,
+            "finish": {
+              "allowed": true,
+              "requires_result": true
+            }
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Selector",
+      "to": "Implementer",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Selector",
+      "to": "Investigator",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Selector",
+      "to": "Reviewer",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Implementer-return-Selector",
+      "from": "Implementer",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Investigator-return-Selector",
+      "from": "Investigator",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Reviewer-return-Selector",
+      "from": "Reviewer",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer",
+        "Selector"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer",
+        "Selector"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Selector",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Reviewer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

@@ -22,7 +22,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": None, "default_ids": []},
     "huggingface": {"env": None, "default_ids": []},
     "github": {
@@ -219,7 +219,11 @@ def create_tools(metadata: dict[str, Any]) -> tuple[list[Any], WorkBenchSession]
         invoke.__qualname__ = exposed_name
         invoke.__doc__ = str(tool_spec.get("description") or official_name)
         invoke.__annotations__ = {**annotations, "return": str}
-        invoke.__signature__ = inspect.Signature(parameters=parameters, return_annotation=str)
+        setattr(
+            invoke,
+            "__signature__",
+            inspect.Signature(parameters=parameters, return_annotation=str),
+        )
         wrappers.append(invoke)
     return wrappers, session
 
@@ -307,8 +311,9 @@ BENCHMARK = register_benchmark(
         scorer_kinds={"workbench": "workbench"},
         score_handlers={"workbench": _score},
         binary_kinds=("workbench",),
-        capabilities={"required": ["text_generation", "native_tool_calls"]},
-        runtime_defaults={"max_new_tokens": 32768, "max_turns": 1},
+        result_kind="action",
+        capabilities={"required": ["text_generation", "tool_calls"]},
+        runtime_defaults={"max_new_tokens": 32768, "max_rounds": 1, "max_turns": 1},
         scoring_profiles={
             "workbench": {
                 "default_profile": "official",

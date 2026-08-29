@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -25,7 +26,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": None, "default_ids": []},
     "huggingface": {
         "env": "LYCHEE_HLE_HF_ID",
@@ -276,6 +277,51 @@ def judge_score_details(judge_response: Any) -> dict[str, Any]:
     }
 
 
+def _normalize_local_judge_candidate(
+    candidate: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Normalize narrow scalar variants from the local JSON-object judge.
+
+    This deliberately does not repair JSON syntax or alter the preserved raw
+    model output. It only canonicalizes already parsed scalar values that carry
+    the same unambiguous meaning as the local judge contract.
+    """
+
+    if not isinstance(candidate, dict):
+        raise TypeError("HLE local judge response must be one JSON object")
+    normalized = dict(candidate)
+    coercions: list[dict[str, Any]] = []
+
+    correct = normalized.get("correct")
+    if isinstance(correct, bool):
+        replacement = "yes" if correct else "no"
+        normalized["correct"] = replacement
+        coercions.append({"field": "correct", "from": correct, "to": replacement})
+    elif isinstance(correct, str):
+        replacement = correct.strip().lower()
+        if replacement != correct:
+            normalized["correct"] = replacement
+            coercions.append({"field": "correct", "from": correct, "to": replacement})
+
+    confidence = normalized.get("confidence")
+    if isinstance(confidence, str):
+        stripped = confidence.strip()
+        replacement = stripped[:-1].strip() if stripped.endswith("%") else stripped
+        if replacement.isdigit() and replacement != confidence:
+            normalized["confidence"] = replacement
+            coercions.append(
+                {"field": "confidence", "from": confidence, "to": replacement}
+            )
+
+    for field in ("extracted_final_answer", "reasoning"):
+        scalar = normalized.get(field)
+        if scalar is not None and not isinstance(scalar, str):
+            replacement = json.dumps(scalar, ensure_ascii=False, separators=(",", ":"))
+            normalized[field] = replacement
+            coercions.append({"field": field, "from": scalar, "to": replacement})
+    return normalized, coercions
+
+
 def calibration_error(confidences: list[float], correctness: list[bool], beta: int = 100) -> float:
     """Compute HLE's official L2 calibration error without a NumPy dependency."""
 
@@ -292,8 +338,8 @@ def calibration_error(confidences: list[float], correctness: list[bool], beta: i
     return squared_error**0.5
 
 
-def _load_judge_cache(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
-    cached: dict[tuple[str, int], dict[str, Any]] = {}
+def _load_judge_cache(path: Path) -> dict[str, dict[str, Any]]:
+    cached: dict[str, dict[str, Any]] = {}
     if not path.is_file():
         return cached
     with path.open("r", encoding="utf-8") as handle:
@@ -301,7 +347,9 @@ def _load_judge_cache(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
             if not line.strip():
                 continue
             row = json.loads(line)
-            cached[(str(row["case_id"]), int(row.get("k_index", 0)))] = row
+            request_fingerprint = str(row.get("judge_request_fingerprint") or "")
+            if request_fingerprint:
+                cached[request_fingerprint] = row
     return cached
 
 
@@ -312,74 +360,213 @@ def prepare_judge_responses(
     *,
     model: str,
     base_url: str,
+    auth_mode: str,
     api_key_env: str,
     api_key: str | None,
     workers: int,
     timeout: float,
     max_tokens: int,
+    thinking_mode: str,
+    output_mode: str,
+    max_attempts: int,
 ) -> None:
     """Attach official-format HLE judge responses with a resumable cache."""
 
     from pydantic import BaseModel
 
-    from ...runtime.backends.openai_api_backend import OpenAICompatibleBackend
+    from ...runtime.adapters.inference.openai_compatible import OpenAICompatibleBackend
 
-    class ExtractedAnswer(BaseModel):
+    class OfficialExtractedAnswer(BaseModel):
         extracted_final_answer: str
         reasoning: str
         correct: Literal["yes", "no"]
         confidence: int
         strict: Literal[True]
 
+    class LocalExtractedAnswer(BaseModel):
+        extracted_final_answer: str
+        reasoning: str
+        correct: Literal["yes", "no"]
+        confidence: int
+
     cache_path = run_dir / "official_evaluation" / "hle_judge_responses.jsonl"
+    attempts_path = run_dir / "official_evaluation" / "hle_judge_attempts.jsonl"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache = _load_judge_cache(cache_path)
     lock = threading.Lock()
+    if thinking_mode not in {"inherit", "enabled", "disabled"}:
+        raise ValueError("HLE judge thinking_mode must be inherit, enabled or disabled")
+    if output_mode not in {"official_schema", "local_json_object"}:
+        raise ValueError(
+            "HLE judge output_mode must be official_schema or local_json_object"
+        )
+    max_attempts = max(1, int(max_attempts))
+    extra_body = {}
+    if thinking_mode != "inherit":
+        extra_body = {
+            "chat_template_kwargs": {"enable_thinking": thinking_mode == "enabled"}
+        }
     backend = OpenAICompatibleBackend(
         model,
         base_url=base_url,
         api_key_env=api_key_env,
         api_key=api_key,
-        auth_mode="env",
+        auth_mode=auth_mode,
         timeout=timeout,
         do_sample=False,
         model_info={"json_output": True, "structured_output": True},
         request_limits={"max_concurrency": workers},
         max_retries=1,
+        extra_body=extra_body,
     )
 
-    def judge(prediction: dict[str, Any]) -> tuple[tuple[str, int], dict[str, Any]]:
-        key = (str(prediction.get("case_id") or ""), int(prediction.get("k_index", 0)))
-        if key in cache:
-            return key, dict(cache[key]["judge_response"])
+    def judge(
+        prediction: dict[str, Any],
+    ) -> tuple[tuple[str, int], dict[str, Any] | None, dict[str, Any] | None]:
+        key = (str(prediction.get("case_id") or ""), int(prediction.get("trial_index", 0)))
         item = gold_by_id[key[0]]
         prompt = JUDGE_PROMPT.format(
             question=item["question"],
             correct_answer=item["gold"],
-            response=prediction.get("final_answer", ""),
+            response=prediction.get("prediction", ""),
         )
-        result = backend.generate_chat(
-            [{"role": "user", "content": prompt}],
-            max_new_tokens=max_tokens,
-            json_output=ExtractedAnswer,
-        )
-        parsed = json.loads(result.text)
+        if output_mode == "local_json_object":
+            prompt += (
+                "\n\nReturn exactly one compact JSON object with keys "
+                '"extracted_final_answer", "reasoning", "correct", and "confidence". '
+                'Keep reasoning to at most 100 words.'
+            )
+        request_contract = {
+            "schema_version": 1,
+            "case_id": key[0],
+            "trial_index": key[1],
+            "judge_model": model,
+            "judge_base_url": base_url,
+            "thinking_mode": thinking_mode,
+            "output_mode": output_mode,
+            "max_tokens": max_tokens,
+            "prompt": prompt,
+        }
+        request_fingerprint = hashlib.sha256(
+            json.dumps(
+                request_contract,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if request_fingerprint in cache:
+            return key, dict(cache[request_fingerprint]["judge_response"]), None
+        failures: list[str] = []
+        parsed: dict[str, Any] | None = None
+        field_coercions: list[dict[str, Any]] = []
+        json_output: type[BaseModel] | bool = OfficialExtractedAnswer
+        request_overrides: dict[str, Any] | None = None
+        if output_mode == "local_json_object":
+            json_output = False
+            request_overrides = {
+                "extra_body": {
+                    "structured_outputs": {
+                        "json_object": True,
+                        "disable_any_whitespace": True,
+                    }
+                }
+            }
+        for attempt in range(1, max_attempts + 1):
+            parse_error: str | None = None
+            result = None
+            attempt_prompt = prompt
+            if failures:
+                attempt_prompt += (
+                    "\n\nCorrection: the previous response was invalid. Produce a fresh, "
+                    "complete JSON object now. Keep both string fields short, use correct "
+                    'as exactly "yes" or "no", and use an integer confidence from 0 to 100.'
+                )
+            try:
+                result = backend.generate_chat(
+                    [{"role": "user", "content": attempt_prompt}],
+                    max_new_tokens=max_tokens,
+                    json_output=json_output,
+                    request_overrides=request_overrides,
+                )
+                candidate = json.loads(result.text)
+                if output_mode == "local_json_object":
+                    candidate, field_coercions = _normalize_local_judge_candidate(candidate)
+                    parsed = LocalExtractedAnswer.model_validate(candidate).model_dump(
+                        mode="json"
+                    )
+                else:
+                    parsed = OfficialExtractedAnswer.model_validate(candidate).model_dump(
+                        mode="json"
+                    )
+            except Exception as exc:
+                parse_error = f"{type(exc).__name__}: {exc}"
+                failures.append(
+                    f"attempt={attempt} "
+                    f"finish_reason={getattr(result, 'finish_reason', None)} "
+                    f"content_chars={len(getattr(result, 'text', '') or '')} "
+                    f"reasoning_chars={len(getattr(result, 'reasoning_content', '') or '')} "
+                    f"error={parse_error}"
+                )
+            attempt_row = {
+                "case_id": key[0],
+                "trial_index": key[1],
+                "judge_model": model,
+                "judge_request_fingerprint": request_fingerprint,
+                "thinking_mode": thinking_mode,
+                "output_mode": output_mode,
+                "attempt": attempt,
+                "prompt_variant": "initial" if attempt == 1 else "corrective_retry",
+                "finish_reason": getattr(result, "finish_reason", None),
+                "output_text": getattr(result, "text", None),
+                "reasoning_content": getattr(result, "reasoning_content", None),
+                "parse_error": parse_error,
+                "valid": parsed is not None,
+                "field_coercions": field_coercions,
+            }
+            with lock, attempts_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(attempt_row, ensure_ascii=False) + "\n")
+                handle.flush()
+            if parse_error is not None:
+                field_coercions = []
+                continue
+            break
+        if parsed is None:
+            message = (
+                f"HLE judge failed to return valid structured output for {key}: "
+                + " | ".join(failures)
+            )
+            return key, None, {
+                "error_type": "BenchmarkEvaluationError",
+                "error_message": message,
+                "judge_request_fingerprint": request_fingerprint,
+                "attempt_failures": failures,
+            }
         row = {
             "case_id": key[0],
-            "k_index": key[1],
+            "trial_index": key[1],
             "judge_model": model,
+            "judge_request_fingerprint": request_fingerprint,
+            "thinking_mode": thinking_mode,
+            "output_mode": output_mode,
             "judge_response": parsed,
+            "field_coercions": field_coercions,
         }
         with lock, cache_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             handle.flush()
-        return key, parsed
+        return key, parsed, None
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        judged = dict(pool.map(judge, predictions))
+        judged = {key: (response, error) for key, response, error in pool.map(judge, predictions)}
     for prediction in predictions:
-        key = (str(prediction.get("case_id") or ""), int(prediction.get("k_index", 0)))
-        prediction["hle_judge_response"] = judged[key]
+        key = (str(prediction.get("case_id") or ""), int(prediction.get("trial_index", 0)))
+        response, error = judged[key]
+        if response is not None:
+            prediction["hle_judge_response"] = response
+            prediction.pop("hle_judge_error", None)
+        else:
+            prediction["hle_judge_error"] = error
 
 
 def _prepare(force: bool = False, source: str | None = None) -> str:
@@ -387,11 +574,18 @@ def _prepare(force: bool = False, source: str | None = None) -> str:
 
 
 def _score(_prediction: str, _gold, record: Mapping[str, Any]) -> dict:
+    if record.get("hle_judge_error"):
+        error = record["hle_judge_error"]
+        raise BenchmarkEvaluationError(
+            str(error.get("error_message") if isinstance(error, Mapping) else error)
+        )
     return judge_score_details(record.get("hle_judge_response"))
 
 
 class HLEBenchmark(Benchmark):
     def add_analysis_arguments(self, parser: Any) -> None:
+        if any("--hle-judge-model" in action.option_strings for action in parser._actions):
+            return
         parser.add_argument(
             "--hle-judge-model",
             default=os.environ.get("LYCHEE_HLE_JUDGE_MODEL", "o3-mini-2025-01-31"),
@@ -403,6 +597,12 @@ class HLEBenchmark(Benchmark):
         parser.add_argument(
             "--hle-judge-api-key-env",
             default=os.environ.get("LYCHEE_HLE_JUDGE_API_KEY_ENV", "OPENAI_API_KEY"),
+        )
+        parser.add_argument(
+            "--hle-judge-auth-mode",
+            choices=("env", "none"),
+            default=os.environ.get("LYCHEE_HLE_JUDGE_AUTH_MODE", "env"),
+            help="Judge authentication contract; use none for a trusted local endpoint.",
         )
         parser.add_argument("--hle-judge-api-key", default=None)
         parser.add_argument(
@@ -420,16 +620,39 @@ class HLEBenchmark(Benchmark):
             type=int,
             default=int(os.environ.get("LYCHEE_HLE_JUDGE_MAX_TOKENS", "4096")),
         )
+        parser.add_argument(
+            "--hle-judge-thinking-mode",
+            choices=("inherit", "enabled", "disabled"),
+            default=os.environ.get("LYCHEE_HLE_JUDGE_THINKING_MODE", "inherit"),
+        )
+        parser.add_argument(
+            "--hle-judge-max-attempts",
+            type=int,
+            default=int(os.environ.get("LYCHEE_HLE_JUDGE_MAX_ATTEMPTS", "3")),
+        )
+        parser.add_argument(
+            "--hle-judge-output-mode",
+            choices=("official_schema", "local_json_object"),
+            default=os.environ.get("LYCHEE_HLE_JUDGE_OUTPUT_MODE", "official_schema"),
+            help=(
+                "official_schema uses HLE's Pydantic response_format; "
+                "local_json_object is a concise vLLM development-judge contract."
+            ),
+        )
 
     def evaluation_options(self, args: Any) -> dict[str, Any]:
         return {
             "model": args.hle_judge_model,
             "base_url": args.hle_judge_base_url,
+            "auth_mode": args.hle_judge_auth_mode,
             "api_key_env": args.hle_judge_api_key_env,
             "api_key": args.hle_judge_api_key,
             "workers": args.hle_judge_workers,
             "timeout": args.hle_judge_timeout,
             "max_tokens": args.hle_judge_max_tokens,
+            "thinking_mode": args.hle_judge_thinking_mode,
+            "output_mode": args.hle_judge_output_mode,
+            "max_attempts": args.hle_judge_max_attempts,
         }
 
     def prepare_evaluation(
@@ -461,7 +684,10 @@ class HLEBenchmark(Benchmark):
         correctness: list[bool] = []
         for details in judged:
             try:
-                confidence = min(100.0, max(0.0, float(details.get("confidence")))) / 100.0
+                raw_confidence = details.get("confidence")
+                if raw_confidence is None:
+                    continue
+                confidence = min(100.0, max(0.0, float(raw_confidence))) / 100.0
             except (TypeError, ValueError):
                 continue
             confidences.append(confidence)
@@ -486,6 +712,12 @@ BENCHMARK = register_benchmark(
         scorer_kinds={"hle": "hle"},
         score_handlers={"hle": _score},
         binary_kinds=("hle",),
+        evaluation_mode="batch_final",
+        evaluation_requirements={
+            "config_key": "hle_judge",
+            "required_when_external_evaluator": ["auto", "run"],
+            "required_fields": ["model", "base_url"],
+        },
         capabilities={
             "required": ["text_generation", "vision"],
             "attachments_required": True,

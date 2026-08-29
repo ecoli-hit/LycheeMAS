@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "qwen3_6_27b",
   "name": "Qwen3.6-27B",
   "organization": "Alibaba / Qwen",
@@ -7,7 +7,28 @@
   "parameter_size": "27B",
   "license": "Local registered asset",
   "gated": false,
-  "capabilities": ["text_generation", "tool_calling", "reasoning", "long_context", "hf", "vllm", "latent"],
+  "capabilities": {
+    "text_generation": true,
+    "vision": true,
+    "tool_calls": true,
+    "reasoning_content": true,
+    "thinking_toggle": true,
+    "preserve_thinking": true,
+    "native_thinking_budget": true,
+    "default_thinking_mode": "enabled",
+    "default_preserve_thinking": "disabled",
+    "latent": true
+  },
+  "model_info": {
+    "context_window": 131072,
+    "vision": true,
+    "function_calling": true,
+    "json_output": false,
+    "structured_output": false
+  },
+  "thinking_protocol": "qwen_chat_template",
+  "supported_backends": ["hf", "vllm"],
+  "provider_model_ids": {},
   "sources": {},
   "notes": "Only local import is enabled until an official equivalent provider source is registered."
 }

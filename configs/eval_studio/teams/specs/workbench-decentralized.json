@@ -1,0 +1,400 @@
+{
+  "schema_version": 14,
+  "id": "workbench-decentralized",
+  "metadata": {
+    "name": "workbench-decentralized",
+    "description": "Controlled peer-coordination workplace hypothesis.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "WorkBench",
+          "url": "https://arxiv.org/abs/2405.00823",
+          "scope": "task, tools, and evaluator"
+        },
+        {
+          "title": "Capable language models can outgrow the benefits of collaboration",
+          "url": "https://www.nature.com/articles/s42256-026-01268-y",
+          "scope": "WorkBench peer-coordination topology and controlled SAS-MAS comparison"
+        },
+        {
+          "title": "EvoMAS WorkBench debate configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/workbench/email/debate.yaml",
+          "scope": "all-to-all debate rounds followed by a moderator"
+        }
+      ],
+      "notes": "The Nature study uses all-to-all debate and consensus; this handoff-cycle team is only a controlled peer-coordination adaptation and must not be reported as that paper's reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Planner",
+      "name": "Planner",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently derives a safe workplace action plan.",
+      "instructions": "Analyze the workplace request, dates, and constraints. Produce a concrete plan for the Auditor, but do not mutate state and do not emit TASK COMPLETE.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Executor",
+      "name": "Executor",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently executes the minimum required workplace action.",
+      "instructions": "Today's date is Thursday, 2023-11-30 and meetings must stay within 9am-6pm. Independently use the registered benchmark tools to perform only the necessary action once. Report the exact tool result and do not emit TASK COMPLETE.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "benchmark:tools",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    },
+    {
+      "id": "Auditor",
+      "name": "Auditor",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Reconciles the plan with observed shared-state changes.",
+      "instructions": "Audit the original request, Planner report, Executor tool result, and current action history. Do not repeat a mutating action. If the action is correct, reply exactly TASK COMPLETE; otherwise explain the unresolved issue without fabricating success.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Planner",
+      "to": "Executor",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Executor",
+      "to": "Auditor",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Auditor",
+      "to": "Planner",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "writers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "writers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Auditor",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Executor",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Planner",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Auditor",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

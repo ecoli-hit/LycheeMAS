@@ -51,5 +51,5 @@ class C2CLatentChannel:
             proj.load_state_dict(sd)
         projectors.eval()
         for proj in projectors:
-            proj.hard_gate = (self.gate == "hard")
+            setattr(proj, "hard_gate", self.gate == "hard")
         return projectors

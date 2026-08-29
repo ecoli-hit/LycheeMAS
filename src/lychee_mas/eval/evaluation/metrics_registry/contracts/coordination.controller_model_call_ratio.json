@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.controller_model_call_ratio",
+  "name": "Controller model-call ratio",
+  "description": "Share of completed model calls issued by Nodes executing coordination operations.",
+  "category": "coordination",
+  "construct": "controller_call_overhead",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.role", "model_call.controller"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls", "controller_attribution"],
+  "applicable_systems": ["model_coordinated_team"],
+  "known_confounders": ["controller_algorithm", "task_difficulty", "stop_policy"],
+  "na_policy": {
+    "no_model_calls": "not_applicable",
+    "missing_controller_flag": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.controller_model_call_ratio"
+  }
+}

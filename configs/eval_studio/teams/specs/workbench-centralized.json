@@ -1,0 +1,490 @@
+{
+  "schema_version": 14,
+  "id": "workbench-centralized",
+  "metadata": {
+    "name": "workbench-centralized",
+    "description": "Controlled model-routed plan-execute-audit workplace team.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "WorkBench",
+          "url": "https://arxiv.org/abs/2405.00823",
+          "scope": "task, tools, and evaluator"
+        },
+        {
+          "title": "Capable language models can outgrow the benefits of collaboration",
+          "url": "https://www.nature.com/articles/s42256-026-01268-y",
+          "scope": "WorkBench centralized orchestrator-worker topology and controlled SAS-MAS comparison"
+        },
+        {
+          "title": "EvoMAS WorkBench majority-vote configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/workbench/email/majority_vote.yaml",
+          "scope": "parallel workers reporting to an aggregator"
+        }
+      ],
+      "notes": "The Nature study directly supports centralized WorkBench coordination, but this portable model-selector team is a controlled adaptation rather than its hierarchical-orchestrator reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Planner",
+      "name": "Planner",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Plans and revises workplace operations.",
+      "instructions": "Analyze the workplace request and maintain a concise action plan. Do not mutate state. Use the discussion to tell Executor or Auditor exactly what remains.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Executor",
+      "name": "Executor",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Performs workplace tool operations.",
+      "instructions": "Today's date is Thursday, 2023-11-30 and meetings must stay within 9am-6pm. Execute necessary operations with the registered tools and report exact results. Do not emit TASK COMPLETE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "benchmark:tools",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    },
+    {
+      "id": "Auditor",
+      "name": "Auditor",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Validates executed actions without introducing duplicate side effects.",
+      "instructions": "Audit Executor's reported tool calls and results against the original request. Do not repeat a mutating action. Reply TASK COMPLETE only when the action is correct; otherwise tell Planner and Executor the exact correction required.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Selector",
+      "name": "Selector",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "selector",
+        "options": {}
+      },
+      "purpose": "Coordination Node that selects the next member Node.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "coordinate",
+        "select_next"
+      ],
+      "operations": [
+        {
+          "type": "select_next",
+          "options": {
+            "mode": "model",
+            "max_attempts": 3,
+            "allow_repeat": true,
+            "finish": {
+              "allowed": true,
+              "requires_result": true
+            }
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Selector",
+      "to": "Auditor",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Selector",
+      "to": "Executor",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Selector",
+      "to": "Planner",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Auditor-return-Selector",
+      "from": "Auditor",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Executor-return-Selector",
+      "from": "Executor",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Planner-return-Selector",
+      "from": "Planner",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Planner",
+        "Executor",
+        "Auditor",
+        "Selector"
+      ],
+      "writers": [
+        "Planner",
+        "Executor",
+        "Auditor",
+        "Selector"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "writers": [
+        "Planner",
+        "Executor",
+        "Auditor"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Selector",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Auditor",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

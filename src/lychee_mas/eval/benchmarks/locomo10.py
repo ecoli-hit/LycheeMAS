@@ -7,7 +7,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .base import Benchmark, resolve_provider_ids, resolve_source_backend_order
 from .common import (
@@ -20,7 +20,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {
         "env": "LYCHEE_LOCOMO10_MODELSCOPE_ID",
         "default_ids": ["evalscope/locomo"],
@@ -318,7 +318,7 @@ def load_locomo10(n: Optional[int] = None, max_qa_per_conv: int = 10) -> List[Di
 
 
 def _score(prediction: str, gold, _record) -> dict:
-    from ..metrics import score_f1
+    from ..evaluation.metrics import score_f1
 
     references = [str(item) for item in gold] if isinstance(gold, list) else [str(gold)]
     return {"score": score_f1(prediction, references)}

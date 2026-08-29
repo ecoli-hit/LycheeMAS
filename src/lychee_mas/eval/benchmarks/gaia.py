@@ -25,7 +25,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {
         "env": "LYCHEE_GAIA_MODELSCOPE_ID",
         "default_ids": ["gaia-benchmark/GAIA", "AI-ModelScope/GAIA"],
@@ -55,7 +55,11 @@ def safe_task_id(task_id: str) -> str:
 def _download_huggingface(src: Path, allow_patterns: list[str] | None = None) -> Path:
     from huggingface_hub import snapshot_download
 
-    kwargs = {"repo_id": REPO_ID, "repo_type": "dataset", "local_dir": str(src)}
+    kwargs: dict[str, Any] = {
+        "repo_id": REPO_ID,
+        "repo_type": "dataset",
+        "local_dir": str(src),
+    }
     if allow_patterns is not None:
         kwargs["allow_patterns"] = allow_patterns
     log_download_source("gaia", "huggingface", REPO_ID, src)
@@ -72,7 +76,7 @@ def _download_modelscope(
         try:
             from modelscope.hub.snapshot_download import snapshot_download
 
-            kwargs = {"repo_type": "dataset", "local_dir": str(src)}
+            kwargs: dict[str, Any] = {"repo_type": "dataset", "local_dir": str(src)}
             if allow_patterns is not None:
                 kwargs["allow_patterns"] = allow_patterns
             log_download_source("gaia", "modelscope", dataset_id, src)

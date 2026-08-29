@@ -22,7 +22,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": "LYCHEE_MAST_MODELSCOPE_ID", "default_ids": []},
     "huggingface": {"env": None, "default_ids": ["mcemri/MAST-Data"]},
     "github": {"env": None, "default_ids": []},
@@ -206,23 +206,23 @@ def extract_taxonomy_labels(annotation: Any) -> list[str]:
         except json.JSONDecodeError:
             return sorted(set(re.findall(r"\b[1-3]\.\d+\b", annotation)))
     if isinstance(annotation, dict):
-        labels: list[str] = []
+        dict_labels: list[str] = []
         for key, value in annotation.items():
             if re.fullmatch(r"[1-3]\.\d+", str(key)) and bool(value):
-                labels.append(str(key))
+                dict_labels.append(str(key))
             elif isinstance(value, dict):
-                labels.extend(extract_taxonomy_labels(value))
+                dict_labels.extend(extract_taxonomy_labels(value))
             elif isinstance(value, list):
                 for item in value:
-                    labels.extend(extract_taxonomy_labels(item))
+                    dict_labels.extend(extract_taxonomy_labels(item))
             elif isinstance(value, str):
-                labels.extend(re.findall(r"\b[1-3]\.\d+\b", value))
-        return sorted(set(labels))
+                dict_labels.extend(re.findall(r"\b[1-3]\.\d+\b", value))
+        return sorted(set(dict_labels))
     if isinstance(annotation, list):
-        labels: list[str] = []
+        list_labels: list[str] = []
         for item in annotation:
-            labels.extend(extract_taxonomy_labels(item))
-        return sorted(set(labels))
+            list_labels.extend(extract_taxonomy_labels(item))
+        return sorted(set(list_labels))
     return []
 
 

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.tool_execution_count",
+  "name": "Tool execution count",
+  "description": "Number of observed terminal tool executions in one Trial.",
+  "category": "efficiency",
+  "construct": "tool_use_volume",
+  "unit": "executions",
+  "level": "trial",
+  "scope": "tool_executions",
+  "required_evidence": ["tool_execution.status"],
+  "optional_evidence": ["tool_execution.correlation_id", "tool_execution.parent_link"],
+  "required_capabilities": ["tool_executions"],
+  "applicable_systems": ["tool_using_agent"],
+  "known_confounders": ["tool_batching", "retry_policy", "compound_tools"],
+  "na_policy": {"no_tool_execution": "not_applicable"},
+  "validation_status": "candidate",
+  "evaluator": {"kind": "deterministic", "entrypoint": "efficiency.tool_execution_count"}
+}

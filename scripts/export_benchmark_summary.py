@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from lychee_mas.eval.benchmark_excel import write_benchmark_workbook
+from lychee_mas.eval.evaluation.reports.benchmark_excel import write_benchmark_workbook
 
 
 def _parser() -> argparse.ArgumentParser:

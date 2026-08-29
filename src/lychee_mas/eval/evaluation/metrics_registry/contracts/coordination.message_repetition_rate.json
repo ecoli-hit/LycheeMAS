@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.message_repetition_rate",
+  "name": "Message repetition rate",
+  "description": "Surface-level repetition across the textual projection of delivered agent messages, including multimodal content blocks.",
+  "category": "coordination",
+  "construct": "surface_repetition",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "agent_messages",
+  "required_evidence": ["message.actor", "message.content"],
+  "optional_evidence": ["message.visibility"],
+  "required_capabilities": ["agent_messages"],
+  "applicable_systems": ["group_chat", "message_bus"],
+  "known_confounders": ["trace_length", "repeated_system_prompt", "message_chunking", "multimodal_text_projection"],
+  "na_policy": {
+    "no_message_channel": "not_applicable",
+    "no_text_message": "not_applicable",
+    "missing_message_content": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.message_repetition_rate"
+  }
+}

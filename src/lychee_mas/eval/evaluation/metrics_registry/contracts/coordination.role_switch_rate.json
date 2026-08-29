@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.role_switch_rate",
+  "name": "Role switch rate",
+  "description": "Fraction of adjacent delivered agent messages whose actor changes.",
+  "category": "coordination",
+  "construct": "speaker_transition_frequency",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "agent_messages",
+  "required_evidence": ["message.actor"],
+  "optional_evidence": [],
+  "required_capabilities": ["agent_messages"],
+  "applicable_systems": ["multi_agent"],
+  "known_confounders": ["framework_message_emission", "controller_message_visibility", "team_size"],
+  "na_policy": {
+    "fewer_than_two_messages": "not_applicable",
+    "missing_actor": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.role_switch_rate"
+  }
+}

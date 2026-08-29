@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.model_call_error_rate",
+  "name": "Model call error rate",
+  "description": "Fraction of terminal model-call events that failed within one Trial.",
+  "category": "reliability",
+  "construct": "model_request_reliability",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.role", "model_call.parent_link"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["any"],
+  "known_confounders": ["retry_policy", "provider_availability", "request_timeout"],
+  "na_policy": {
+    "no_terminal_model_calls": "not_applicable"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "reliability.model_call_error_rate"
+  }
+}

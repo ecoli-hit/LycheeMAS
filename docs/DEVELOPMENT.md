@@ -17,7 +17,7 @@ TaskQuery ──▶ [construct] ──▶ MASGraph ──▶ [Runtime.run] ─�
 四个设计原则：
 
 1. **可插拔可消融**：每个算法 = 注册一个类（`@REGISTRY.register(category, name)`）+ 由 config 选择。换单一组件即一组对照实验，**不改编排器**。
-2. **Runtime 抽象隔离 AutoGen**：业务层只依赖 `runtime.base.Runtime` 协议；AutoGen 调用全部封装在 `runtime/backends/autogen_*.py`（唯一允许 `import autogen_*` 的位置），预留 MAF 迁移。
+2. **Runtime 抽象隔离第三方框架**：业务层只依赖 `runtime/contracts/`；AutoGen、LangGraph 和 CrewAI 分别封装在 `runtime/adapters/frameworks/`。
 3. **性能-成本联合度量**：评测同时报 accuracy / token / latency（记忆层加 memory-hit，融合层加 fusion-gain）。
 4. **可复现**：固定随机种子；落 config 快照 + git SHA 到 `runs/`。
 
@@ -42,13 +42,18 @@ src/lychee_mas/
 │   ├── registry.py        Registry + REGISTRY + CATEGORIES（含 memory_router）
 │   └── types.py           AgentSpec/Message/Answer/Trajectory/TaskQuery/Budget/BudgetUnit（纯 dataclass）
 ├── runtime/
-│   ├── base.py            Runtime 协议（run/intercept）+ MASGraph/MASTeam 轻量容器 + BaseRuntime
-│   └── backends/
-│       ├── mock_runtime.py            runtime/mock（离线确定性，纯标准库）—— 测试/CI/示例默认
-│       ├── autogen_runtime.py         runtime/autogen（封装 SelectorGroupChat；autogen 惰性导入）
-│       ├── autogen_injection_client.py model_client/injection（注入+路由的 ChatCompletionClient 工厂）
-│       ├── hf_backend.py              HFBackend（生成 + latent 注入；torch/transformers 惰性导入）
-│       └── vllm_client.py             model_client/vllm（桩）
+│   ├── contracts/        Runtime/MASGraph 框架无关合同
+│   ├── coordination/     TeamSpec 到 CoordinationIR/框架计划的编译
+│   ├── execution/        Trial 并发政策与确定性 seed
+│   ├── model/            ModelGateway、上下文和 token budget
+│   ├── tools/            可移植工具与 CodeExecutorFactory
+│   ├── workspaces/       Trial workspace 与 artifact 生命周期
+│   ├── events/           无损 RunEvent 分片存储
+│   ├── results/          ResultContract 与 result projection
+│   └── adapters/
+│       ├── frameworks/   AutoGen/LangGraph/CrewAI/Mock
+│       ├── inference/    Local HF/vLLM/OpenAI-compatible API
+│       └── infrastructure/ Docker/proxy 等系统适配
 ├── memory/            ★ CDM（顶层包）：manager 接缝 + router 接缝 + 通道（NL/Latent）+ context.py（RoutingContext）+ store.py（MemoryStore）
 ├── trace/             ★ 归因/信用（读侧，顶层包）：FailureAttributor + CreditAssigner（桩）+ store.py（TraceStore：消息级落点 + 决策日志）
 ├── train/             ★ 训练（写侧，顶层包）：Trainer + trainer/maspo（桩）；RL 库放 extra [train]
@@ -58,15 +63,23 @@ src/lychee_mas/
 │   └── processing/     决定跑几次 MAS：serial/（processor/serial 跑 1 次）+ parallel/（processor/parallel 并发 K 次 + aggregator 聚合：self_consistency 可跑 / dynamicagg 桩）
 ├── pipeline.py            Orchestrator.run（端到端编排，按 config 从 REGISTRY 取组件）
 └── eval/
-    ├── benchmarks/        数据 loaders + benchmark/<task> 注册（共 19：文本类 6 + benchmark 子系统；惰性加载，不在 import 读盘）
-    ├── metrics.py         score（exact/aime/mc/f1 + human_eval/gaia/mas_* 等）+ result_dir/write_results（math/yaml 惰性导入）
-    ├── math_parsing_util.py  Qwen2.5-Math 借用的数学解析（逐字保留；heavy 依赖，仅 score_aime 内惰性 import）
-    └── task_config.py     每个 task 的默认队伍 + 答案提取策略
+    ├── contracts/         跨领域 Spec/Instance 与生命周期合同
+    ├── models/ apis/ pricing/ deployments/
+    │                         资源、访问、价格和部署领域
+    ├── teams/ experiments/ scheduling/
+    │                         团队、实验和 Trial 调度领域
+    ├── benchmarks/        Benchmark 实现、数据资产、case 与官方 scorer
+    ├── evaluation/        Event 消费、Projection、Evidence、Metric、Report 和 Study
+    ├── application/       Web/CLI/TUI 共用用例与 read model
+    ├── interfaces/http/   FastAPI transport adapter
+    ├── infrastructure/    JSON/filesystem 持久化 adapter
+    ├── environment/       运行环境发现与健康检查
+    └── runner/            Run/Trial worker、resume 和 backend assembly
 ```
 
-> **Benchmark 子系统**（HumanEval / GAIA / choice-QA / MAS 诊断类等）的数据准备、`run_mas.py` 纯推理落
-> `predictions.jsonl`/`group_chat.jsonl`/`spans.jsonl` + `analyze_benchmark_run.py` 事后打分、Eval Studio
-> ExperimentInstance 队列及 Docker 沙盒，详见 `docs/BENCHMARK_HANDOFF.md`。重依赖走
+> **Benchmark 子系统**（HumanEval / GAIA / choice-QA / MAS 诊断类等）的数据准备、`run_mas.py` 纯推理持续写唯一
+> `events/run_events*.jsonl`、`analyze_benchmark_run.py` 事后打分、Execution Trace/Result Projection 派生视图、Eval Studio
+> ExperimentInstance 队列及 Docker 沙盒，详见 `docs/EVAL_HANDOFF.md`。重依赖走
 > `pip install -e ".[benchmark]"`。
 
 ---
@@ -101,7 +114,7 @@ export LYCHEE_HF_MODEL=/path/to/Qwen3-4B
 
 - **`core/types.py`**（所有层共享，纯 dataclass）：`AgentSpec`（图节点）/`Message`（边上一次传输，`.tokens`）/`Answer`（融合单元）/`Trajectory`（一次执行 τ，`.add/.total_tokens/.num_rounds`）/`TaskQuery`（`gold` 供评测）/`Budget`+`BudgetUnit`。
 - **`core/registry.py`**：`REGISTRY.register / get / create / list / snapshot`。`CATEGORIES` 已登记：`runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, processor, attributor, credit_assigner, trainer, benchmark`。新增类别须在此同步登记。
-- **`runtime/base.py`**：`Runtime` 协议（`async run(team, query)->Trajectory`、`intercept(hook)`）；`MASGraph`（节点=AgentSpec，边=邻接/顺序链，`rounds`）；`BaseRuntime`（实现 `intercept` 的样板 + `_emit` 逐消息回调）。
+- **`runtime/contracts/runtime.py`**：`Runtime` 协议（`async run(team, query)->Trajectory`、`intercept(hook)`）；`MASGraph`（节点=AgentSpec，边=邻接/顺序链，`rounds`）；`BaseRuntime`（实现 `intercept` 的样板 + `_emit` 逐消息回调）。
 
 ---
 
@@ -187,7 +200,7 @@ LLMMessage 历史 ─_to_chat─▶ [{role,content}]
 
 ```bash
 make test     # 全绿
-make lint     # ruff check src 通过（line-length 100；math_parsing_util 逐字保留，按文件忽略风格）
+make lint     # ruff check src 通过（line-length 100；benchmarks/math_parsing.py 按文件忽略风格）
 ```
 
 ---
@@ -206,10 +219,10 @@ make lint     # ruff check src 通过（line-length 100；math_parsing_util 逐�
 
 ## 10. AutoGen / torch 惰性导入约定（务必遵守）
 
-1. **不要在业务代码里 `import autogen_*`**。一切运行时能力只通过 `lychee_mas.runtime` 的 `Runtime` 协议使用。**唯一允许 import autogen 的位置：`src/lychee_mas/runtime/backends/autogen_*.py`**，且其中的 `import autogen_*` 也惰性化到函数/工厂内部（保证 import 这些模块、触发注册时不需要 autogen）。
-2. **torch / transformers**：只在 `hf_backend.py`、`memory/channels/latent.py`、`autogen_injection_client.py` 的**方法内部**导入。注册 `memory_manager/cdm` 的 `DualChannelMemory.py` import 时不触发 torch。
-3. **yaml / sympy / datasets / numpy**：分别在 `metrics._dump_config` / `metrics.score_aime`（经 `math_parsing_util`）/ `benchmarks._parquet` 等函数内部惰性导入。
-4. **MAF 迁移**：未来只需新增 `runtime/backends/maf_runtime.py` 并注册，业务层零改动。
+1. **不要在业务代码里 `import autogen_*`**。一切运行时能力只通过 `runtime/contracts/` 使用。**唯一允许 import AutoGen 的位置是 `runtime/adapters/frameworks/autogen/`**，且重依赖保持惰性导入。
+2. **torch / transformers**：只在 `runtime/adapters/inference/hf.py`、`memory/channels/latent.py`、`runtime/adapters/frameworks/autogen/client.py` 的方法内部导入。
+3. **yaml / sympy / datasets / numpy**：分别在 `eval/evaluation/metrics.py`、`eval/benchmarks/math_parsing.py` 和各 Benchmark 实现的需求边界内惰性导入。
+4. **新框架接入**：在 `runtime/adapters/frameworks/<framework>/` 实现 RuntimeAdapter，不修改 Benchmark、Scheduler 和 HTTP/UI。
 
 自检命令（应输出 `HEAVY LOADED: NONE`）：
 

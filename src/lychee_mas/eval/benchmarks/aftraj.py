@@ -26,7 +26,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": "LYCHEE_AFTRAJ_MODELSCOPE_ID", "default_ids": []},
     "huggingface": {"env": None, "default_ids": ["ZBox008003/AFTraj"]},
     "github": {"env": None, "default_ids": []},

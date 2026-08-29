@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.post_tool_failure_trial_completion",
+  "name": "Post-tool-failure Trial completion",
+  "description": "Whether a Trial reached runtime completion despite one or more observed tool execution failures.",
+  "category": "reliability",
+  "construct": "trial_level_tool_failure_recovery",
+  "unit": "binary",
+  "level": "trial",
+  "scope": "tool_failures_and_trial_terminal_state",
+  "required_evidence": ["tool_execution.status", "trial.terminal_status"],
+  "optional_evidence": ["tool_execution.correlation_id"],
+  "required_capabilities": ["tool_executions", "trial_lifecycle"],
+  "applicable_systems": ["tool_using_system"],
+  "known_confounders": ["tool_failure_severity", "fallback_tools", "answer_without_tool"],
+  "na_policy": {
+    "no_tool_failure": "not_applicable",
+    "missing_terminal_state": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "reliability.post_tool_failure_trial_completion"
+  }
+}

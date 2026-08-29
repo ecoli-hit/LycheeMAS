@@ -19,7 +19,7 @@ prompt 是给模型的指令，保持英文；注释用中文。
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ...core.registry import REGISTRY
 from ...core.types import AgentSpec
@@ -276,7 +276,10 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
         raise ValueError(f"unknown role profile {team}; choices: {list(ROLE_PROFILES)}")
     specs: List[AgentSpec] = []
     for r in ROLE_PROFILES[team]:
-        meta = {"description": _role_description(r), "agent_type": r.agent_type}
+        meta: dict[str, Any] = {
+            "description": _role_description(r),
+            "agent_type": r.agent_type,
+        }
         if r.tools:
             meta["tools"] = list(r.tools)
         if r.meta:
@@ -291,7 +294,7 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
 
 @REGISTRY.register("team_builder", "role_profile")
 class RoleProfileTeamBuilder:
-    """Build a Team graph from a named RoleProfile and its explicit GroupChat."""
+    """Build a Team graph from a named RoleProfile and AutoGen adapter plan."""
 
     name = "static"
 
@@ -302,7 +305,7 @@ class RoleProfileTeamBuilder:
 
     def build(self, agents: Optional[List[AgentSpec]] = None, query=None):
         # Explicit agents replace the profile participants but keep the selected Team identity.
-        from ...runtime.base import MASGraph  # 惰性导入避免环依赖
+        from ...runtime.contracts.runtime import MASGraph  # 惰性导入避免环依赖
 
         nodes = list(agents) if agents else team_to_agentspecs(self.team, self.model)
         profile_meta = ROLE_PROFILE_META.get(self.team, {})
@@ -312,7 +315,19 @@ class RoleProfileTeamBuilder:
         meta = {
             "team": self.team,
             "role_profile": self.team,
-            "group_chat": group_chat,
+            "adapter_plans": {
+                "autogen": {
+                    "framework": "autogen",
+                    "strategy": str(group_chat.get("type") or "round_robin"),
+                    "implementation": {
+                        "round_robin": "RoundRobinGroupChat",
+                        "selector": "SelectorGroupChat",
+                        "magentic_one": "MagenticOneGroupChat",
+                    }.get(str(group_chat.get("type") or "round_robin"), "AutoGen team"),
+                    "mapping_level": "exact",
+                    "config": group_chat,
+                }
+            },
             "termination": dict(profile_meta.get("termination") or {}),
             "context_visibility": "shared",
             "dynamic_topology": False,

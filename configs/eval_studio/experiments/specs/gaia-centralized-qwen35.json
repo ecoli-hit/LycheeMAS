@@ -1,0 +1,88 @@
+{
+  "schema_version": 3,
+  "id": "gaia-centralized-qwen35",
+  "benchmark": {
+    "benchmark_spec_id": "gaia",
+    "runnable_task": "gaia_validation",
+    "cases": "all",
+    "start_index": 0,
+    "case_selection": "stratified",
+    "case_strata_field": "level",
+    "scoring_profile": "official"
+  },
+  "team_spec_id": "gaia-centralized",
+  "runtime": {
+    "method": "none",
+    "trials_per_case": 1,
+    "max_rounds": 4,
+    "max_turns": 20,
+    "max_model_calls_per_case": 128,
+    "max_case_wall_time_s": 5400.0,
+    "max_attempts_per_trial": 1,
+    "on_trial_error": "continue",
+    "max_new_tokens": 32768,
+    "max_input_tokens": null,
+    "min_output_reserve_tokens": 2048,
+    "min_thinking_reserve_tokens": 0,
+    "max_thinking_budget_tokens": 8192,
+    "min_final_reserve_tokens": 1024,
+    "safety_margin_tokens": 256,
+    "trial_concurrency": 32,
+    "concurrency_policy": {
+      "mode": "auto",
+      "initial": 8,
+      "minimum": 1,
+      "maximum": 32,
+      "increase_step": 2,
+      "decrease_factor": 0.5,
+      "control_window_trials": 4
+    },
+    "seed": 0,
+    "do_sample": true,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repetition_penalty": 1.0,
+    "code_executor": "docker",
+    "code_timeout": 60,
+    "work_root": "runs/lychee_tool_workspaces",
+    "web_headless": true,
+    "save_screenshots": false,
+    "docker_image": "lychee-agbench-gaia:local",
+    "trace_model_calls": true
+  },
+  "observability": {
+    "collect_vllm_metrics": true,
+    "vllm_metrics_interval_s": 5.0,
+    "event_log_max_events_per_file": 10000,
+    "event_log_max_mib_per_file": 64.0
+  },
+  "network": {
+    "mode": "proxy",
+    "proxy_url": "http://127.0.0.1:7897",
+    "no_proxy": "127.0.0.1,localhost,::1",
+    "targets": {
+      "code_executor": true,
+      "downloads": false,
+      "model_backend": false,
+      "web_surfer": true
+    },
+    "docker_bridge_host": "172.17.0.1",
+    "container_proxy_port": 17897,
+    "probe_url": "https://www.bing.com/"
+  },
+  "environment": {
+    "repo_root": "/data/bk/LycheeMAS",
+    "python": "/data/bk/LycheeMAS/.venv/bin/python",
+    "conda_sh": "",
+    "conda_env": "",
+    "raw_root": "/data/bk/LycheeMAS/data/benchmarks/raw",
+    "prepared_root": "/data/bk/LycheeMAS/data/benchmarks/prepared",
+    "models_root": "/data/bk/LycheeMAS/models",
+    "runs_root": "/data/bk/LycheeMAS/runs/benchmarks"
+  },
+  "notes": "Controlled portability track, not an official framework or paper recipe. Full benchmark scope; staged execution is controlled only by the ExperimentInstance Case target. Evidence-candidate rationale: Magentic-One, CORAL, COLA and Anemoi provide GAIA evidence for central or semi-central orchestration; this portable team is inspired by those systems rather than a reproduction.",
+  "updated_at_utc": "2026-08-23T10:00:20.065763+00:00"
+}

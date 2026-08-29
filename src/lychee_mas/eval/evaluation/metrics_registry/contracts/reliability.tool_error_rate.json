@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.tool_error_rate",
+  "name": "Tool error rate",
+  "description": "Fraction of observed tool executions that terminate with an error.",
+  "category": "reliability",
+  "construct": "tool_execution_reliability",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "tool_executions",
+  "required_evidence": ["tool_execution.correlation_id", "tool_execution.status"],
+  "optional_evidence": ["tool_execution.parent_link"],
+  "required_capabilities": ["tool_executions"],
+  "applicable_systems": ["tool_using_agent"],
+  "known_confounders": ["tool_retry_policy", "sandbox_timeout", "network_availability"],
+  "na_policy": {
+    "no_tool_execution": "not_applicable",
+    "missing_tool_status": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "reliability.tool_error_rate"
+  }
+}

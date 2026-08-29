@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.result_contract_valid",
+  "name": "Result contract validity",
+  "description": "Binary indicator that the benchmark-specific text, action, or patch projection was available from the declared Team result path.",
+  "category": "reliability",
+  "construct": "result_projection_validity",
+  "unit": "binary",
+  "level": "trial",
+  "scope": "result_contract",
+  "required_evidence": ["result_contract.validation"],
+  "optional_evidence": ["result_contract.source", "result_contract.collector"],
+  "required_capabilities": [],
+  "applicable_systems": ["any"],
+  "known_confounders": ["benchmark_result_kind", "team_submitter_contract", "runtime_adapter_projection"],
+  "na_policy": {"missing_result_contract_event": "missing_evidence"},
+  "validation_status": "validated",
+  "evaluator": {"kind": "deterministic", "entrypoint": "reliability.result_contract_valid"}
+}

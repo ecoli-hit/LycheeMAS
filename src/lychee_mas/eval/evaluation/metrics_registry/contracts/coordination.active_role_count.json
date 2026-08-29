@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.active_role_count",
+  "name": "Active role count",
+  "description": "Number of distinct agent roles that published at least one delivered message in a Trial.",
+  "category": "coordination",
+  "construct": "observed_role_activation",
+  "unit": "roles",
+  "level": "trial",
+  "scope": "agent_messages",
+  "required_evidence": ["message.actor"],
+  "optional_evidence": ["message.visibility"],
+  "required_capabilities": ["agent_messages"],
+  "applicable_systems": ["single_agent", "group_chat", "message_bus"],
+  "known_confounders": ["controller_message_visibility", "silent_tool_agents"],
+  "na_policy": {"no_agent_message": "not_applicable", "missing_actor": "missing_evidence"},
+  "validation_status": "candidate",
+  "evaluator": {"kind": "deterministic", "entrypoint": "coordination.active_role_count"}
+}

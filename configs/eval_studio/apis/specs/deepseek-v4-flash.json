@@ -1,13 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "deepseek-v4-flash",
   "name": "DeepSeek-V4-Flash",
   "provider": "DeepSeek",
+  "provider_key": "deepseek",
   "organization": "DeepSeek",
   "protocol": "openai_compatible",
   "deployment_kind": "api",
-  "model_id": "deepseek-v4-flash",
-  "model_id_editable": false,
+  "allowed_model_spec_ids": ["deepseek_v4_flash"],
   "default_base_url": "https://api.deepseek.com",
   "base_url_editable": false,
   "auth_modes": ["env"],
@@ -15,17 +15,6 @@
   "trust_env": true,
   "shared": false,
   "request_limits": {"max_concurrency": 4, "min_interval_s": 0.0, "scope": "process"},
-  "model_info": {"context_window": 1000000, "max_output_tokens": 384000},
-  "capabilities": {
-    "text_generation": true,
-    "tool_calls": true,
-    "json_output": true,
-    "reasoning_content": true,
-    "thinking_toggle": true,
-    "preserve_thinking": false,
-    "native_thinking_budget": false,
-    "reasoning_effort_values": ["high", "max"]
-  },
-  "thinking_protocol": "deepseek",
+  "protocol_capabilities": {"openai_compatible": true},
   "notes": "Official DeepSeek OpenAI-compatible API. Thinking is enabled by default; V4 uses reasoning_effort high/max rather than a token thinking budget."
 }

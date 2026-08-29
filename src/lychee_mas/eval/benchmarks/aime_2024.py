@@ -157,7 +157,7 @@ def load_aime_2024(n: Optional[int] = None) -> List[Dict]:
 
 
 def _score(prediction: str, gold, _record) -> dict:
-    from ..metrics import score_aime
+    from ..evaluation.metrics import score_aime
 
     expected = gold[0] if isinstance(gold, (list, tuple)) else gold
     return {"score": score_aime(prediction, str(expected))}

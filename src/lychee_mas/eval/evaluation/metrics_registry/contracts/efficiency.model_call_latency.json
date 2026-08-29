@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.model_call_latency",
+  "name": "Model call latency",
+  "description": "Observed model-request latency, preserving the selected timing scope.",
+  "category": "efficiency",
+  "construct": "model_service_latency",
+  "unit": "seconds",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.role", "model_call.latency"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["any"],
+  "known_confounders": ["provider_queueing", "client_postprocessing", "concurrency"],
+  "na_policy": {
+    "no_model_calls": "not_applicable",
+    "missing_timing": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "efficiency.model_call_latency"
+  }
+}

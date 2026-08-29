@@ -163,6 +163,35 @@ async def test_magentic_one_group_chat_basic(runtime: AgentRuntime | None) -> No
 
 
 @pytest.mark.asyncio
+async def test_magentic_one_group_chat_retries_wrong_fence_language(runtime: AgentRuntime | None) -> None:
+    agent = _EchoAgent("agent", description="echo agent")
+    completed_ledger = json.dumps(
+        {
+            "is_request_satisfied": {"answer": True, "reason": "done"},
+            "is_progress_being_made": {"answer": True, "reason": "done"},
+            "is_in_loop": {"answer": False, "reason": "done"},
+            "instruction_or_question": {"answer": "Task completed", "reason": "done"},
+            "next_speaker": {"answer": "agent", "reason": "done"},
+        }
+    )
+    model_client = ReplayChatCompletionClient(
+        chat_completions=[
+            "No facts",
+            "No plan",
+            f"```python\n{completed_ledger}\n```",
+            completed_ledger,
+            "final answer",
+        ],
+    )
+
+    team = MagenticOneGroupChat(participants=[agent], model_client=model_client, runtime=runtime)
+    result = await team.run(task="Finish the task")
+
+    assert result.messages[-1].to_text() == "final answer"
+    assert result.stop_reason == "done"
+
+
+@pytest.mark.asyncio
 async def test_magentic_one_group_chat_with_stalls(runtime: AgentRuntime | None) -> None:
     agent_1 = _EchoAgent("agent_1", description="echo agent 1")
     agent_2 = _EchoAgent("agent_2", description="echo agent 2")

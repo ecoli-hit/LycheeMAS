@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.coordination_operation_count",
+  "name": "Coordination operation count",
+  "description": "Number of observable framework-neutral coordination operations completed during one Trial.",
+  "category": "coordination",
+  "construct": "coordination_activity_volume",
+  "unit": "operations",
+  "level": "trial",
+  "scope": "coordination_operations",
+  "required_evidence": ["coordination.operation"],
+  "optional_evidence": ["coordination.operation_kind"],
+  "required_capabilities": ["coordination_operations"],
+  "applicable_systems": ["coordinated_team"],
+  "known_confounders": ["runtime_event_granularity", "coordination_protocol", "task_length"],
+  "na_policy": {
+    "no_declared_operations": "not_applicable",
+    "declared_but_unobserved": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.coordination_operation_count"
+  }
+}

@@ -125,7 +125,7 @@ def _download(provider: str, source_id: str, target: Path, revision: str | None)
 
 
 def _registered_request(args) -> tuple[Path, list[dict[str, object]]]:
-    from lychee_mas.eval.studio.models import ModelRegistry
+    from lychee_mas.eval.models.registry import ModelRegistry
 
     registry = ModelRegistry(ROOT)
     entry = registry.get_spec(args.model_spec_id)
@@ -158,7 +158,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.list_models:
-        from lychee_mas.eval.studio.models import ModelRegistry
+        from lychee_mas.eval.models.registry import ModelRegistry
 
         print("MODEL SPEC ID\tDISPLAY NAME\tPARAMS\tPROVIDERS\tGATED")
         for item in ModelRegistry(ROOT).specs():

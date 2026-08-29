@@ -18,11 +18,12 @@ import sys
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "src"))
 
-from lychee_mas.runtime.docker_sandbox import (  # noqa: E402
+from lychee_mas.runtime.adapters.infrastructure.docker import (  # noqa: E402
     DOCKER_BUILD_ORDER,
     LOCAL_SANDBOX_SPECS,
     SANDBOX_SCHEMA_VERSION,
     SandboxVerificationError,
+    docker_targets_for_prepare_targets,
     inspect_image,
     source_fingerprint,
     verify_local_sandbox,
@@ -104,18 +105,6 @@ def _print_download_sources(benchmarks) -> None:
         else:
             print("  direct-file fallback: -")
         print()
-
-
-def _docker_targets_for_prepare_targets(targets: list[str], aliases: dict[str, str]) -> set[str]:
-    docker_targets: set[str] = set()
-    for target in targets:
-        canonical = aliases.get(target, target)
-        names = {target, canonical}
-        if "human_eval" in names:
-            docker_targets.add("human_eval")
-        if any(name == "gaia" or name.startswith("gaia_") for name in names):
-            docker_targets.add("agbench_gaia")
-    return docker_targets
 
 
 def _expand_docker_targets(targets: set[str]) -> list[str]:
@@ -473,7 +462,7 @@ def main() -> None:
     elif args.docker_images == "always":
         docker_targets = {"human_eval", "agbench_gaia"}
     else:
-        docker_targets = _docker_targets_for_prepare_targets(targets, PREPARE_ALIASES)
+        docker_targets = docker_targets_for_prepare_targets(targets, PREPARE_ALIASES)
     if docker_targets:
         selected = ",".join(_expand_docker_targets(docker_targets))
         print(f"[prepare:docker] selected={selected}", flush=True)

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.trial_wall_time",
+  "name": "Trial wall time",
+  "description": "End-to-end active wall-clock duration of one Trial, including model and tool waits.",
+  "category": "efficiency",
+  "construct": "end_to_end_trial_latency",
+  "unit": "seconds",
+  "level": "trial",
+  "scope": "trial_lifecycle",
+  "required_evidence": ["trial.wall_time"],
+  "optional_evidence": [],
+  "required_capabilities": [],
+  "applicable_systems": ["any"],
+  "known_confounders": ["trial_concurrency", "provider_queueing", "network_wait", "tool_timeout"],
+  "na_policy": {"missing_terminal_trial": "missing_evidence", "missing_wall_time": "missing_evidence"},
+  "validation_status": "validated",
+  "evaluator": {"kind": "deterministic", "entrypoint": "efficiency.trial_wall_time"}
+}

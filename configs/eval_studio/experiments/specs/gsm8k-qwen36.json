@@ -11,12 +11,12 @@
   "team_spec_id": "reason",
   "runtime": {
     "method": "none",
-    "samples": 1,
+    "trials_per_case": 1,
     "max_rounds": 4,
     "max_turns": 20,
     "max_model_calls_per_case": null,
-    "max_case_retries": 0,
-    "on_case_error": "continue",
+    "max_attempts_per_trial": 1,
+    "on_trial_error": "continue",
     "max_new_tokens": 16384,
     "max_input_tokens": null,
     "min_output_reserve_tokens": 2048,
@@ -24,7 +24,7 @@
     "max_thinking_budget_tokens": null,
     "min_final_reserve_tokens": 1024,
     "safety_margin_tokens": 256,
-    "case_concurrency": 16,
+    "trial_concurrency": 16,
     "seed": 0,
     "do_sample": true,
     "temperature": 0.6,
@@ -35,8 +35,7 @@
     "web_headless": true,
     "save_screenshots": false,
     "docker_image": null,
-    "trace_model_calls": true,
-    "trace_detail_level": "compact"
+    "trace_model_calls": true
   },
   "observability": {
     "collect_vllm_metrics": true,

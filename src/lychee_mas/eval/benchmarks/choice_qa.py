@@ -242,9 +242,9 @@ def prepare_openbookqa(force: bool = False, source: Optional[str] = None) -> str
 
 def _split_medqa_options(options) -> tuple[list[str], list[str]]:
     if isinstance(options, dict):
-        labels = [str(label) for label in sorted(options)]
-        texts = [str(options[label]) for label in labels]
-        return labels, texts
+        dict_labels = [str(label) for label in sorted(options)]
+        dict_texts = [str(options[label]) for label in dict_labels]
+        return dict_labels, dict_texts
     labels: list[str] = []
     texts: list[str] = []
     for idx, option in enumerate(options or []):
@@ -520,7 +520,7 @@ def load_medqa(n: Optional[int] = None) -> List[Dict]:
 
 
 def _score_multiple_choice(prediction: str, gold, _record) -> dict:
-    from ..metrics import score_mc
+    from ..evaluation.metrics import score_mc
 
     text, letter = gold if isinstance(gold, (list, tuple)) else (gold, None)
     return {"score": score_mc(prediction, str(text), letter)}

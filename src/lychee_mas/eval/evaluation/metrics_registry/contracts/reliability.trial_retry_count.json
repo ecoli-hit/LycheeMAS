@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "metric_id": "reliability.trial_retry_count",
+  "name": "Trial retry count",
+  "description": "Number of execution attempts after the first attempt for one Trial.",
+  "category": "reliability",
+  "construct": "runtime_retry_burden",
+  "unit": "retries",
+  "level": "trial",
+  "scope": "trial_attempts",
+  "required_evidence": ["attempt.identity"],
+  "optional_evidence": [],
+  "required_capabilities": ["trials"],
+  "applicable_systems": ["any"],
+  "known_confounders": ["configured_max_attempts", "on_trial_error_policy"],
+  "na_policy": {
+    "missing_attempt_start": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "reliability.trial_retry_count"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.role_participation_balance",
+  "name": "Role participation balance",
+  "description": "Distributional balance of delivered messages across participating roles.",
+  "category": "coordination",
+  "construct": "role_participation_distribution",
+  "unit": "normalized_index",
+  "level": "trial",
+  "scope": "agent_messages",
+  "required_evidence": ["message.actor", "message.content"],
+  "optional_evidence": ["message.visibility"],
+  "required_capabilities": ["agent_messages"],
+  "applicable_systems": ["group_chat", "message_bus"],
+  "known_confounders": ["role_count", "controller_messages", "task_decomposition"],
+  "na_policy": {
+    "fewer_than_two_roles": "not_applicable",
+    "missing_actor": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.role_participation_balance"
+  }
+}

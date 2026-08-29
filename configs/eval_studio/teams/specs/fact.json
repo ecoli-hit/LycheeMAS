@@ -1,63 +1,199 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "fact",
-  "role_profile": "fact",
-  "group_chat": {
-    "type": "round_robin"
+  "metadata": {
+    "name": "fact",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
   },
-  "termination": {
-    "conditions": [
-      {
-        "type": "text_mention",
-        "text": "APPROVE"
-      }
-    ]
-  },
-  "model_context": {
-    "type": "unbounded"
-  },
-  "controller_model_context": {
-    "type": "unbounded"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "solver",
       "name": "solver",
-      "agent_type": "assistant",
-      "system_prompt": "You are the SOLVER. This is a factual / multiple-choice question. Use the question and any provided memory/notes to pick the single best answer. Give a one-line justification, then state the answer as 'Answer: <option letter and text>'.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "solver",
+      "instructions": "You are the SOLVER. This is a factual / multiple-choice question. Use the question and any provided memory/notes to pick the single best answer. Give a one-line justification, then state the answer as 'Answer: <option letter and text>'.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "verifier",
       "name": "verifier",
-      "agent_type": "assistant",
-      "system_prompt": "You are the VERIFIER. Check the chosen option against the question and memory. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise give the correct option in one line for a retry.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "verifier",
+      "instructions": "You are the VERIFIER. Check the chosen option against the question and memory. If correct, reply exactly 'APPROVE: <final answer>'. Otherwise give the correct option in one line for a retry.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [
     {
-      "id": "solver",
-      "kind": "participant",
-      "participant_id": "solver",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "relation-1",
+      "from": "solver",
+      "to": "verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "solver",
+        "verifier"
+      ],
+      "writers": [
+        "solver",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     },
     {
-      "id": "verifier",
-      "kind": "participant",
-      "participant_id": "verifier",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "solver",
+        "verifier"
+      ],
+      "writers": [
+        "solver",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     }
-  ]
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "solver",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

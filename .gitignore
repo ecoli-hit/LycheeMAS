@@ -22,19 +22,22 @@ data/benchmarks/
 /models/
 configs/eval_studio/**/instances/
 configs/eval_studio/resources/references.json
-apps/eval_studio/frontend/node_modules/
-apps/eval_studio/frontend/dist/
-apps/eval_studio/frontend/*.tsbuildinfo
+apps/eval/web/node_modules/
+apps/eval/web/dist/
+apps/eval/web/*.tsbuildinfo
 
 # 工具缓存
+._*
 .pytest_cache/
+pytest-of-*/
 .ruff_cache/
 .mypy_cache/
+crewai:*.lock
 
 # 文档站构建产物（MkDocs）
 site/
 .cache/
-# 本地 benchmark 汇报材料（交接文档统一为 BENCHMARK_HANDOFF.md）
+# 本地 benchmark 汇报材料（Eval 交接文档统一为 EVAL_HANDOFF.md）
 docs/BENCHMARK_HANDOFF_PRIVATE.md
 docs/BENCHMARK_FIVE_PAGE_REPORT.md
 docs/BENCHMARK_ONE_PAGE_REPORT.md

@@ -12,6 +12,7 @@ router（记忆通道决策）与 memory（记忆方法）是两个可替换接�
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -23,6 +24,10 @@ if TYPE_CHECKING:  # 仅类型检查期需要；避免与 memory.base 形成 imp
 
 class ModelCallBudgetExceeded(RuntimeError):
     """Raised before a model request would exceed the per-case hard limit."""
+
+
+class TrialDeadlineExceeded(TimeoutError):
+    """Raised before a model request would start after the Trial deadline."""
 
 
 @dataclass
@@ -39,25 +44,37 @@ class RoutingContext:
     deployment_of_role: Dict[str, str] = field(default_factory=dict)
     decisions: List[dict] = field(default_factory=list)  # 决策日志（可解释性 + 落盘 routing_trace）
     trace_store: Any = None  # 可选 trace.TraceStore：把决策同时写入统一落点
-    span_logger: Any = None  # 可选 JsonlSpanLogger：运行中实时写 spans.jsonl
-    group_chat_logger: Any = None  # 可选 JsonlGroupChatLogger：实时写 group_chat.jsonl
+    event_writer: Any = None  # 可选 RunEventWriter：实时写入唯一 EventLog
     current_case_id: Optional[str] = None
-    current_sample_index: Optional[int] = None
-    current_k_index: Optional[int] = None
+    current_dataset_index: Optional[int] = None
+    current_worker_id: Optional[int] = None
+    current_trial_index: Optional[int] = None
     current_attempt: Optional[int] = None
-    current_case_span_id: Optional[str] = None
+    current_run_event_id: Optional[str] = None
+    current_trial_event_id: Optional[str] = None
+    current_attempt_event_id: Optional[str] = None
+    current_runtime_event_id: Optional[str] = None
+    current_group_chat_event_id: Optional[str] = None
     base_seed: int = 0
-    prediction_seed: Optional[int] = None
+    trial_seed: Optional[int] = None
     seed_derivation: Optional[str] = None
     generation_seed: Optional[int] = None
     trace_model_calls: bool = True  # 是否在终端打印每次 LLM 调用的 start/done 摘要
-    trace_detail_level: str = "compact"  # compact/full；仅控制 model_call_start 三层消息
     max_model_calls_per_case: Optional[int] = None  # None=不限制；包含 participant/controller
     model_calls_started: int = 0  # 已经发送或尝试发送的真实后端请求
     model_call_budget_exhausted: bool = False
+    case_deadline_monotonic_s: Optional[float] = None
+    case_deadline_exceeded: bool = False
     context_visibility: str = "shared"  # AutoGen 默认 shared；可显式 topology_filtered
-    last_model_exchange: Optional[dict[str, Any]] = None  # C2C 内存态，不写入 predictions
+    last_model_exchange: Optional[dict[str, Any]] = None  # C2C 内存态，不写入 Trial 结果
     graph_edges: Dict[str, List[str]] = field(default_factory=dict)
+    tool_request_event_ids: Dict[str, str] = field(default_factory=dict)
+    tool_request_records: Dict[str, dict[str, Any]] = field(default_factory=dict)
+    observed_tool_executions: List[dict[str, Any]] = field(default_factory=list)
+    last_controller_exchange: Optional[dict[str, Any]] = None
+    # TeamSpec shared-state memory. This is intentionally separate from
+    # ``memory``, which is LycheeMAS's NL/latent communication method.
+    team_memory: Any = None
 
     def turn_of(self, role: str) -> int:
         return self.turns.get(role, 0)  # 读取某角色当前轮次（默认 0）
@@ -68,11 +85,23 @@ class RoutingContext:
     def reserve_model_call(self, role: str, *, controller: bool = False) -> int:
         """Reserve one real backend request and return its one-based case index."""
 
+        deadline = self.case_deadline_monotonic_s
+        if deadline is not None and time.monotonic() >= deadline:
+            self.case_deadline_exceeded = True
+            self.log_event(
+                "trial.deadline_exceeded",
+                role=role,
+                controller=controller,
+                model_calls_started=self.model_calls_started,
+            )
+            raise TrialDeadlineExceeded(
+                f"Trial deadline reached before model call for role {role!r}"
+            )
         limit = self.max_model_calls_per_case
         if limit is not None and self.model_calls_started >= limit:
             self.model_call_budget_exhausted = True
-            self.log_span(
-                "model_call_budget_exhausted",
+            self.log_event(
+                "model_call.budget_exhausted",
                 role=role,
                 controller=controller,
                 model_calls_started=self.model_calls_started,
@@ -119,44 +148,77 @@ class RoutingContext:
         if self.trace_store is not None:
             self.trace_store.log_decision(record)
 
-    def set_case(self, case_id: str, sample_index: int) -> None:
+    def set_case(self, case_id: str, dataset_index: int) -> None:
         self.current_case_id = str(case_id)
-        self.current_sample_index = int(sample_index)
+        self.current_dataset_index = int(dataset_index)
 
-    def log_span(self, span_type: str, **fields: Any) -> Optional[str]:
-        if self.span_logger is None:
+    def log_event(self, event_type: str, **fields: Any) -> Optional[str]:
+        if self.event_writer is None:
             return None
-        if "parent_span_id" not in fields and span_type != "case_start":
-            fields["parent_span_id"] = self.current_case_span_id
-        fields.setdefault("k_index", self.current_k_index)
+        if "parent_event_id" not in fields:
+            fields["parent_event_id"] = self._event_parent(event_type)
+        fields.setdefault("trial_index", self.current_trial_index)
         fields.setdefault("attempt", self.current_attempt)
         fields.setdefault("base_seed", self.base_seed)
-        fields.setdefault("prediction_seed", self.prediction_seed)
+        fields.setdefault("trial_seed", self.trial_seed)
         fields.setdefault("seed_derivation", self.seed_derivation)
-        return self.span_logger.log(
-            span_type,
-            case_id=self.current_case_id,
-            sample_index=self.current_sample_index,
-            **fields,
-        )
+        fields.setdefault("case_id", self.current_case_id)
+        fields.setdefault("dataset_index", self.current_dataset_index)
+        fields.setdefault("worker_id", self.current_worker_id)
+        return self.event_writer.log_event(event_type, **fields)
 
-    def set_case_span(self, span_id: Optional[str]) -> None:
-        self.current_case_span_id = span_id
+    def _event_parent(self, event_type: str) -> Optional[str]:
+        """Return the nearest causal parent for a newly emitted event."""
 
-    def log_group_chat(self, event_type: str, **fields: Any) -> Optional[str]:
-        if self.group_chat_logger is None:
-            return None
-        fields.setdefault("k_index", self.current_k_index)
-        fields.setdefault("attempt", self.current_attempt)
-        fields.setdefault("base_seed", self.base_seed)
-        fields.setdefault("prediction_seed", self.prediction_seed)
-        fields.setdefault("seed_derivation", self.seed_derivation)
-        return self.group_chat_logger.log(
-            event_type,
-            case_id=self.current_case_id,
-            sample_index=self.current_sample_index,
-            **fields,
-        )
+        if event_type.startswith(("run.", "backend.", "concurrency.")):
+            return self.current_run_event_id
+        if event_type.startswith("trial."):
+            return self.current_run_event_id
+        if event_type.startswith("attempt."):
+            return self.current_trial_event_id
+        if event_type.startswith("runtime."):
+            return self.current_attempt_event_id or self.current_trial_event_id
+        if event_type.startswith(("workspace.", "code_executor.", "web.")):
+            return self.current_runtime_event_id or self.current_attempt_event_id
+        if event_type.startswith("memory."):
+            return self.current_group_chat_event_id or self.current_runtime_event_id
+        if event_type.startswith("coordination."):
+            return self.current_group_chat_event_id or self.current_runtime_event_id
+        if event_type.startswith(
+            ("node_invocation.", "control_edge.", "data_edge.", "data_item.", "result.")
+        ):
+            return self.current_group_chat_event_id or self.current_runtime_event_id
+        if event_type.startswith(("group_chat.", "framework.", "model_call.", "agent.", "tool_")):
+            return (
+                self.current_group_chat_event_id
+                or self.current_runtime_event_id
+                or self.current_attempt_event_id
+                or self.current_trial_event_id
+            )
+        return self.current_trial_event_id or self.current_run_event_id
+
+    def set_trial_event(self, event_id: Optional[str]) -> None:
+        self.current_trial_event_id = event_id
+
+    def remember_tool_request_event(
+        self,
+        tool_call_id: str,
+        event_id: Optional[str],
+        record: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if tool_call_id and event_id:
+            self.tool_request_event_ids[str(tool_call_id)] = str(event_id)
+        if tool_call_id and record is not None:
+            self.tool_request_records[str(tool_call_id)] = dict(record)
+
+    def tool_request_event_id(self, tool_call_id: str) -> Optional[str]:
+        return self.tool_request_event_ids.get(str(tool_call_id)) if tool_call_id else None
+
+    def tool_request_record(self, tool_call_id: str) -> dict[str, Any]:
+        return dict(self.tool_request_records.get(str(tool_call_id)) or {})
+
+    def record_tool_execution(self, record: dict[str, Any]) -> None:
+        self.observed_tool_executions.append(dict(record))
 
     def configure_graph(self, graph: Any) -> None:
         """Install per-case communication visibility from a normalized MASGraph."""
@@ -179,8 +241,17 @@ class RoutingContext:
         # 每个样本开始前清空轮次/日志，并重置记忆库（清 transcript/缓存）
         self.turns.clear()
         self.decisions.clear()
+        self.tool_request_event_ids.clear()
+        self.tool_request_records.clear()
+        self.observed_tool_executions.clear()
         self.last_model_exchange = None
+        self.last_controller_exchange = None
+        self.team_memory = None
+        self.current_attempt_event_id = None
+        self.current_runtime_event_id = None
+        self.current_group_chat_event_id = None
         if not preserve_model_call_budget:
             self.model_calls_started = 0
             self.model_call_budget_exhausted = False
+        self.case_deadline_exceeded = False
         self.memory.reset()

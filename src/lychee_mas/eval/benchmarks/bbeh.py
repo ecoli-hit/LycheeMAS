@@ -16,7 +16,7 @@ from .common import (
 )
 from .registry import register_benchmark
 
-SOURCES = {
+SOURCES: dict[str, Any] = {
     "modelscope": {"env": None, "default_ids": []},
     "huggingface": {"env": None, "default_ids": []},
     "github": {
@@ -187,7 +187,7 @@ BENCHMARK = register_benchmark(
         scorer_kinds={"bbeh": "bbeh"},
         score_handlers={"bbeh": _score},
         binary_kinds=("bbeh",),
-        runtime_defaults={"max_new_tokens": 32768, "max_turns": 1},
+        runtime_defaults={"max_new_tokens": 32768, "max_rounds": 1, "max_turns": 1},
         scoring_profiles={
             "bbeh": {
                 "default_profile": "official",

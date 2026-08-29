@@ -1,45 +1,105 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "single",
-  "role_profile": "single",
-  "group_chat": {
-    "type": "round_robin"
+  "metadata": {
+    "name": "single",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
   },
-  "termination": {
-    "conditions": [
-      {
-        "type": "text_mention",
-        "text": "APPROVE"
-      }
-    ]
-  },
-  "model_context": {
-    "type": "unbounded"
-  },
-  "controller_model_context": {
-    "type": "unbounded"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "solver",
       "name": "solver",
-      "agent_type": "assistant",
-      "system_prompt": "You solve the given problem on your own. Think briefly, then give the final answer. On the FINAL line output exactly 'APPROVE: <final answer>'. For math problems wrap the answer in \\boxed{}, e.g. 'APPROVE: \\boxed{204}'.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "solver",
+      "instructions": "You solve the given problem on your own. Think briefly, then give the final answer. On the FINAL line output exactly 'APPROVE: <final answer>'. For math problems wrap the answer in \\boxed{}, e.g. 'APPROVE: \\boxed{204}'.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [],
+  "shared_state": [
     {
-      "id": "solver",
-      "kind": "participant",
-      "participant_id": "solver",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "solver"
+      ],
+      "writers": [
+        "solver"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     }
-  ]
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "solver",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "solver",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

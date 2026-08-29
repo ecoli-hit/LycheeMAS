@@ -1,81 +1,272 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "default",
-  "role_profile": "default",
-  "group_chat": {
-    "type": "round_robin"
+  "metadata": {
+    "name": "default",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
   },
-  "termination": {
-    "conditions": [
-      {
-        "type": "text_mention",
-        "text": "APPROVE"
-      }
-    ]
-  },
-  "model_context": {
-    "type": "unbounded"
-  },
-  "controller_model_context": {
-    "type": "unbounded"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "manager",
       "name": "manager",
-      "agent_type": "assistant",
-      "system_prompt": "You are the MANAGER. Read the task and any provided memory. Decompose it into a short, concrete plan (2-4 steps) for the worker. Do not solve it yourself.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "manager",
+      "instructions": "You are the MANAGER. Read the task and any provided memory. Decompose it into a short, concrete plan (2-4 steps) for the worker. Do not solve it yourself.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "worker",
       "name": "worker",
-      "agent_type": "assistant",
-      "system_prompt": "You are the WORKER. Follow the manager's plan and any provided memory to solve the task. Show the key steps briefly, then state your candidate answer.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "worker",
+      "instructions": "You are the WORKER. Follow the manager's plan and any provided memory to solve the task. Show the key steps briefly, then state your candidate answer.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "verifier",
       "name": "verifier",
-      "agent_type": "assistant",
-      "system_prompt": "You are the VERIFIER. Check the worker's answer against the task and memory. If correct, reply exactly 'APPROVE: <final answer>'. If not, explain the fix in one line so the worker can retry.",
-      "description": null,
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "verifier",
+      "instructions": "You are the VERIFIER. Check the worker's answer against the task and memory. If correct, reply exactly 'APPROVE: <final answer>'. If not, explain the fix in one line so the worker can retry.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [
     {
-      "id": "manager",
-      "kind": "participant",
-      "participant_id": "manager",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "relation-1",
+      "from": "manager",
+      "to": "worker",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
     },
     {
-      "id": "worker",
-      "kind": "participant",
-      "participant_id": "worker",
-      "required_capabilities": [
-        "text_generation"
-      ]
-    },
-    {
-      "id": "verifier",
-      "kind": "participant",
-      "participant_id": "verifier",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "relation-2",
+      "from": "worker",
+      "to": "verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "manager",
+        "worker",
+        "verifier"
+      ],
+      "writers": [
+        "manager",
+        "worker",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "manager",
+        "worker",
+        "verifier"
+      ],
+      "writers": [
+        "manager",
+        "worker",
+        "verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "manager",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

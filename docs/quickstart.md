@@ -35,10 +35,10 @@ CDM_DATA_ROOT=/path/to/Data/raw CUDA_VISIBLE_DEVICES=0 \
     python scripts/run_mas.py --config configs/aime_latent_c2c.yaml
 ```
 
-**跑几次由处理层决定**：`run.samples=K`，K=1 用 `processor/serial`（跑 1 次），K>1 用 `processor/parallel`（并发跑 K 次 + `aggregator` 聚合）。pass@1 对每条轨迹单独评分。结果落 `eval.results_root`（metrics.json + outputs.jsonl + config 快照）。
+**独立执行次数由 Trial 数决定**：同一个 Case 可以有 K 个 Trial，每个 Trial 有独立的 `trial_index` 与派生 seed；并发只改变调度，不改变 Trial 身份。运行时持续写唯一事实源 `events/run_events*.jsonl` 和配置快照，不在推理阶段读取 gold。完成后使用 `scripts/analyze_benchmark_run.py <run_dir>` 调用 Benchmark scorer，追加 Evaluation Event，并派生 Result Projection、Execution Trace、指标和 Evidence。
 
 ## 下一步
 
 - 想懂目录职责与数据流 → **[架构与设计](DEVELOPMENT.md)**
 - 想加一个组件（六步配方）→ **[开发指南](contributing.md)** 与 **[组件开发](dev/README.md)**
-- 想查某个类/函数 → **[API Reference](reference/lychee_mas/)**
+- 想查某个类/函数 → **[API Reference](reference/lychee_mas/index.md)**

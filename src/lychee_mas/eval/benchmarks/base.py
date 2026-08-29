@@ -175,6 +175,9 @@ class Benchmark:
         runtime_defaults: Mapping[str, Any] | None = None,
         network_defaults: Mapping[str, Any] | None = None,
         contamination_audit_default: bool = False,
+        evaluation_mode: str = "incremental",
+        evaluation_requirements: Mapping[str, Any] | None = None,
+        result_kind: str = "text",
     ) -> None:
         self.id = benchmark_id
         self.name = name or benchmark_id
@@ -221,6 +224,19 @@ class Benchmark:
             for task, kind in self.scorer_kinds.items()
         }
         self.contamination_audit_default = contamination_audit_default
+        self.evaluation_mode = str(evaluation_mode)
+        self.evaluation_requirements = deepcopy(dict(evaluation_requirements or {}))
+        self.result_kind = str(result_kind).strip().lower()
+        if self.evaluation_mode not in {"incremental", "batch_final"}:
+            raise ValueError(
+                f"benchmark {benchmark_id!r} has unsupported evaluation_mode "
+                f"{self.evaluation_mode!r}"
+            )
+        if self.result_kind not in {"text", "action", "patch"}:
+            raise ValueError(
+                f"benchmark {benchmark_id!r} has unsupported result_kind "
+                f"{self.result_kind!r}"
+            )
         if full_prepare_target not in self.prepare_handlers:
             raise ValueError(
                 f"benchmark {benchmark_id!r} has no handler for {full_prepare_target!r}"
@@ -309,6 +325,9 @@ class Benchmark:
             "network_defaults": deepcopy(self.network_defaults),
             "sources": deepcopy(self.sources),
             "contamination_audit_default": self.contamination_audit_default,
+            "evaluation_mode": self.evaluation_mode,
+            "evaluation_requirements": deepcopy(self.evaluation_requirements),
+            "result_kind": self.result_kind,
         }
 
     def provider_ids(self, provider: str) -> list[str]:
@@ -414,7 +433,7 @@ class Benchmark:
         return default_text
 
     def extract_messages(self, task: str, messages: Sequence[Any]) -> str:
-        from ..task_config import EXTRACTORS
+        from .task_config import EXTRACTORS
 
         name = self.extractor_names.get(task, "default")
         try:

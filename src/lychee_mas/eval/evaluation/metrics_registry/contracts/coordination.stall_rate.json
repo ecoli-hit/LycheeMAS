@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.stall_rate",
+  "name": "Stall detection rate",
+  "description": "Share of observable stall checks that judged the team to be stalled.",
+  "category": "coordination",
+  "construct": "observed_progress_stall_frequency",
+  "unit": "ratio",
+  "level": "trial",
+  "scope": "coordination_operations",
+  "required_evidence": ["coordination.operation", "coordination.stalled"],
+  "optional_evidence": [],
+  "required_capabilities": ["stall_detection"],
+  "applicable_systems": ["stall_aware_team"],
+  "known_confounders": ["stall_definition", "check_frequency", "task_difficulty"],
+  "na_policy": {
+    "no_stall_contract": "not_applicable",
+    "missing_stalled_flag": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.stall_rate"
+  }
+}

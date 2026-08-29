@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ....core.types import AgentSpec, Budget, BudgetUnit, TaskQuery
 from ._llm import ChatUsage
@@ -427,7 +427,7 @@ def _as_spec(name: str, prompt: str, vec, seen: set[str]) -> AgentSpec:
     while final in seen:
         final, k = f"{base}_{k}", k + 1
     seen.add(final)
-    profile = {"description": prompt}
+    profile: dict[str, Any] = {"description": prompt}
     if vec is not None:
         profile["vec"] = vec.tolist() if hasattr(vec, "tolist") else list(vec)
     return AgentSpec(

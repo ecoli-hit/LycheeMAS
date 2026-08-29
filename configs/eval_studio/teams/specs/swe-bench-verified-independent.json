@@ -1,0 +1,133 @@
+{
+  "schema_version": 14,
+  "id": "swe-bench-verified-independent",
+  "metadata": {
+    "name": "swe-bench-verified-independent",
+    "description": "Controlled single coding-agent SWE-bench Verified anchor.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "mini-SWE-agent",
+          "url": "https://github.com/SWE-agent/mini-swe-agent",
+          "scope": "minimal single-agent shell scaffold"
+        },
+        {
+          "title": "EvoMAS single SWE-bench configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/swebench/single_sweagent.yaml",
+          "scope": "executable single-agent comparison anchor"
+        }
+      ],
+      "notes": "LycheeMAS uses a portable tool contract and is not an exact mini-SWE-agent or EvoMAS SWEAgent reproduction. The matrix key independent denotes this one-node single-agent baseline."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Developer",
+      "name": "Developer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Strong single-agent SWE-bench Verified baseline.",
+      "instructions": "Solve the SWE-bench issue independently. The repository is repo/ under the current workspace. Inspect with list_workspace/read_text_file, apply exact repository edits with replace_text_file, and use CodeExecutor for diagnostics and focused tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Make a complete minimal patch; do not only explain it. When the patch is implemented and validated, reply exactly TERMINATE.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 40
+      }
+    }
+  ],
+  "relations": [],
+  "shared_state": [
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Developer"
+      ],
+      "writers": [
+        "Developer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Developer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Developer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

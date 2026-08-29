@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.model_call_participation_balance",
+  "name": "Model-call participation balance",
+  "description": "Distributional balance of completed model calls across observed model-backed Nodes.",
+  "category": "coordination",
+  "construct": "model_call_participation_distribution",
+  "unit": "normalized_index",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.role"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["multi_node_model_system"],
+  "known_confounders": ["role_count", "controller_call_frequency", "tool_only_nodes"],
+  "na_policy": {
+    "fewer_than_two_model_call_roles": "not_applicable",
+    "missing_actor": "missing_evidence"
+  },
+  "validation_status": "candidate",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "coordination.model_call_participation_balance"
+  }
+}

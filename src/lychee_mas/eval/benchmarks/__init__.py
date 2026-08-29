@@ -8,7 +8,7 @@ preparation live in sibling modules, while this file only exposes public
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ...core.registry import REGISTRY
 
@@ -23,7 +23,9 @@ from . import (  # noqa: E402,F401
     gaia,
     gsm8k,
     hle,
+    hle_verified,
     human_eval,
+    livecodebench,
     locomo10,
     mast_data,
     open_agent_traces,
@@ -46,10 +48,10 @@ RAW = raw_root()
 PREPARED = prepared_root()
 PROCESSED = processed_root()
 
-REASONING_POLE = ("gsm8k", "aime_2024", "bbeh", "hle")
+REASONING_POLE = ("gsm8k", "aime_2024", "bbeh", "hle", "hle_verified")
 FACT_POLE = ("medqa", "openbookqa", "arc_easy")
 MEMORY_TASKS = ("locomo10",)
-CODE_TASKS = ("human_eval",)
+CODE_TASKS = ("human_eval", "livecodebench")
 SOFTWARE_ENGINEERING_TASKS = ("swe_bench_verified",)
 WORKPLACE_TOOL_TASKS = ("workbench",)
 TOOL_TASKS = (
@@ -73,7 +75,7 @@ MAS_COLLAB_TASKS = (
 
 FULL_PREPARE_TARGETS = tuple(benchmark.full_prepare_target for benchmark in BENCHMARKS.all())
 
-BENCHMARK_STRUCTURE = [
+BENCHMARK_STRUCTURE: list[dict[str, Any]] = [
     {
         "benchmark_source": "GSM8K",
         "full_prepare_target": "gsm8k",
@@ -200,6 +202,20 @@ BENCHMARK_STRUCTURE = [
         "kinds": ["hle"],
     },
     {
+        "benchmark_source": "HLE-Verified Gold",
+        "full_prepare_target": "hle_verified",
+        "prepare_targets": ["hle_verified"],
+        "runnable_tasks": ["hle_verified"],
+        "kinds": ["hle_verified"],
+    },
+    {
+        "benchmark_source": "LiveCodeBench Code Generation Lite",
+        "full_prepare_target": "livecodebench",
+        "prepare_targets": ["livecodebench"],
+        "runnable_tasks": ["livecodebench"],
+        "kinds": ["livecodebench"],
+    },
+    {
         "benchmark_source": "SWE-bench Verified",
         "full_prepare_target": "swe_bench_verified",
         "prepare_targets": ["swe_bench_verified"],
@@ -216,7 +232,7 @@ BENCHMARK_STRUCTURE = [
 ]
 
 
-BENCHMARK_MAPPINGS = {
+BENCHMARK_MAPPINGS: dict[str, list[dict[str, Any]]] = {
     "GSM8K": [
         {"prepare_target": "gsm8k", "runnable_tasks": ["gsm8k"], "kinds": ["exact"]},
     ],
@@ -344,6 +360,20 @@ BENCHMARK_MAPPINGS = {
     ],
     "Humanity's Last Exam": [
         {"prepare_target": "hle", "runnable_tasks": ["hle"], "kinds": ["hle"]},
+    ],
+    "HLE-Verified Gold": [
+        {
+            "prepare_target": "hle_verified",
+            "runnable_tasks": ["hle_verified"],
+            "kinds": ["hle_verified"],
+        },
+    ],
+    "LiveCodeBench Code Generation Lite": [
+        {
+            "prepare_target": "livecodebench",
+            "runnable_tasks": ["livecodebench"],
+            "kinds": ["livecodebench"],
+        },
     ],
     "SWE-bench Verified": [
         {

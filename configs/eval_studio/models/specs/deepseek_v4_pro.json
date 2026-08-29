@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "id": "deepseek_v4_pro",
+  "name": "DeepSeek-V4-Pro",
+  "organization": "DeepSeek",
+  "family": "DeepSeek V4",
+  "parameter_size": "provider managed",
+  "license": "commercial API",
+  "gated": true,
+  "capabilities": {
+    "text_generation": true,
+    "tool_calls": true,
+    "json_output": true,
+    "reasoning_content": true,
+    "thinking_toggle": true,
+    "preserve_thinking": false,
+    "native_thinking_budget": false,
+    "reasoning_effort_values": ["high", "max"]
+  },
+  "model_info": {
+    "context_window": 1000000,
+    "max_output_tokens": 384000
+  },
+  "thinking_protocol": "deepseek",
+  "provider_model_ids": {
+    "deepseek": "deepseek-v4-pro"
+  },
+  "sources": {},
+  "notes": "Logical model identity for the official DeepSeek V4 Pro API."
+}

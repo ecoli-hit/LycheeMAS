@@ -1,0 +1,447 @@
+{
+  "schema_version": 14,
+  "id": "swe-bench-verified-decentralized",
+  "metadata": {
+    "name": "swe-bench-verified-decentralized",
+    "description": "Controlled peer-coordination software-engineering team.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "DeLM",
+          "url": "https://arxiv.org/abs/2606.10662",
+          "scope": "decentralized SWE agents with shared verified context"
+        },
+        {
+          "title": "icat-agent",
+          "url": "https://arxiv.org/abs/2606.25514",
+          "scope": "event-based decentralized SWE coordination"
+        },
+        {
+          "title": "Capable language models can outgrow the benefits of collaboration",
+          "url": "https://www.nature.com/articles/s42256-026-01268-y",
+          "scope": "SWE-bench Verified decentralized debate under matched system budgets"
+        },
+        {
+          "title": "EvoMAS SWE-bench debate configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/swebench/debate.yaml",
+          "scope": "multi-round peer debate followed by a moderator"
+        }
+      ],
+      "notes": "The handoff-cycle relation is a controlled peer-coordination adaptation; it is not an exact DeLM, icat-agent, EvoMAS debate, or Nature all-to-all consensus reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Investigator",
+      "name": "Investigator",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently localizes the issue without editing files.",
+      "instructions": "Investigate the issue in repo/ with list_workspace/read_text_file and CodeExecutor. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Identify a concrete root cause, affected files, exact-text patch evidence, and a focused test plan. Once that report is ready, hand off to Implementer and stop investigating. Do not modify files and do not emit TERMINATE.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
+    },
+    {
+      "id": "Implementer",
+      "name": "Implementer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently implements and tests a candidate patch in parallel.",
+      "instructions": "Independently inspect the issue, apply a focused patch in repo/ with replace_text_file, and use CodeExecutor to run relevant tests. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Once the patch and test report are ready, hand off to Reviewer and stop editing. Leave the working tree ready for review and do not emit TERMINATE.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 30
+      }
+    },
+    {
+      "id": "Reviewer",
+      "name": "Reviewer",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Reconciles the investigation with the candidate patch.",
+      "instructions": "Audit the Investigator report and current repo diff, repair exact defects with replace_text_file, and run focused tests with CodeExecutor. CodeExecutor starts in the trial workspace: use relative paths such as repo/... and never assume /repo exists; inspect an empty or failed command result before choosing a different command. Reply exactly TERMINATE only when the repository contains the best validated patch. If a concrete gap remains, hand off to Investigator with that gap instead of repeating the same tool call.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "replace_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 25
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Investigator",
+      "to": "Implementer",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Implementer",
+      "to": "Reviewer",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Reviewer",
+      "to": "Investigator",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "writers": [
+        "Investigator",
+        "Implementer",
+        "Reviewer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Reviewer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Implementer",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Investigator",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Reviewer",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

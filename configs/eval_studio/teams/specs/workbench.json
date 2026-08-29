@@ -1,30 +1,110 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "workbench",
-  "role_profile": "workbench",
-  "group_chat": {"type": "round_robin"},
-  "termination": {},
-  "model_context": {"type": "token_limited"},
-  "controller_model_context": {"type": "token_limited"},
-  "participants": [
+  "metadata": {
+    "name": "workbench",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
+  },
+  "nodes": [
     {
       "id": "WorkplaceAgent",
       "name": "WorkplaceAgent",
-      "agent_type": "assistant",
-      "system_prompt": "Today's date is Thursday, 2023-11-30 and the current time is 00:00:00. Remember the current date and time when completing tasks. Meetings must not start before 9am or end after 6pm.",
-      "description": "Uses the official WorkBench workplace tools against a case-local mutable state.",
-      "tools": ["benchmark:tools"],
-      "model_id": null,
-      "meta": {"max_tool_iterations": 20}
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Uses the official WorkBench workplace tools against a case-local mutable state.",
+      "instructions": "Today's date is Thursday, 2023-11-30 and the current time is 00:00:00. Remember the current date and time when completing tasks. Meetings must not start before 9am or end after 6pm.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "benchmark:tools",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 20
+      }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "relations": [],
+  "shared_state": [
     {
-      "id": "WorkplaceAgent",
-      "kind": "participant",
-      "participant_id": "WorkplaceAgent",
-      "required_capabilities": ["text_generation", "native_tool_calls"]
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "WorkplaceAgent"
+      ],
+      "writers": [
+        "WorkplaceAgent"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     }
-  ]
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "WorkplaceAgent",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "WorkplaceAgent",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

@@ -50,7 +50,7 @@ def main() -> None:
         build_projector_stack,
         map_source_to_target_layers,
     )
-    from lychee_mas.runtime.backends.hf_backend import HFBackend, common_suffix_len
+    from lychee_mas.runtime.adapters.inference.hf import HFBackend, common_suffix_len
     from train_c2c_projector import ANALYST_SYS, SOLVER_SYS
 
     blob = torch.load(os.path.join(args.ckpt, "projectors.pt"), map_location="cuda:0")

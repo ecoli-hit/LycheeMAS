@@ -1,93 +1,784 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "gaia",
-  "role_profile": "gaia",
-  "group_chat": {
-    "type": "magentic_one",
-    "max_stalls": 3
+  "metadata": {
+    "name": "gaia",
+    "description": "Framework-neutral Magentic-One semantic graph for GAIA.",
+    "tags": [
+      "gaia",
+      "magentic-one",
+      "orchestration"
+    ],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "Magentic-One: A Generalist Multi-Agent System for Solving Complex Tasks",
+          "url": "https://arxiv.org/abs/2411.04468",
+          "scope": "orchestrator, specialist roles, task/progress ledgers, stall and replanning semantics"
+        },
+        {
+          "title": "AutoGen Magentic-One documentation",
+          "url": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/magentic-one.html",
+          "scope": "official AutoGen execution reference"
+        }
+      ],
+      "notes": "AutoGen may bind this contract to native Magentic-One; LangGraph and CrewAI compose the same explicit state-machine semantics. This is not a claim that all three frameworks provide an identical native recipe."
+    }
   },
-  "termination": {},
-  "model_context": {
-    "type": "token_limited"
-  },
-  "controller_model_context": {
-    "type": "token_limited"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "Coder",
       "name": "Coder",
-      "agent_type": "coder",
-      "system_prompt": "",
-      "description": "Writes code to analyze files or compute intermediate results.",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "code_author",
+        "options": {}
+      },
+      "purpose": "Writes code to analyze files or compute intermediate results.",
+      "instructions": "You are the team's coding specialist. Solve computational or programmatic subproblems and report verifiable evidence to the team. When sandbox execution is needed, return exactly one complete executable Python program in a fenced ```python block so ComputerTerminal can run it. Do not emit an incomplete snippet or more than one code block. After receiving execution output, check errors and revise the full program if needed. If no execution is needed, give a concise evidence-based analysis without a code block.",
+      "capabilities": [
+        "reason",
+        "write_code",
+        "edit_files"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "ComputerTerminal",
       "name": "ComputerTerminal",
-      "agent_type": "computer_terminal",
-      "system_prompt": "",
-      "description": "Executes code blocks from the current group-chat buffer in the sandbox.",
+      "kind": "tool_executor",
+      "behavior": {
+        "type": "code_executor",
+        "options": {}
+      },
+      "purpose": "Executes code blocks from the current group-chat buffer in the sandbox.",
+      "instructions": "",
+      "capabilities": [
+        "execute_code"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "FileSurfer",
       "name": "FileSurfer",
-      "agent_type": "file_surfer",
-      "system_prompt": "",
-      "description": "Reads and navigates files available in the case workspace.",
-      "tools": [],
-      "model_id": null,
-      "meta": {}
+      "kind": "model_agent",
+      "behavior": {
+        "type": "file_navigator",
+        "options": {}
+      },
+      "purpose": "Reads and navigates files available in the case workspace.",
+      "instructions": "You are the team's local-file specialist. Inspect only files available in the Trial workspace. Use list_workspace to locate relevant files and read_text_file to read bounded sections. Report the exact path and concise evidence needed by the team. Do not claim to have read a file that a tool did not return, do not use web tools, and do not invent missing file contents.",
+      "capabilities": [
+        "reason",
+        "read_files",
+        "inspect_artifacts"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 8
+      }
     },
     {
       "id": "WebSurfer",
       "name": "WebSurfer",
-      "agent_type": "web_surfer",
-      "system_prompt": "",
-      "description": "Browses web pages and performs web search when needed.",
-      "tools": [],
-      "model_id": null,
-      "meta": {}
-    }
-  ],
-  "extensions": {},
-  "inference_slots": [
-    {
-      "id": "Coder",
-      "kind": "participant",
-      "participant_id": "Coder",
-      "required_capabilities": [
-        "text_generation"
-      ]
-    },
-    {
-      "id": "FileSurfer",
-      "kind": "participant",
-      "participant_id": "FileSurfer",
-      "required_capabilities": [
-        "text_generation"
-      ]
-    },
-    {
-      "id": "WebSurfer",
-      "kind": "participant",
-      "participant_id": "WebSurfer",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "kind": "model_agent",
+      "behavior": {
+        "type": "web_navigator",
+        "options": {}
+      },
+      "purpose": "Browses web pages and performs web search when needed.",
+      "instructions": "You are the team's web-research specialist. Use search_web to find candidate public sources and fetch_url to inspect HTTP(S) pages. Return concise findings with source titles or URLs and enough evidence for another team member to verify them. Do not use file paths with fetch_url, do not invent inaccessible page content, and distinguish a tool or network failure from a factual negative result.",
+      "capabilities": [
+        "reason",
+        "browse",
+        "search_web"
+      ],
+      "operations": [],
+      "tools": [
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 8
+      }
     },
     {
       "id": "Orchestrator",
-      "kind": "controller",
-      "controller_type": "orchestrator",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "name": "Orchestrator",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "orchestrator",
+        "options": {}
+      },
+      "purpose": "Coordination Node that plans and coordinates the team.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "coordinate",
+        "plan",
+        "delegate",
+        "monitor_progress",
+        "detect_stall",
+        "replan",
+        "aggregate"
+      ],
+      "operations": [
+        {
+          "type": "plan",
+          "options": {
+            "mode": "model",
+            "state_target": "PlanStore"
+          }
+        },
+        {
+          "type": "delegate",
+          "options": {
+            "mode": "model",
+            "max_attempts": 3
+          }
+        },
+        {
+          "type": "monitor_progress",
+          "options": {
+            "mode": "model",
+            "state_sources": [
+              "PlanStore",
+              "ProgressLedger"
+            ],
+            "state_target": "ProgressLedger"
+          }
+        },
+        {
+          "type": "detect_stall",
+          "options": {
+            "mode": "model",
+            "state_source": "ProgressLedger",
+            "window": 3
+          }
+        },
+        {
+          "type": "replan",
+          "options": {
+            "mode": "model",
+            "state_sources": [
+              "PlanStore",
+              "ProgressLedger"
+            ],
+            "state_target": "PlanStore",
+            "max_replans": 3
+          }
+        },
+        {
+          "type": "aggregate",
+          "options": {
+            "mode": "model",
+            "source": "SharedConversation",
+            "prompt": "Original GAIA request:\n{task}\n\nTeam evidence:\n{history}\n\nSubmit only the shortest final answer string that should be compared with the GAIA reference answer. Do not include reasoning, explanation, labels, Markdown, units not requested by the question, or coordination metadata."
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     }
-  ]
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Orchestrator",
+      "to": "Coder",
+      "control": {
+        "trigger": "completed",
+        "action": "delegate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Orchestrator",
+      "to": "ComputerTerminal",
+      "control": {
+        "trigger": "completed",
+        "action": "delegate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Orchestrator",
+      "to": "FileSurfer",
+      "control": {
+        "trigger": "completed",
+        "action": "delegate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-4",
+      "from": "Orchestrator",
+      "to": "WebSurfer",
+      "control": {
+        "trigger": "completed",
+        "action": "delegate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Coder-return-Orchestrator",
+      "from": "Coder",
+      "to": "Orchestrator",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.PlanStore",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.ProgressLedger",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-ComputerTerminal-return-Orchestrator",
+      "from": "ComputerTerminal",
+      "to": "Orchestrator",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.PlanStore",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.ProgressLedger",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-FileSurfer-return-Orchestrator",
+      "from": "FileSurfer",
+      "to": "Orchestrator",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.PlanStore",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.ProgressLedger",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-WebSurfer-return-Orchestrator",
+      "from": "WebSurfer",
+      "to": "Orchestrator",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.PlanStore",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.ProgressLedger",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Coder",
+        "ComputerTerminal",
+        "FileSurfer",
+        "WebSurfer",
+        "Orchestrator"
+      ],
+      "writers": [
+        "Coder",
+        "ComputerTerminal",
+        "FileSurfer",
+        "WebSurfer",
+        "Orchestrator"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Coder",
+        "ComputerTerminal",
+        "FileSurfer",
+        "WebSurfer"
+      ],
+      "writers": [
+        "Coder",
+        "ComputerTerminal",
+        "FileSurfer",
+        "WebSurfer"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "PlanStore",
+      "kind": "structured_state",
+      "description": "Trial-scoped structured plan state.",
+      "readers": [
+        "Orchestrator"
+      ],
+      "writers": [
+        "Orchestrator"
+      ],
+      "update": "merge",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "ProgressLedger",
+      "kind": "structured_state",
+      "description": "Trial-scoped progress and stall state.",
+      "readers": [
+        "Orchestrator"
+      ],
+      "writers": [
+        "Orchestrator"
+      ],
+      "update": "merge",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Orchestrator",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Orchestrator",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

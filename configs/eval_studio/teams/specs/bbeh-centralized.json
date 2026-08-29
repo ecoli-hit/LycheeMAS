@@ -1,0 +1,485 @@
+{
+  "schema_version": 14,
+  "id": "bbeh-centralized",
+  "metadata": {
+    "name": "bbeh-centralized",
+    "description": "Controlled model-routed analyst-solver-verifier reasoning team.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "hypothesis",
+      "sources": [
+        {
+          "title": "EvoMAS",
+          "url": "https://arxiv.org/abs/2602.06511",
+          "scope": "direct BBEH MAS architecture search and centralized aggregation pools"
+        },
+        {
+          "title": "EvoMAS BBEH majority-vote configuration",
+          "url": "https://github.com/amazon-science/EvoMAS/blob/93fd9d6766b093f6bbdeeffc35896910cbece6e2/mas_pools/bbeh/majority_vote.yaml",
+          "scope": "parallel workers reporting to an aggregator"
+        },
+        {
+          "title": "Multi-agent Architecture Search via Agentic Supernet",
+          "url": "https://openreview.net/forum?id=imcyVlzpXh",
+          "scope": "query-dependent MAS routing on hard reasoning tasks"
+        }
+      ],
+      "notes": "BBEH has published MAS evidence, but this turn-level model selector is not the EvoMAS architecture selector or majority-vote aggregator. The exact recipe remains a LycheeMAS controlled hypothesis."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Analyst",
+      "name": "Analyst",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Decomposes ambiguous and compositional reasoning tasks.",
+      "instructions": "Analyze the original task, resolve its answer format, and identify a reliable solution route. Collaborate with the other specialists; do not publish the final answer.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Derives candidate solutions.",
+      "instructions": "Derive or revise a candidate solution using the full discussion. State concrete reasoning and a candidate answer; do not use the final-answer marker.",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Verifier",
+      "name": "Verifier",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Checks candidates and publishes a verified answer.",
+      "instructions": "Verify the best candidate against the original task. Ask for more work through the discussion when evidence is insufficient. When confident, end with exactly one line: The final answer is: <answer>",
+      "capabilities": [
+        "reason"
+      ],
+      "operations": [],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    },
+    {
+      "id": "Selector",
+      "name": "Selector",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "selector",
+        "options": {}
+      },
+      "purpose": "Coordination Node that selects the next member Node.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "coordinate",
+        "select_next"
+      ],
+      "operations": [
+        {
+          "type": "select_next",
+          "options": {
+            "mode": "model",
+            "max_attempts": 3,
+            "allow_repeat": false,
+            "finish": {
+              "allowed": true,
+              "requires_result": true
+            }
+          }
+        }
+      ],
+      "tools": [],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Selector",
+      "to": "Analyst",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Selector",
+      "to": "Solver",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Selector",
+      "to": "Verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "select_next",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Analyst-return-Selector",
+      "from": "Analyst",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Solver-return-Selector",
+      "from": "Solver",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "control-Verifier-return-Selector",
+      "from": "Verifier",
+      "to": "Selector",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier",
+        "Selector"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier",
+        "Selector"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Analyst",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Selector",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

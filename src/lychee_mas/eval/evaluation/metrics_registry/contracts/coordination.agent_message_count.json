@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "metric_id": "coordination.agent_message_count",
+  "name": "Agent message count",
+  "description": "Number of delivered agent messages observed in one Trial.",
+  "category": "coordination",
+  "construct": "communication_volume",
+  "unit": "messages",
+  "level": "trial",
+  "scope": "agent_messages",
+  "required_evidence": ["message.actor", "message.content"],
+  "optional_evidence": ["message.visibility"],
+  "required_capabilities": ["agent_messages"],
+  "applicable_systems": ["single_agent", "group_chat", "message_bus"],
+  "known_confounders": ["message_chunking", "typed_event_logging"],
+  "na_policy": {"no_agent_message": "not_applicable"},
+  "validation_status": "candidate",
+  "evaluator": {"kind": "deterministic", "entrypoint": "coordination.agent_message_count"}
+}

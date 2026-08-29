@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 
 from .core.registry import REGISTRY
 from .core.types import Message, TaskQuery, Trajectory
-from .runtime.base import MASGraph
+from .runtime.contracts.runtime import MASGraph
 
 _log = logging.getLogger("lychee_mas.pipeline")
 

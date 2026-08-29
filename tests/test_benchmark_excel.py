@@ -1,11 +1,12 @@
 import json
 
 import yaml
-from lychee_mas.eval.benchmark_excel import (
+from lychee_mas.eval.evaluation.reports.benchmark_excel import (
     aggregate_benchmarks,
     discover_task_runs,
     write_benchmark_workbook,
 )
+from lychee_mas.runtime.events.store import RunEventWriter, run_events_path
 
 
 def _write_run(
@@ -43,8 +44,14 @@ def _write_run(
             ),
             encoding="utf-8",
         )
-        (directory / "predictions.jsonl").write_text("{}\n" * cases, encoding="utf-8")
-        (directory / "outputs.jsonl").write_text("{}\n" * cases, encoding="utf-8")
+        writer = RunEventWriter(run_events_path(directory))
+        for index in range(cases):
+            record = {"case_id": str(index), "dataset_index": index, "trial_index": 0}
+            started_id = writer.log_event("trial.started", **record)
+            terminal_id = writer.record_trial(
+                {**record, "operation_id": started_id, "final_output": "answer"}
+            )
+            writer.record_evaluation({**record, "trial_event_id": terminal_id, "score": score})
     return directory
 
 

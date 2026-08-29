@@ -49,8 +49,11 @@ class TraceStore:
         self.decisions.clear()
 
     def _append_jsonl(self, record: dict) -> None:
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        with open(self.path, "a", encoding="utf-8") as f:
+        path = self.path
+        if path is None:
+            return
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def __len__(self) -> int:

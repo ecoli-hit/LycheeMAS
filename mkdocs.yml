@@ -92,7 +92,24 @@ nav:
   - 安装: installation.md
   - 快速上手: quickstart.md
   - 架构与设计: DEVELOPMENT.md
-  - Benchmark 交接: BENCHMARK_HANDOFF.md
+  - Eval 交接:
+      - 总览: EVAL_HANDOFF.md
+      - 1. 当前开发状态: eval_handoff/01-current-status.md
+      - 2. 系统边界与统一语言: eval_handoff/02-system-boundary.md
+      - 3. 相关工作与设计依据: eval_handoff/03-related-work.md
+      - 4. 模块化结构与实现合同:
+          - 章节索引: eval_handoff/04-implementation-contracts.md
+          - 4.1 架构与模块地图: eval_handoff/04-architecture-and-module-map.md
+          - 4.2 接口与生命周期: eval_handoff/04-interface-and-lifecycle-contracts.md
+          - 4.3 资源与 Benchmark: eval_handoff/04-resource-and-benchmark-contracts.md
+          - 4.4 TeamSpec v14: eval_handoff/04-team-spec-v14-contract.md
+          - 4.5 跨框架 Runtime: eval_handoff/04-framework-runtime-contracts.md
+          - 4.6 Deployment 与推理: eval_handoff/04-deployment-and-inference-contracts.md
+          - 4.7 Experiment 与 Scheduler: eval_handoff/04-experiment-and-scheduler-contracts.md
+          - 4.8–4.9 观测、RunEvent 与指标: eval_handoff/04-observability-and-event-contracts.md
+          - 4.10 Eval Studio: eval_handoff/04-studio-contracts.md
+      - 5. 系统性评估研究方案: eval_handoff/05-research-plan.md
+      - 6. 使用、扩展与交接: eval_handoff/06-operations-and-handoff.md
   - 核心概念:
       - 组件注册与配置: concepts/registry-and-config.md
       - CDM 双通道记忆: concepts/cdm-memory.md

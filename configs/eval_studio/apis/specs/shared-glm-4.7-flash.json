@@ -1,13 +1,13 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "shared-glm-4.7-flash",
   "name": "GLM-4.7-Flash",
   "provider": "实验室共享 vLLM",
+  "provider_key": "lab_shared_glm",
   "organization": "Self-hosted",
   "protocol": "openai_compatible",
   "deployment_kind": "vllm",
-  "model_id": "GLM-4.7-Flash",
-  "model_id_editable": false,
+  "allowed_model_spec_ids": ["glm4_7_flash"],
   "default_base_url": "http://127.0.0.1:6000/v1",
   "base_url_editable": false,
   "auth_modes": ["none"],
@@ -15,8 +15,6 @@
   "trust_env": false,
   "shared": true,
   "request_limits": {"max_concurrency": 1, "min_interval_s": 2.0, "scope": "host"},
-  "model_info": {"context_window": 202752},
-  "capabilities": {"text_generation": true, "tool_calls": true},
-  "thinking_protocol": null,
+  "protocol_capabilities": {"openai_compatible": true},
   "notes": "Shared OpenAI-compatible vLLM endpoint; Eval Studio never manages its lifecycle."
 }

@@ -1,0 +1,448 @@
+{
+  "schema_version": 14,
+  "id": "gaia-decentralized",
+  "metadata": {
+    "name": "gaia-decentralized",
+    "description": "Controlled peer-coordination GAIA hypothesis.",
+    "tags": [],
+    "provenance": {
+      "track": "controlled_portability",
+      "evidence_level": "paper_inspired",
+      "sources": [
+        {
+          "title": "Anemoi",
+          "url": "https://arxiv.org/abs/2508.17068",
+          "scope": "semi-centralized direct agent communication"
+        }
+      ],
+      "notes": "The portable relation graph is inspired by direct collaboration but is not an Anemoi reproduction."
+    }
+  },
+  "nodes": [
+    {
+      "id": "Researcher",
+      "name": "Researcher",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently gathers external and attachment evidence.",
+      "instructions": "Independently investigate the GAIA task with the available workspace, browser, and Python tools. Report concrete evidence, source details, and a candidate when possible. Do not publish FINAL ANSWER.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 12
+      }
+    },
+    {
+      "id": "Solver",
+      "name": "Solver",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Independently computes and solves the task in parallel.",
+      "instructions": "Independently derive a precise candidate for the original GAIA task, using the available workspace, browser, and Python tools. Report calculations and uncertainty for the verifier. Do not publish FINAL ANSWER.",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 12
+      }
+    },
+    {
+      "id": "Verifier",
+      "name": "Verifier",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "assistant",
+        "options": {}
+      },
+      "purpose": "Reconciles peer evidence and publishes the short answer.",
+      "instructions": "Reconcile the independent Researcher and Solver reports, resolve disagreement with tools when necessary, and end with exactly: FINAL ANSWER: <short answer>",
+      "capabilities": [
+        "reason",
+        "handoff"
+      ],
+      "operations": [
+        {
+          "type": "handoff",
+          "options": {
+            "mode": "model",
+            "max_attempts": 1,
+            "fallback": "next_priority"
+          }
+        }
+      ],
+      "tools": [
+        {
+          "id": "list_workspace",
+          "required": true
+        },
+        {
+          "id": "read_text_file",
+          "required": true
+        },
+        {
+          "id": "runtime:web_search",
+          "required": true
+        },
+        {
+          "id": "runtime:fetch_url",
+          "required": true
+        },
+        {
+          "id": "runtime:python_code",
+          "required": true
+        }
+      ],
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 12
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Researcher",
+      "to": "Solver",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-2",
+      "from": "Solver",
+      "to": "Verifier",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "relation-3",
+      "from": "Verifier",
+      "to": "Researcher",
+      "control": {
+        "trigger": "completed",
+        "action": "handoff",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    }
+  ],
+  "shared_state": [
+    {
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "writers": [
+        "Researcher",
+        "Solver",
+        "Verifier"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    }
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Verifier",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Solver",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      },
+      {
+        "node": "Researcher",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "Verifier",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
+}

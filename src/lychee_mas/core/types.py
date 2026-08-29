@@ -1,7 +1,7 @@
 """统一图抽象的公共类型（CLAUDE.md §4，所有层共享）。
 
 把整个 MAS 表示为带时序/记忆状态的有向图 G=(V,E,W,T,M)：
-- AgentSpec  = 图节点（智能体画像）
+- AgentSpec  = 历史命名的运行 Node 容器（TeamSpec v14 Node 的编译产物）
 - Message    = 一条通信消息（执行轨迹与记忆抽取的基本单元）
 - Answer     = 候选答案（融合单元）
 - Trajectory = 一次执行 τ（有序 messages + candidates + final_answer）
@@ -25,7 +25,12 @@ def _new_id() -> str:
 
 @dataclass
 class AgentSpec:
-    """图节点 = 智能体画像。`profile` 放专长向量/多样性特征，供 construct 的 AgentInit 用。"""
+    """历史命名的编译后运行 Node 容器。
+
+    TeamSpec v14 中只有 ``kind=model_agent`` 的 Node 可以近似称为
+    LLM agent；工具执行器等可执行 Node 也会暂存在这个历史类型中。
+    ``profile`` 保留专长向量/多样性特征，供 construct 的 AgentInit 使用。
+    """
 
     id: str = field(default_factory=_new_id)
     name: str = ""

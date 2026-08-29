@@ -1,62 +1,201 @@
 {
-  "schema_version": 4,
+  "schema_version": 14,
   "id": "human_eval",
-  "role_profile": "human_eval",
-  "group_chat": {
-    "type": "round_robin"
+  "metadata": {
+    "name": "human_eval",
+    "description": "",
+    "tags": [],
+    "provenance": {
+      "track": "custom",
+      "evidence_level": "hypothesis",
+      "sources": [],
+      "notes": ""
+    }
   },
-  "termination": {
-    "conditions": [
-      {
-        "type": "text_mention",
-        "text": "TERMINATE",
-        "sources": [
-          "ComputerTerminal"
-        ]
-      }
-    ]
-  },
-  "model_context": {
-    "type": "token_limited"
-  },
-  "controller_model_context": {
-    "type": "token_limited"
-  },
-  "participants": [
+  "nodes": [
     {
       "id": "Coder",
       "name": "Coder",
-      "agent_type": "coder",
-      "system_prompt": "",
-      "description": "Writes and revises code for the programming task.",
+      "kind": "model_agent",
+      "behavior": {
+        "type": "code_author",
+        "options": {}
+      },
+      "purpose": "Writes and revises code for the programming task.",
+      "instructions": "",
+      "capabilities": [
+        "reason",
+        "write_code",
+        "edit_files"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {}
+      "context": {
+        "type": "token_limited"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
     },
     {
       "id": "ComputerTerminal",
       "name": "ComputerTerminal",
-      "agent_type": "computer_terminal",
-      "system_prompt": "",
-      "description": "Executes code produced by Coder in the sandbox.",
+      "kind": "tool_executor",
+      "behavior": {
+        "type": "code_executor",
+        "options": {}
+      },
+      "purpose": "Executes code produced by Coder in the sandbox.",
+      "instructions": "",
+      "capabilities": [
+        "execute_code"
+      ],
+      "operations": [],
       "tools": [],
-      "model_id": null,
-      "meta": {
-        "sources": [
-          "Coder"
+      "context": {
+        "type": "unbounded"
+      },
+      "limits": {
+        "max_tool_iterations": 1
+      }
+    }
+  ],
+  "relations": [
+    {
+      "id": "relation-1",
+      "from": "Coder",
+      "to": "ComputerTerminal",
+      "control": {
+        "trigger": "completed",
+        "action": "activate",
+        "condition": null,
+        "priority": 0,
+        "on_failure": "fail_trial",
+        "max_uses": null
+      },
+      "data": {
+        "transfers": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.SharedConversation",
+            "target": "messages",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          },
+          {
+            "source": "shared.TrialWorkspace",
+            "target": "state",
+            "required": false,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
         ]
       }
     }
   ],
-  "extensions": {},
-  "inference_slots": [
+  "shared_state": [
     {
-      "id": "Coder",
-      "kind": "participant",
-      "participant_id": "Coder",
-      "required_capabilities": [
-        "text_generation"
-      ]
+      "id": "SharedConversation",
+      "kind": "message_channel",
+      "description": "Trial-scoped shared conversation used by the team.",
+      "readers": [
+        "Coder",
+        "ComputerTerminal"
+      ],
+      "writers": [
+        "Coder",
+        "ComputerTerminal"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": [],
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
+    },
+    {
+      "id": "TrialWorkspace",
+      "kind": "artifact_store",
+      "description": "Trial-scoped shared state, files, and structured artifacts.",
+      "readers": [
+        "Coder",
+        "ComputerTerminal"
+      ],
+      "writers": [
+        "Coder",
+        "ComputerTerminal"
+      ],
+      "update": "append",
+      "lifetime": "trial",
+      "initial": {},
+      "schema": {},
+      "retention": {
+        "max_items": null,
+        "max_tokens": null,
+        "overflow": "drop_oldest"
+      }
     }
-  ]
+  ],
+  "lifecycle": {
+    "entry": [
+      {
+        "node": "Coder",
+        "inputs": [
+          {
+            "source": "trial.task",
+            "target": "task",
+            "required": true,
+            "view": "all",
+            "latest_n": null,
+            "filter": null,
+            "transform": null,
+            "schema": {}
+          }
+        ]
+      }
+    ],
+    "result": {
+      "submissions": [
+        {
+          "from": "ComputerTerminal",
+          "source": "source.output",
+          "key": "final_answer"
+        }
+      ],
+      "mode": "first_valid",
+      "schema": {}
+    },
+    "termination": {
+      "condition": "result_submitted"
+    },
+    "failure": {
+      "unhandled": "fail_trial",
+      "deadlock": "fail_trial"
+    },
+    "limits": {
+      "max_turns": null,
+      "max_node_calls": null,
+      "max_stalls": null,
+      "timeout_seconds": null
+    }
+  }
 }

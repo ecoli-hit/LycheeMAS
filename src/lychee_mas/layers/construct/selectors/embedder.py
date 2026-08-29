@@ -9,6 +9,7 @@ pool 模式不用它（那里用 `pool._hash_embed` 的确定性替身）；测�
 from __future__ import annotations
 
 import os
+from typing import Any
 
 
 class HFEmbedder:
@@ -55,14 +56,18 @@ class HFEmbedder:
         if isinstance(sentences, str):
             sentences = [sentences]
 
-        out = []
+        out: list[Any] = []
+        tokenizer = HFEmbedder._tokenizer
+        model = HFEmbedder._model
+        if tokenizer is None or model is None:
+            raise RuntimeError("embedding model failed to initialize")
         for i in range(0, len(sentences), batch_size):
             batch = sentences[i:i + batch_size]
-            enc = HFEmbedder._tokenizer(
+            enc = tokenizer(
                 batch, padding=True, truncation=True, return_tensors="pt"
             ).to(HFEmbedder._device)
             with torch.no_grad():
-                model_output = HFEmbedder._model(**enc)
+                model_output = model(**enc)
             emb = self._mean_pooling(model_output, enc["attention_mask"])
             emb = F.normalize(emb, p=2, dim=1)
             out.append(emb.cpu().numpy())

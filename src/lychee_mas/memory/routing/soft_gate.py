@@ -1,7 +1,7 @@
 """软门控 —— MoE 式的通道混合权重（论文主菜）。
 
 TODO：产出连续门控权重 g = softmax(W·features)，在 {none,nl,latent,both} 上分布；
-注入端（runtime/backends/autogen_injection_client.py）按 g 混合通道（缩放 latent prefix 和/或 NL
+注入端（runtime/adapters/frameworks/autogen/client.py）按 g 混合通道（缩放 latent prefix 和/或 NL
 强度）。
 初始化用【反事实蒸馏】，再用 RL 微调（CLAUDE.md §10）。
 目前是占位：委托给 fallback，让框架在门控训练好之前能跑通（维持占位 fallback 行为）。

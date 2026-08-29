@@ -102,7 +102,7 @@ def main() -> None:
         build_projector_stack,
         map_source_to_target_layers,
     )
-    from lychee_mas.runtime.backends.hf_backend import (
+    from lychee_mas.runtime.adapters.inference.hf import (
         HFBackend,
         common_suffix_len,
         make_fusion_cache,

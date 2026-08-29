@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "metric_id": "efficiency.time_to_first_token",
+  "name": "Provider time to first token",
+  "description": "Sum of provider scheduling-to-first-token time over completed model calls in one Trial.",
+  "category": "efficiency",
+  "construct": "model_first_token_responsiveness",
+  "unit": "seconds",
+  "level": "trial",
+  "scope": "model_calls",
+  "required_evidence": ["model_call.time_to_first_token"],
+  "optional_evidence": [],
+  "required_capabilities": ["model_calls"],
+  "applicable_systems": ["provider_metrics_backend"],
+  "known_confounders": ["prefix_cache", "prompt_length", "batching", "concurrency"],
+  "na_policy": {
+    "no_model_calls": "not_applicable",
+    "provider_does_not_expose_ttft": "missing_evidence"
+  },
+  "validation_status": "validated",
+  "evaluator": {
+    "kind": "deterministic",
+    "entrypoint": "efficiency.time_to_first_token"
+  }
+}
