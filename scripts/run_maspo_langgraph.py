@@ -291,6 +291,15 @@ def main() -> None:
         raise SystemExit(f"--lookahead-weights 需形如 4:4:2，得到 {args.lookahead_weights!r}"
                          f"（{exc}）")
 
+    if args.phase in ("optimize", "both"):
+        # 快速失败：评估/反思端点缺配置就别等 8B 模型加载完才报错
+        if not os.environ.get(args.evaluator_api_key_env):
+            raise SystemExit(f"phase={args.phase} 需要评估端 API key：请设环境变量 "
+                             f"{args.evaluator_api_key_env}（gemini-2.5-pro 端点）")
+        if not args.evaluator_base_url:
+            raise SystemExit("phase 含 optimize 需要 --evaluator-base-url "
+                             "或环境变量 EVALUATOR_BASE_URL（OpenAI 兼容端点）")
+
     records = load_benchmark(args.task, n=None)
     eval_records = records[: args.eval_n] if args.eval_n else records
     chat = HFChat(args.model_path, device=args.device, dtype=args.dtype)
