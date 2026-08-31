@@ -186,7 +186,7 @@ def make_evaluator_llm(args: argparse.Namespace, stats: Stats):
     def call(prompt: str) -> str:
         g = backend.generate_chat([{"role": "user", "content": prompt}],
                                   max_new_tokens=args.evaluator_max_tokens)
-        stats.add(g.prompt_tokens, g.completion_tokens, g.latency_s)
+        stats.add(g.n_prompt_pos, g.n_gen_tokens, g.latency_s)  # APIGenResult 字段名
         return g.text
 
     async def evaluator_llm(prompt: str) -> str:
