@@ -45,8 +45,8 @@ TaskQuery ──► 构建器（construct）──► 运行前插件链（PreRu
 ### 3.1 `core/` — 类型与注册表
 
 - **`core/types.py`**（纯 dataclass，零重依赖）：`AgentSpec`（图节点画像）、`Message`（一条通信，`.tokens`）、`Answer`（候选答案）、`Trajectory`（一次执行 τ，`.total_tokens/.num_rounds`）、`TaskQuery`（含 `gold`）、`Budget/BudgetUnit`。
-- **`core/registry.py`**：`@REGISTRY.register(category, name)` 注册、`REGISTRY.create(category, name, **kwargs)` 实例化、`REGISTRY.snapshot()` 全景。**CATEGORIES（17 个）**：
-  `runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, processor, attributor, credit_assigner, trainer, benchmark, pre_run_plugin, post_run_plugin, optimizer`。
+- **`core/registry.py`**：`@REGISTRY.register(category, name)` 注册、`REGISTRY.create(category, name, **kwargs)` 实例化、`REGISTRY.snapshot()` 全景。**CATEGORIES（18 个）**：
+  `runtime, model_client, agent_selector, topology_generator, graph_pruner, vocab_adapter, memory_manager, memory_router, aggregator, processor, attributor, credit_assigner, trainer, benchmark, pre_run_plugin, post_run_plugin, optimizer, pre_run_optimizer`。
 
 ### 3.2 `runtime/` — 运行时抽象与后端
 
@@ -152,13 +152,14 @@ class Optimizer(Protocol):              # 注册类别 optimizer（离线 compil
 - **挂载**：Orchestrator 接受 `pre_plugins` / `post_plugins` 名单，按序执行；`before_run` 返回值必须是 MASGraph，否则显式报错。不配置插件时行为与无插件完全一致。
 - **适配器**（`plugins/adapters.py`）：`pre_run_plugin/prune` 包装任意已注册 `graph_pruner`；`post_run_plugin/attribution` 串 attributor + credit_assigner，把结果写 `trajectory.meta` 与 TraceStore。
 - **MASProgram**（`plugins/program.py`）：把一个 MAS 系统表示为「可变异文本组件」的集合（`components: dict[str, str]`，键如 `agent:<name>:system_prompt`；`from_graph / apply_to / mutated`）。这是 Optimizer 的操作对象。
+- **lg_prerun**（`plugins/lg_prerun/`，注册类别 `pre_run_optimizer`）：LangGraph 原生「运行前优化」统一接口——`optimize_langgraph(sg, method, **kw)` 按 `method` 分发，**图进图出**（传入/返回未编译 StateGraph）。节点契约：`add_node(name, fn, metadata={"agent_spec": spec})`，`spec.system_prompt`=可变异提示模板、`spec.meta["predecessors"]`=通信前驱（`graphview.py` 是读写唯一通道）。已接：`maspo`（MASPO 联合提示优化，ICML 2026：多粒度成对评估 + 错位驱动采样 + 进化 beam search，fixed-rounds 坐标上升；optimize 落 prompt JSON / apply 即插即用挂载）、`agentprune`（复用 graph_pruner/agentprune 的 threshold 实现剪 LangGraph 边）。与 `pre_run_plugin`（MASGraph 接缝）并存；langgraph 在该包内惰性导入，selfcheck 不破。
 - **GEPA**（`plugins/gepa/`，注册 `optimizer/gepa`）：反思式提示演化——候选池（program + per-instance 分数向量）→ Pareto 采样母本 → 轮换选一个可变组件 → minibatch rollout 收轨迹与反馈 → LLM 反思产出新组件文本 → minibatch 提升才全量评估入池 → 预算（`max_metric_calls`）耗尽返回最优。Pareto 选择为纯函数（`gepa/pareto.py`，离线可测）；rollout 与 reflector 可注入。
 
 ---
 
 ## 6. 评测体系（`eval/`）
 
-- **benchmark（19 个注册名）**：文本推理/知识 `gsm8k, aime_2024, medqa, arc_easy, openbookqa, locomo10`；代码/通用助理 `human_eval, gaia_validation(_level_1..3)`；MAS 轨迹分析 `aftraj_audit(_test), agent_collab_{idr,rtd,cpr,clc}, mast_failure, open_agent_traces`。统一记录格式 `{task, kind, question, gold, context}`；数据加载惰性，数据准备走 `[benchmark]` extra；入口 `benchmarks.load(task, n)` / `prepare(task)`。
+- **benchmark（20 个注册名）**：文本推理/知识 `gsm8k, aime_2024, math500, medqa, arc_easy, openbookqa, locomo10`；代码/通用助理 `human_eval, gaia_validation(_level_1..3)`；MAS 轨迹分析 `aftraj_audit(_test), agent_collab_{idr,rtd,cpr,clc}, mast_failure, open_agent_traces`。统一记录格式 `{task, kind, question, gold, context}`；数据加载惰性，数据准备走 `[benchmark]` extra；入口 `benchmarks.load(task, n)` / `prepare(task)`。
 - **推理 / 打分分离**：`scripts/run_mas.py` 只推理（落 `predictions.jsonl` + `spans.jsonl` + config 快照）；`scripts/analyze_benchmark_run.py --score-predictions` 事后打分（落 `outputs.jsonl` + `metrics.json`）。
 - **pass@K**：`run_mas --samples K` 每题采样 K 次（K>1 需 `backend.do_sample=true`；断点续跑按 `(case_id, k_index)` 去重）；打分侧 `metrics.aggregate_samples` 按 case 聚合——pass@1 = 各 case 内 K 份得分均值再对 case 平均；pass@K = 各 case best-of-K 再平均。
 - **指标**：评分类型（`kind`）覆盖 mc / exact / aime（数值+符号等价）/ f1 / human_eval / gaia / MAS 专用指标族；评测同时报告 accuracy / token / latency。
@@ -166,7 +167,7 @@ class Optimizer(Protocol):              # 注册类别 optimizer（离线 compil
 
 ---
 
-## 7. 组件注册全景（17 类别）
+## 7. 组件注册全景（18 类别）
 
 | 类别 | 已实现/可跑 | 桩（待接） |
 |---|---|---|
@@ -182,9 +183,10 @@ class Optimizer(Protocol):              # 注册类别 optimizer（离线 compil
 | `aggregator` | `self_consistency` | `dynamicagg` |
 | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |
 | `credit_assigner` | — | `attribution_guided` |
-| `trainer` | — | `maspo` |
-| `benchmark` | 19 个（§6） | — |
+| `trainer` | — | —（RL 训练器待接；MASPO 按其本义迁至 `pre_run_optimizer/maspo`） |
+| `benchmark` | 20 个（§6） | — |
 | `pre_run_plugin` | `prune`（适配器） | — |
+| `pre_run_optimizer` | `maspo`（MASPO 联合提示优化，ICML 2026）, `agentprune`（统一接口适配） | — |
 | `post_run_plugin` | `attribution`（适配器） | — |
 | `optimizer` | `gepa` | — |
 

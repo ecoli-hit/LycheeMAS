@@ -122,14 +122,15 @@ make lint     # ruff check src
 
 ## 支持的 Benchmarks
 
-内置 **19 个**基准（`eval/benchmarks/`，均注册为 `benchmark/<name>`，数据加载惰性；数据准备与重依赖走 `[benchmark]` extra）：
+内置 **20 个**基准（`eval/benchmarks/`，均注册为 `benchmark/<name>`，数据加载惰性；数据准备与重依赖走 `[benchmark]` extra）：
 
-**文本推理 / 知识问答（6）**
+**文本推理 / 知识问答（7）**
 
 | 注册名 | 任务 | 评分 |
 | --- | --- | --- |
 | `gsm8k` | 小学数学应用题 | exact |
 | `aime_2024` | AIME 竞赛数学 | 数值 + 符号等价 |
+| `math500` | MATH-500 竞赛数学（MASPO 主实验数据集） | 数值 + 符号等价 |
 | `medqa` | 医学选择题 | mc |
 | `arc_easy` | 科学常识选择题 | mc |
 | `openbookqa` | 开放课本科学选择题 | mc |
@@ -167,11 +168,12 @@ src/lychee_mas/
 ├── runtime/     Runtime 协议 + 共享注入引擎（injection.py）+ 后端（mock / autogen / langgraph / HF / API）
 ├── memory/      记忆层（运行时组件）：channels / managers / routing + store / context
 ├── plugins/     插件系统：pre_run / post_run 插件 + optimizer（GEPA）+ MASProgram
+│                + lg_prerun（LangGraph 原生运行前优化：MASPO / AgentPrune 统一接口）
 ├── trace/       归因/信用（读侧）：attributor + credit_assigner + TraceStore
 ├── train/       训练（写侧）：RL 训练（trainer）
 ├── layers/      层变换（construct / prune / processing{parallel,serial}）
 ├── pipeline.py  Orchestrator.run（端到端编排 + 插件链，按 config 从 REGISTRY 取组件）
-└── eval/        benchmarks（19 个）+ metrics（评分/落盘/pass@K）+ task_config
+└── eval/        benchmarks（20 个）+ metrics（评分/落盘/pass@K）+ task_config
 configs/         YAML 配置（按组件分组，含 plugins/）
 examples/        可运行示例（离线 mock 优先）
 scripts/         实验入口（run_mas / analyze_benchmark_run / run_experiment）
