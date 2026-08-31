@@ -12,6 +12,7 @@ from __future__ import annotations
 from . import adapters  # noqa: F401  触发 pre_run_plugin/prune + post_run_plugin/attribution 注册
 from .base import Metric, Optimizer, PostRunPlugin, PreRunPlugin, RunContext
 from .gepa import GEPAOptimizer  # noqa: F401  触发 optimizer/gepa 注册
+from .lg_prerun import optimize_langgraph  # noqa: F401  触发 pre_run_optimizer/* 注册
 from .program import MASProgram
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "Metric",
     "MASProgram",
     "GEPAOptimizer",
+    "optimize_langgraph",
 ]

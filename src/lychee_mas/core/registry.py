@@ -19,6 +19,7 @@ CATEGORIES = (
     "attributor", "credit_assigner", "trainer",
     "benchmark",
     "pre_run_plugin", "post_run_plugin", "optimizer",
+    "pre_run_optimizer",
 )
 
 
