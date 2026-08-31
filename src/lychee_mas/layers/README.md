@@ -33,9 +33,10 @@ class VocabAdapter(Protocol):         # 类别 vocab_adapter
     def adapt(self, agent: Any, context: Any = None) -> Any: ...
 ```
 
-- `pruners/`：`agentdropout` / `agentdropout_v2` / `agentprune`（桩，`NotImplementedError`）。
+- `pruners/agentprune.py`：**已实现** `graph_pruner/agentprune`——AgentPrune（ICLR 2025）时空掩码剪枝：逐边可训练 logit、伯努利采样实现图（`sample_realization`）、REINFORCE 更新（`reinforce`）、one-shot 剪枝（`update_masks`）、状态持久化（`save/load`）；`prune(graph)` 产 threshold 实现图（edges + `meta["agentprune"]` 矩阵）。纯标准库。复现实验：`scripts/run_agentprune_gsm8k.py`。
+- `pruners/`：`agentdropout` / `agentdropout_v2`（桩，`NotImplementedError`）。
 - `vocab/`：`agentvocab`（桩）。
-- 挂载方式：`Orchestrator(pre_plugins=[("prune", {"pruner": "<name>"})])`（见 `plugins/README.md`）。
+- 挂载方式：`Orchestrator(pre_plugins=[("prune", {"pruner": "<name>", ...})])`（见 `plugins/README.md`）。
 
 ## `processing/` — 处理层（运行时组件）
 

@@ -103,7 +103,7 @@ class Runtime(Protocol):
 
 ### 4.2 prune（经运行前插件挂载，`layers/prune/`）
 
-回答「哪些边/词表可裁掉以降本」。协议：`GraphPruner.prune(graph, context)`；`VocabAdapter.adapt(agent, context)`。经 `pre_run_plugin/prune` 适配器进入执行流程。
+回答「哪些边/词表可裁掉以降本」。协议：`GraphPruner.prune(graph, context)`；`VocabAdapter.adapt(agent, context)`。经 `pre_run_plugin/prune` 适配器进入执行流程。已实现 `graph_pruner/agentprune`（AgentPrune 时空掩码剪枝：逐边可训练 logit + 伯努利采样 + REINFORCE + one-shot 剪枝，纯标准库；训练/复现脚本 `scripts/run_agentprune_gsm8k.py`）。
 
 ### 4.3 memory（运行时组件，`memory/`）
 
@@ -174,7 +174,7 @@ class Optimizer(Protocol):              # 注册类别 optimizer（离线 compil
 | `model_client` | `injection` | `vllm` |
 | `agent_selector` | `agentinit` | — |
 | `topology_generator` | `static` | — |
-| `graph_pruner` | — | `agentdropout`, `agentdropout_v2`, `agentprune` |
+| `graph_pruner` | `agentprune`（AgentPrune 时空掩码，ICLR 2025） | `agentdropout`, `agentdropout_v2` |
 | `vocab_adapter` | — | `agentvocab` |
 | `memory_manager` | `cdm` | `mem0`, `ama` |
 | `memory_router` | `static`, `fixed` | `learned`, `soft_gate` |
