@@ -48,6 +48,7 @@ from .human_eval import load_human_eval
 from .locomo10 import load_locomo10, prepare_locomo10
 from .mast_data import ensure_source as ensure_mast_source
 from .mast_data import load_mast_failure
+from .math500 import load_math500, prepare_math500
 from .open_agent_traces import ensure_source as ensure_open_agent_traces_source
 from .open_agent_traces import load_open_agent_traces
 
@@ -55,7 +56,7 @@ RAW = raw_root()
 PREPARED = prepared_root()
 PROCESSED = processed_root()
 
-REASONING_POLE = ("gsm8k", "aime_2024")
+REASONING_POLE = ("gsm8k", "aime_2024", "math500")
 FACT_POLE = ("medqa", "openbookqa", "arc_easy")
 MEMORY_TASKS = ("locomo10",)
 CODE_TASKS = ("human_eval",)
@@ -81,6 +82,7 @@ MAS_COLLAB_TASKS = (
 FULL_PREPARE_TARGETS = (
     "gsm8k",
     "aime_2024",
+    "math500",
     "arc_easy",
     "openbookqa",
     "medqa",
@@ -106,6 +108,13 @@ BENCHMARK_STRUCTURE = [
         "full_prepare_target": "aime_2024",
         "prepare_targets": ["aime_2024"],
         "runnable_tasks": ["aime_2024"],
+        "kinds": ["aime"],
+    },
+    {
+        "benchmark_source": "MATH-500",
+        "full_prepare_target": "math500",
+        "prepare_targets": ["math500"],
+        "runnable_tasks": ["math500"],
         "kinds": ["aime"],
     },
     {
@@ -214,6 +223,9 @@ BENCHMARK_MAPPINGS = {
     ],
     "AIME 2024": [
         {"prepare_target": "aime_2024", "runnable_tasks": ["aime_2024"], "kinds": ["aime"]},
+    ],
+    "MATH-500": [
+        {"prepare_target": "math500", "runnable_tasks": ["math500"], "kinds": ["aime"]},
     ],
     "ARC-Easy": [
         {"prepare_target": "arc_easy", "runnable_tasks": ["arc_easy"], "kinds": ["mc"]},
@@ -369,6 +381,7 @@ def prepare_open_agent_traces(force: bool = False, source: Optional[str] = None)
 SOURCE_PREPARERS: dict[str, Callable[[bool, Optional[str]], str]] = {
     "gsm8k": prepare_gsm8k,
     "aime_2024": prepare_aime_2024,
+    "math500": prepare_math500,
     "arc_easy": prepare_arc_easy,
     "openbookqa": prepare_openbookqa,
     "medqa": prepare_medqa,
@@ -412,6 +425,7 @@ def prepare(task: str, force: bool = False, source: Optional[str] = None) -> str
 LOADERS = {
     "gsm8k": load_gsm8k,
     "aime_2024": load_aime_2024,
+    "math500": load_math500,
     "arc_easy": load_arc_easy,
     "openbookqa": load_openbookqa,
     "medqa": load_medqa,
