@@ -70,6 +70,25 @@ class AgentOptState:
         node = {"prompt": prompt, "cumulative_score": 0.0, "path": [prompt]}
         return cls(name=name, current_beam=[node], best_overall_node=dict(node))
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {"name": self.name, "current_beam": self.current_beam,
+                "best_overall_node": self.best_overall_node,
+                "total_layers_explored": self.total_layers_explored,
+                "recent_bad_cases": self.recent_bad_cases,
+                "misleading_cases": self.misleading_cases,
+                "misalignment_rates_per_depth": self.misalignment_rates_per_depth,
+                "beam_refresh_kendall_scores": self.beam_refresh_kendall_scores}
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "AgentOptState":
+        return cls(name=d["name"], current_beam=list(d["current_beam"]),
+                   best_overall_node=dict(d["best_overall_node"]),
+                   total_layers_explored=int(d["total_layers_explored"]),
+                   recent_bad_cases=list(d["recent_bad_cases"]),
+                   misleading_cases=list(d["misleading_cases"]),
+                   misalignment_rates_per_depth=list(d["misalignment_rates_per_depth"]),
+                   beam_refresh_kendall_scores=list(d["beam_refresh_kendall_scores"]))
+
 
 def _limited(llm: AsyncLLM, sem: asyncio.Semaphore) -> AsyncLLM:
     async def call(prompt: str) -> str:
@@ -130,6 +149,7 @@ class MASPOOptimizer:
         self.use_lookahead_score = bool(use_lookahead_score)
         self.use_misleading_sampling = bool(use_misleading_sampling)
         self.use_feedback = bool(use_feedback)
+        self.seed = int(seed)
         self.rng = random.Random(seed)
         self.verbose = bool(verbose)
         # 运行产物（脚本读取用）
@@ -543,10 +563,49 @@ class MASPOOptimizer:
             self.evaluator_llm = None
             self.proposer_llm = None
 
+    def _ckpt_path(self) -> Optional[str]:
+        if not self.prompt_file:
+            return None
+        stem, _ext = os.path.splitext(self.prompt_file)
+        return stem + "_ckpt.json"
+
+    def _load_or_seed_states(self, view: Any) -> Dict[str, AgentOptState]:
+        """有 checkpoint（上次中断的现场）则恢复，否则播种。
+
+        注意：恢复点之后的采样序列与一次性跑完不逐位一致（RNG 状态不落盘），方法语义不变。
+        节点名与 checkpoint 不符时显式报错（删除 *_ckpt.json 可重新开始）。
+        """
+        path = self._ckpt_path()
+        if not path or not os.path.isfile(path):
+            return {name: AgentOptState.seeded(name, view.specs[name].system_prompt)
+                    for name in view.names}
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if sorted(data.get("states", {})) != sorted(view.names):
+            raise ValueError(
+                f"{path}: checkpoint 的节点集与当前图不符"
+                f"（{sorted(data.get('states', {}))} vs {sorted(view.names)}）；"
+                "若是过期现场请删除该文件后重跑")
+        states = {n: AgentOptState.from_dict(d) for n, d in data["states"].items()}
+        done = {n: s.total_layers_explored for n, s in states.items()}
+        self._log(f"  [maspo] 从 checkpoint 恢复：{path}（各 agent 已探索层数 {done}）")
+        return states
+
+    def _save_ckpt(self, states: Dict[str, AgentOptState]) -> None:
+        path = self._ckpt_path()
+        if not path:
+            return
+        payload = {"states": {n: s.to_dict() for n, s in states.items()},
+                   "meta": {"max_total_depth": self.max_total_depth,
+                            "trainset_size": len(self.trainset), "seed": self.seed}}
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, path)
+
     async def _optimize_all_fixed_rounds(self, view: Any
                                          ) -> Tuple[Dict[str, str], Dict[str, Any]]:
-        states = {name: AgentOptState.seeded(name, view.specs[name].system_prompt)
-                  for name in view.names}
+        states = self._load_or_seed_states(view)
         while any(s.total_layers_explored < self.max_total_depth for s in states.values()):
             for name in view.names:  # 拓扑序坐标上升（原版 topo_order 轮转）
                 state = states[name]
@@ -555,6 +614,10 @@ class MASPOOptimizer:
                     continue
                 await self._optimize_agent_turn(view, state, states,
                                                 min(self.rounds_per_turn, remaining))
+                self._save_ckpt(states)  # 每个 agent 轮次落盘：外部故障可断点续跑
+        ckpt = self._ckpt_path()
+        if ckpt and os.path.isfile(ckpt):
+            os.remove(ckpt)  # 正常完成：现场文件功成身退
         prompt_map = {name: states[name].best_overall_node["prompt"] for name in view.names}
         statistics = {
             "misalignment_rates": {

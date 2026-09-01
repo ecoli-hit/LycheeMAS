@@ -187,10 +187,21 @@ def make_evaluator_llm(args: argparse.Namespace, stats: Stats, temperature: floa
         temperature=temperature)
 
     def call(prompt: str) -> str:
-        g = backend.generate_chat([{"role": "user", "content": prompt}],
-                                  max_new_tokens=args.evaluator_max_tokens)
-        stats.add(g.n_prompt_pos, g.n_gen_tokens, g.latency_s)  # APIGenResult 字段名
-        return g.text
+        # 原版 utils.async_retry 同款语义：5 次指数退避；额度类错误重试也救不了，
+        # 最终如实上抛（断点续跑靠 optimizer 的 checkpoint）
+        delay = 0.5
+        for attempt in range(5):
+            try:
+                g = backend.generate_chat([{"role": "user", "content": prompt}],
+                                          max_new_tokens=args.evaluator_max_tokens)
+                stats.add(g.n_prompt_pos, g.n_gen_tokens, g.latency_s)
+                return g.text
+            except Exception:
+                if attempt == 4:
+                    raise
+                time.sleep(min(30.0, delay))
+                delay *= 2
+        raise RuntimeError("unreachable")
 
     async def evaluator_llm(prompt: str) -> str:
         return await asyncio.to_thread(call, prompt)

@@ -105,7 +105,7 @@ def test_extract_view_rejects_branches_and_multi_terminal():
         spec = AgentSpec(name=name, role="predictor", system_prompt="P {question}")
         sg2.add_node(name, make_node(spec, []), metadata={"agent_spec": spec})
     sg2.add_edge(START, "a")
-    sg2.add_edge(a := "a", END)
+    sg2.add_edge("a", END)
     sg2.add_edge("b", END)
     with pytest.raises(ValueError, match="终端"):
         extract_view(sg2)

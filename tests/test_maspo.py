@@ -227,7 +227,7 @@ def test_evaluate_candidate_all_losses_and_bad_cases():
 def test_evaluate_candidate_misalignment_local_win_global_lose():
     # 注意：本脚本无法区分 local 与 next_local（同模板），故两者同赢；只输 global
     info = eval_candidate("A", "B", "A")
-    w_l, w_n, w_g = (0.4, 0.4, 0.2)
+    w_l, w_n, _w_g = (0.4, 0.4, 0.2)
     assert info["score"] == pytest.approx(w_l + w_n - 0.5)
     assert info["misalignment_rate"] == 1.0  # Local-Win / Global-Lose
     assert len(info["misleading_cases"]) == 2  # priority=2（global lose）
@@ -347,3 +347,50 @@ def test_proposer_llm_defaults_to_evaluator():
     opt = make_opt(ScriptedAgentLLM(), evaluator)  # 不传 proposer_llm
     prompt_map, _ = asyncio.run(opt._optimize_with_limits(view))
     assert prompt_map["predictor"].startswith("Improved.")  # 回退 evaluator 承担提议
+
+
+def test_checkpoint_resume_after_crash(tmp_path):
+    """外部故障中断后从 checkpoint 恢复：已探索层数保留，完成后现场文件删除。"""
+    import os
+    view = make_view()
+    pf = str(tmp_path / "p.json")
+
+    class FlakyEvaluator(ScriptedEvaluatorLLM):
+        def __init__(self, die_after):
+            super().__init__()
+            self.die_after = die_after
+
+        async def __call__(self, prompt):
+            if len(self.calls) >= self.die_after:
+                raise RuntimeError("simulated quota error")
+            return await super().__call__(prompt)
+
+    # 第一段：predictor 跑完 1 层后（rounds_per_turn=1）评估端开始报错 → 中断
+    flaky = FlakyEvaluator(die_after=8)
+    opt = make_opt(ScriptedAgentLLM(), flaky, prompt_file=pf,
+                   max_total_depth=2, rounds_per_turn=1)
+    with pytest.raises(RuntimeError, match="simulated"):
+        asyncio.run(opt._optimize_with_limits(view))
+    ckpt = str(tmp_path / "p_ckpt.json")
+    assert os.path.isfile(ckpt)  # 至少一个 agent 轮次已落盘
+    saved = json.load(open(ckpt))
+    assert saved["states"]["predictor"]["total_layers_explored"] >= 1
+
+    # 第二段：新实例 + 正常评估端 → 从现场恢复并跑完，checkpoint 删除
+    opt2 = make_opt(ScriptedAgentLLM(), ScriptedEvaluatorLLM(), prompt_file=pf,
+                    max_total_depth=2, rounds_per_turn=1)
+    prompt_map, _ = asyncio.run(opt2._optimize_with_limits(view))
+    assert set(prompt_map) == {"predictor", "reflector"}
+    assert not os.path.isfile(ckpt)
+
+
+def test_checkpoint_node_mismatch_raises(tmp_path):
+    import os
+    pf = str(tmp_path / "p.json")
+    ckpt = str(tmp_path / "p_ckpt.json")
+    with open(ckpt, "w") as f:
+        json.dump({"states": {"ghost": {}}}, f)
+    opt = make_opt(ScriptedAgentLLM(), ScriptedEvaluatorLLM(), prompt_file=pf)
+    with pytest.raises(ValueError, match="不符"):
+        asyncio.run(opt._optimize_with_limits(make_view()))
+    os.remove(ckpt)
