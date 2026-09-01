@@ -156,6 +156,7 @@ def run_with_limits(opt: MASPOOptimizer, coro_factory):
 
         opt.agent_llm = _limited(opt._raw_agent_llm, sem)
         opt.evaluator_llm = _limited(opt._raw_evaluator_llm, sem)
+        opt.proposer_llm = _limited(opt._raw_proposer_llm or opt._raw_evaluator_llm, sem)
         return await coro_factory()
 
     return asyncio.run(runner())
@@ -317,3 +318,32 @@ def test_apply_without_prompt_file_raises():
 def test_registered():
     assert "maspo" in REGISTRY.list("pre_run_optimizer")
     assert "agentprune" in REGISTRY.list("pre_run_optimizer")
+
+
+def test_proposer_llm_receives_proposals_evaluator_receives_comparisons():
+    """反思提议走 proposer_llm（原版 temp 0.7 分工），三路比较走 evaluator_llm。"""
+    view = make_view()
+    proposer_calls, evaluator_calls = [], []
+
+    async def proposer(prompt):
+        proposer_calls.append(prompt)
+        return "<prompt>P-NEW.\nQuestion: {question}\nContext: {context}</prompt>"
+
+    async def evaluator(prompt):
+        evaluator_calls.append(prompt)
+        return "A"
+
+    opt = make_opt(ScriptedAgentLLM(), evaluator, proposer_llm=proposer)
+    prompt_map, _stats = asyncio.run(opt._optimize_with_limits(view))
+    assert prompt_map["predictor"].startswith("P-NEW.")
+    assert all("optimizing a prompt" in c for c in proposer_calls)  # 提议全走 proposer
+    assert not any("optimizing a prompt" in c for c in evaluator_calls)  # 比较端无提议请求
+    assert proposer_calls and evaluator_calls
+
+
+def test_proposer_llm_defaults_to_evaluator():
+    view = make_view()
+    evaluator = ScriptedEvaluatorLLM()
+    opt = make_opt(ScriptedAgentLLM(), evaluator)  # 不传 proposer_llm
+    prompt_map, _ = asyncio.run(opt._optimize_with_limits(view))
+    assert prompt_map["predictor"].startswith("Improved.")  # 回退 evaluator 承担提议

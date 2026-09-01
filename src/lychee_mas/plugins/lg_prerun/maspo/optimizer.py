@@ -16,8 +16,9 @@ fixed-rounds 主线，与 run_maspo.py 的 `--optimize --fixed-rounds --beam-ref
   max_total_depth=9）；Beam Refresh 在重访 agent 时按队友新提示重打 beam 分并可切换锚点。
 
 与原版的声明差异（不影响方法语义）：
-1. LLM 经注入的 async 回调触达（agent_llm=执行端 / evaluator_llm=评估反思端），非原版
-   写死的 API 端点；2. 系统表示为 GraphView（自 StateGraph 元数据提取），产物 prompt_map
+1. LLM 经注入的 async 回调触达（agent_llm=执行端 / evaluator_llm=比较端 /
+   proposer_llm=反思提议端，对应原版比较 temperature=0、提议 temperature=0.7 的分工），
+   非原版写死的 API 端点；2. 系统表示为 GraphView（自 StateGraph 元数据提取），产物 prompt_map
    以**节点名**为键（原版为下标）；3. 采样用实例内 seeded RNG（原版全局 random，不可复现）；
 4. round-robin 调度与 dynamic-switching / stochastic-sampling 开关未移植（论文主实验未用）。
 
@@ -92,6 +93,7 @@ class MASPOOptimizer:
                  trainset: Optional[Sequence[str]] = None,
                  agent_llm: Optional[AsyncLLM] = None,
                  evaluator_llm: Optional[AsyncLLM] = None,
+                 proposer_llm: Optional[AsyncLLM] = None,
                  requirement: str = OPTIMIZATION_REQUIREMENT,
                  max_total_depth: int = 9, rounds_per_turn: int = 3, beam_width: int = 2,
                  eval_batch: int = 10, misleading_max: int = 5,
@@ -108,8 +110,12 @@ class MASPOOptimizer:
         # 原始回调；并发限流包装在每次 optimize 的事件循环内做（Semaphore 不能跨 loop 复用）
         self._raw_agent_llm = agent_llm
         self._raw_evaluator_llm = evaluator_llm
+        # 反思提议端与比较端分离：原版 _propose_new_prompt 用 temperature=0.7（探索），
+        # 三路比较用 0.0；不传 proposer_llm 时回退 evaluator_llm
+        self._raw_proposer_llm = proposer_llm
         self.agent_llm: Optional[AsyncLLM] = None
         self.evaluator_llm: Optional[AsyncLLM] = None
+        self.proposer_llm: Optional[AsyncLLM] = None
         self.requirement = requirement
         self.max_total_depth = int(max_total_depth)
         self.rounds_per_turn = int(rounds_per_turn)
@@ -230,7 +236,7 @@ class MASPOOptimizer:
         prompt = PROMPT_OPTIMIZE_TEMPLATE.format(
             agent_type=role, role_description=role_description(role),
             requirements=full_requirement, prompt=old_p, samples=samples_block)
-        raw = await self.evaluator_llm(prompt)
+        raw = await self.proposer_llm(prompt)
         new_p = extract_prompt_tag(raw)
         if new_p is None:
             self._log("  [maspo] 反思输出缺 <prompt> 标签，保留旧提示")
@@ -529,11 +535,13 @@ class MASPOOptimizer:
         sem = asyncio.Semaphore(self.max_concurrency)
         self.agent_llm = _limited(self._raw_agent_llm, sem)
         self.evaluator_llm = _limited(self._raw_evaluator_llm, sem)
+        self.proposer_llm = _limited(self._raw_proposer_llm or self._raw_evaluator_llm, sem)
         try:
             return await self._optimize_all_fixed_rounds(view)
         finally:
             self.agent_llm = None
             self.evaluator_llm = None
+            self.proposer_llm = None
 
     async def _optimize_all_fixed_rounds(self, view: Any
                                          ) -> Tuple[Dict[str, str], Dict[str, Any]]:

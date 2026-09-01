@@ -174,14 +174,17 @@ def make_agent_llm(chat: HFChat, stats: Stats, max_new_tokens: int):
     return agent_llm
 
 
-def make_evaluator_llm(args: argparse.Namespace, stats: Stats):
-    """gemini-2.5-pro 经 OpenAI 兼容端点（复用框架 API 后端；to_thread 提供并发）。"""
+def make_evaluator_llm(args: argparse.Namespace, stats: Stats, temperature: float = 0.0):
+    """gemini-2.5-pro 经 OpenAI 兼容端点（复用框架 API 后端；to_thread 提供并发）。
+
+    temperature：比较端 0.0 / 反思提议端 0.7（原版 _propose_new_prompt 的分工）。
+    """
     from lychee_mas.runtime.backends.openai_api_backend import OpenAICompatibleBackend
 
     backend = OpenAICompatibleBackend(
         args.evaluator_model, base_url=args.evaluator_base_url,
         api_key_env=args.evaluator_api_key_env, timeout=args.evaluator_timeout,
-        temperature=0.0)
+        temperature=temperature)
 
     def call(prompt: str) -> str:
         g = backend.generate_chat([{"role": "user", "content": prompt}],
@@ -267,7 +270,8 @@ def main() -> None:
     ap.add_argument("--model-tag", default=None)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--dtype", default="bfloat16")
-    ap.add_argument("--max-new-tokens", type=int, default=2048)
+    ap.add_argument("--max-new-tokens", type=int, default=4096,
+                    help="执行端生成上限（原版 async_call_llm max_tokens=4096）")
     # 评估/反思 LLM（MASPO 同款 gemini-2.5-pro，OpenAI 兼容端点）
     ap.add_argument("--evaluator-model", default=DEFAULT_EVALUATOR_MODEL)
     ap.add_argument("--evaluator-base-url",
@@ -276,6 +280,8 @@ def main() -> None:
     ap.add_argument("--evaluator-max-tokens", type=int, default=16384,
                     help="原版评估端 max_tokens=16384")
     ap.add_argument("--evaluator-timeout", type=float, default=180.0)
+    ap.add_argument("--proposer-temperature", type=float, default=0.7,
+                    help="反思提议端采样温度（原版 0.7；比较端恒 0.0）")
     ap.add_argument("--max-concurrency", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out-root", default=None)
@@ -324,7 +330,9 @@ def main() -> None:
         optimize_langgraph(
             graph, method="maspo", mode="optimize", trainset=trainset,
             agent_llm=make_agent_llm(chat, agent_stats, args.max_new_tokens),
-            evaluator_llm=make_evaluator_llm(args, eval_stats),
+            evaluator_llm=make_evaluator_llm(args, eval_stats, temperature=0.0),
+            proposer_llm=make_evaluator_llm(args, eval_stats,
+                                            temperature=args.proposer_temperature),
             prompt_file=prompt_file, max_total_depth=args.depth,
             rounds_per_turn=args.rounds_per_turn, beam_width=args.beam_width,
             eval_batch=args.eval_batch, lookahead_weights=tuple(w),
