@@ -99,7 +99,8 @@ class HFChat:
             model_path, torch_dtype=getattr(torch, dtype)).to(device).eval()
         self.device = device
 
-    def generate_user(self, prompt: str, max_new_tokens: int, stats: Stats) -> str:
+    def generate_user(self, prompt: str, max_new_tokens: int, stats: Stats,
+                      temperature: float = 0.0) -> str:
         import torch
 
         messages = [{"role": "user", "content": prompt}]  # 原版 async_call_llm 同款
@@ -111,11 +112,15 @@ class HFChat:
                 messages, tokenize=False, add_generation_prompt=True)
         inputs = self.tok(text, return_tensors="pt").to(self.device)
         n_prompt = int(inputs["input_ids"].shape[1])
+        # temperature=0 贪心；>0 采样（反思提议端 0.7；top_p/top_k 取 Qwen3 推荐值）
+        sample_kwargs = ({"do_sample": True, "temperature": float(temperature),
+                          "top_p": 0.95, "top_k": 20}
+                         if temperature > 0 else {"do_sample": False})
         t0 = time.time()
         with torch.no_grad():
             out = self.model.generate(
-                **inputs, max_new_tokens=max_new_tokens, do_sample=False,
-                pad_token_id=self.tok.eos_token_id)
+                **inputs, max_new_tokens=max_new_tokens,
+                pad_token_id=self.tok.eos_token_id, **sample_kwargs)
         gen_ids = out[0][n_prompt:]
         stats.add(n_prompt, int(gen_ids.shape[0]), time.time() - t0)
         return self.tok.decode(gen_ids, skip_special_tokens=True).strip()
@@ -172,6 +177,27 @@ def make_agent_llm(chat: HFChat, stats: Stats, max_new_tokens: int):
         return chat.generate_user(prompt, max_new_tokens, stats)  # 本地 HF：天然串行
 
     return agent_llm
+
+
+def make_evaluator_llms(args: argparse.Namespace, stats: Stats):
+    """返回 (evaluator_llm, proposer_llm)：比较端 temperature=0.0 / 提议端 0.7。
+
+    --evaluator-model-path 给出时走本地 HF 大模型（如 Qwen3-32B，独占一张卡，
+    与执行端 8B 分卡；只加载一份权重，两路温度共享）；否则走 OpenAI 兼容 API。
+    """
+    if args.evaluator_model_path:
+        chat = HFChat(args.evaluator_model_path, device=args.evaluator_device,
+                      dtype=args.evaluator_dtype)
+
+        def make(temp: float):
+            async def local_llm(prompt: str) -> str:
+                return chat.generate_user(prompt, args.evaluator_max_tokens, stats,
+                                          temperature=temp)
+            return local_llm
+
+        return make(0.0), make(args.proposer_temperature)
+    return (make_evaluator_llm(args, stats, temperature=0.0),
+            make_evaluator_llm(args, stats, temperature=args.proposer_temperature))
 
 
 def make_evaluator_llm(args: argparse.Namespace, stats: Stats, temperature: float = 0.0):
@@ -242,7 +268,7 @@ def run_eval(graph: Any, records: List[Dict[str, Any]], method: str,
     config = {"script": "run_maspo_langgraph.py", "method": method, "task": args.task,
               "nr": args.nr, "eval_n": len(samples), "seed": args.seed,
               "model_path": args.model_path, "max_new_tokens": args.max_new_tokens,
-              "evaluator_model": args.evaluator_model,
+              "evaluator_model": args.evaluator_model_path or args.evaluator_model,
               "reference": "https://github.com/wangzx1219/MASPO (ICML 2026)",
               **extra_config}
     M.write_results(out_dir, samples, summary, config)
@@ -285,6 +311,11 @@ def main() -> None:
                     help="执行端生成上限（原版 async_call_llm max_tokens=4096）")
     # 评估/反思 LLM（MASPO 同款 gemini-2.5-pro，OpenAI 兼容端点）
     ap.add_argument("--evaluator-model", default=DEFAULT_EVALUATOR_MODEL)
+    ap.add_argument("--evaluator-model-path", default=None,
+                    help="本地 HF 评估/反思模型路径（如 Qwen3-32B）；给出则不走 API")
+    ap.add_argument("--evaluator-device", default="cuda:1",
+                    help="本地评估模型的设备（与执行端 --device 分卡）")
+    ap.add_argument("--evaluator-dtype", default="bfloat16")
     ap.add_argument("--evaluator-base-url",
                     default=os.environ.get("EVALUATOR_BASE_URL"))
     ap.add_argument("--evaluator-api-key-env", default="EVALUATOR_API_KEY")
@@ -308,8 +339,11 @@ def main() -> None:
         raise SystemExit(f"--lookahead-weights 需形如 4:4:2，得到 {args.lookahead_weights!r}"
                          f"（{exc}）")
 
-    if args.phase in ("optimize", "both"):
-        # 快速失败：评估/反思端点缺配置就别等 8B 模型加载完才报错
+    if args.phase in ("optimize", "both") and args.evaluator_model_path \
+            and not os.path.isdir(args.evaluator_model_path):
+        raise SystemExit(f"--evaluator-model-path 不存在: {args.evaluator_model_path}")
+    if args.phase in ("optimize", "both") and not args.evaluator_model_path:
+        # 快速失败（API 路径）：评估/反思端点缺配置就别等 8B 模型加载完才报错
         if not os.environ.get(args.evaluator_api_key_env):
             raise SystemExit(f"phase={args.phase} 需要评估端 API key：请设环境变量 "
                              f"{args.evaluator_api_key_env}（gemini-2.5-pro 端点）")
@@ -319,6 +353,9 @@ def main() -> None:
 
     records = load_benchmark(args.task, n=None)
     eval_records = records[: args.eval_n] if args.eval_n else records
+    import torch as _torch
+
+    _torch.manual_seed(args.seed)  # 反思端采样（temperature>0）的进程级种子
     chat = HFChat(args.model_path, device=args.device, dtype=args.dtype)
 
     if args.phase == "baseline":
@@ -335,15 +372,14 @@ def main() -> None:
         trainset = rng.sample([r["question"] for r in records],
                               min(args.train_n, len(records)))
         agent_stats, eval_stats = Stats(), Stats()
+        evaluator_llm, proposer_llm = make_evaluator_llms(args, eval_stats)
         graph = build_reflect_graph(chat, args.nr, agent_stats, args.max_new_tokens)
         t0 = time.time()
         # ★ 本框架运行前优化统一接口：在 LangGraph 图上跑 MASPO 联合优化，产物落 prompt JSON
         optimize_langgraph(
             graph, method="maspo", mode="optimize", trainset=trainset,
             agent_llm=make_agent_llm(chat, agent_stats, args.max_new_tokens),
-            evaluator_llm=make_evaluator_llm(args, eval_stats, temperature=0.0),
-            proposer_llm=make_evaluator_llm(args, eval_stats,
-                                            temperature=args.proposer_temperature),
+            evaluator_llm=evaluator_llm, proposer_llm=proposer_llm,
             prompt_file=prompt_file, max_total_depth=args.depth,
             rounds_per_turn=args.rounds_per_turn, beam_width=args.beam_width,
             eval_batch=args.eval_batch, lookahead_weights=tuple(w),
