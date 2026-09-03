@@ -43,12 +43,12 @@ class Optimizer(Protocol):
 | `post_run_plugin/attribution` | 适配器：串 attributor + credit_assigner，写 `trajectory.meta["attribution"/"credits"]` + TraceStore |
 | `optimizer/gepa` | GEPA 反思式提示演化（`gepa/`）：候选池 + per-instance Pareto 采样（`gepa/pareto.py` 纯函数）→ 轮换选可变组件 → minibatch rollout 收反馈 → 反思变异（`reflector` 可注入，默认走 `backend.generate_chat`）→ minibatch 提升才全量评估入池 → `max_metric_calls` 硬预算耗尽返回均分最优。`rollout: (MASProgram, TaskQuery) -> Trajectory` 必须注入 |
 
-## `lg_prerun/` — LangGraph 原生运行前优化（类别 `pre_run_optimizer`）
+## `prerun/` — LangGraph 原生运行前优化（类别 `pre_run_optimizer`）
 
 与上面三接缝并存的**第四个接缝**：算法直接在 LangGraph 图上做运行前优化，图进图出。
 
 ```python
-from lychee_mas.plugins.lg_prerun import optimize_langgraph
+from lychee_mas.plugins.prerun import optimize_langgraph
 
 sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")   # 即插即用
 sg = optimize_langgraph(sg, method="maspo", mode="optimize", trainset=[...],
@@ -59,7 +59,7 @@ app = sg.compile()
 
 - **节点契约**（`graphview.py`）：`sg.add_node(name, fn, metadata={"agent_spec": spec})`；`spec.system_prompt` = 可变异提示模板（`{question}`/`{context}`）；`spec.meta["predecessors"]` = 通信前驱；节点函数运行时从 spec 读——换 spec 即换行为，无需重建节点。只支持静态 DAG + 唯一终端，违反显式报错。
 - **`pre_run_optimizer/maspo`**（`maspo/`，MASPO ICML 2026）：多粒度成对评估（Local/Lookahead/Global，免 gold）+ 错位驱动采样 + 进化 beam search + fixed-rounds 坐标上升 + Beam Refresh；optimize 落 `{"prompts": {节点名: 提示}}` JSON，apply 加载注入。提示资产逐字 vendored（`maspo/prompts.py`，保留出处引用）。
-- **`pre_run_optimizer/agentprune`**：复用 `graph_pruner/agentprune` 的 threshold 实现剪 LangGraph 边（与 MASGraph 路径对拍一致，见 `tests/test_lg_prerun.py`）。
+- **`pre_run_optimizer/agentprune`**：复用 `graph_pruner/agentprune` 的 threshold 实现剪 LangGraph 边（与 MASGraph 路径对拍一致，见 `tests/test_prerun.py`）。
 - langgraph 在本包内**一律惰性导入**（`make selfcheck` 仍须 HEAVY LOADED: NONE）。
 
 ## 约定

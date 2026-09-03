@@ -1,4 +1,4 @@
-"""复现 MASPO 的 MATH-500 实验（LangGraph 执行 + 本框架 lg_prerun 运行前优化统一接口）。
+"""复现 MASPO 的 MATH-500 实验（LangGraph 执行 + 本框架 prerun 运行前优化统一接口）。
 
 对标：MASPO: Joint Prompt Optimization for LLM-based Multi-Agent Systems（ICML 2026，
 arXiv:2605.06623）；参考实现 https://github.com/wangzx1219/MASPO 的 run_maspo.py
@@ -7,7 +7,7 @@ arXiv:2605.06623）；参考实现 https://github.com/wangzx1219/MASPO 的 run_m
 
 与原版逐项对应：
   拓扑         reflect：predictor→reflector 链（--nr 轮：p0→r0→p1→r1→...，终端=末位 reflector）；
-               提示模板/压缩/比较/反思提示词逐字 vendored（plugins/lg_prerun/maspo/prompts.py）
+               提示模板/压缩/比较/反思提示词逐字 vendored（plugins/prerun/maspo/prompts.py）
   执行语义     每节点单条 user 消息 = template.format(question, context)；
                context = 前驱**压缩短输出**以 "\\n---\\n" 拼接；非终端节点输出过 COMPRESS 压缩，
                终端节点 short = extract_answer(raw)（原版 arun_with_cache / arun_full）
@@ -48,13 +48,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from lychee_mas.core.types import AgentSpec  # noqa: E402
 from lychee_mas.eval import metrics as M  # noqa: E402
 from lychee_mas.eval.benchmarks import load as load_benchmark  # noqa: E402
-from lychee_mas.plugins.lg_prerun import optimize_langgraph  # noqa: E402
-from lychee_mas.plugins.lg_prerun.maspo.executor import (  # noqa: E402
+from lychee_mas.plugins.prerun import optimize_langgraph  # noqa: E402
+from lychee_mas.plugins.prerun.maspo.executor import (  # noqa: E402
     CONTEXT_JOINER,
     format_agent_prompt,
 )
-from lychee_mas.plugins.lg_prerun.maspo.prompts import COMPRESS_PROMPT, seed_template  # noqa: E402
-from lychee_mas.plugins.lg_prerun.maspo.textops import extract_answer  # noqa: E402
+from lychee_mas.plugins.prerun.maspo.prompts import COMPRESS_PROMPT, seed_template  # noqa: E402
+from lychee_mas.plugins.prerun.maspo.textops import extract_answer  # noqa: E402
 
 DEFAULT_MODEL = "/data/mxy/Models/Qwen/Qwen3-8B"       # MASPO 执行模型（本地权重）
 DEFAULT_EVALUATOR_MODEL = "gemini-2.5-pro"             # MASPO 评估/反思模型

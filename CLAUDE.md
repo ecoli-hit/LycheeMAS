@@ -42,7 +42,7 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions   # 事后
 
 ## 3. 代码规范（黄金法则，违反即返工）
 
-1. **业务代码禁止 import 执行引擎。** `autogen_*` 只允许出现在 `runtime/backends/autogen_*.py`；`langgraph` 只允许出现在 `runtime/backends/langgraph_runtime.py` 的 `_build_app` 内，以及 `plugins/lg_prerun/`（LangGraph 原生运行前优化接缝，图进图出）；且都必须惰性导入（函数内部）。其余业务层只用 `lychee_mas.runtime` 的 `Runtime` 协议。
+1. **业务代码禁止 import 执行引擎。** `autogen_*` 只允许出现在 `runtime/backends/autogen_*.py`；`langgraph` 只允许出现在 `runtime/backends/langgraph_runtime.py` 的 `_build_app` 内，以及 `plugins/prerun/`（LangGraph 原生运行前优化接缝，图进图出）；且都必须惰性导入（函数内部）。其余业务层只用 `lychee_mas.runtime` 的 `Runtime` 协议。
 2. **重依赖一律惰性导入。** `torch / transformers / autogen_* / langgraph / numpy / yaml / sympy / datasets` 只能在函数/方法内部导入；**注册组件的模块被 import 时不得触发这些库**。校验：`make selfcheck` 必须打印 `HEAVY LOADED: NONE`。
 3. **每个算法 = 注册一个类 + 配置选择，绝不硬编码。** `@REGISTRY.register(category, name)`；新增方法**不改 `pipeline.py`**；对照实验只换组件名。
 4. **公共类型只放 `core/types.py`**；层内专用契约留在该层 `base.py`，不塞进 core。

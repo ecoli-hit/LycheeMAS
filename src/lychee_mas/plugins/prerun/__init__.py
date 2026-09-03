@@ -1,4 +1,4 @@
-"""lg_prerun —— LangGraph 原生「运行前优化」接缝（REGISTRY 类别 ``pre_run_optimizer``）。
+"""prerun —— LangGraph 原生「运行前优化」接缝（REGISTRY 类别 ``pre_run_optimizer``）。
 
 - base.py         PreRunOptimizer 协议 + optimize_langgraph 统一入口（method 按名分发）
 - graphview.py    GraphView / extract_view / rebuild（StateGraph 读写的唯一通道 + 节点契约）

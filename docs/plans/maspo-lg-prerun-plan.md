@@ -1,6 +1,6 @@
 # 代码修改方案 —— MASPO 接入「LangGraph 原生运行前优化」统一接口
 
-> 状态：**已实施**（2026-08-31）。用户决策：黄金法则 1 已修订（lg_prerun 例外）；
+> 状态：**已实施**（2026-08-31）。用户决策：黄金法则 1 已修订（prerun 例外）；
 > 旧 `pre_run_plugin` 接缝保留并存；实验先跑 **MATH-500**（已注册 `benchmark/math500`）；
 > 执行/评估/反思用 MASPO 同款模型（执行=Qwen3-8B 本地，评估反思=gemini-2.5-pro API 端点）。
 > 与本文差异：文本工具落在 `maspo/textops.py`（未并入 prompts.py）；`trainer/maspo` 桩已删除。
@@ -40,10 +40,10 @@ MASPO 是**免标注的 MAS 联合提示优化**（同族于 GEPA，不是 RL tr
 
 ### 2.1 统一接口（要求 1 + 2）
 
-新增 REGISTRY 类别 **`pre_run_optimizer`**（第 18 个类别），协议与统一入口都放在新包 `plugins/lg_prerun/`：
+新增 REGISTRY 类别 **`pre_run_optimizer`**（第 18 个类别），协议与统一入口都放在新包 `plugins/prerun/`：
 
 ```python
-# plugins/lg_prerun/base.py
+# plugins/prerun/base.py
 @runtime_checkable
 class PreRunOptimizer(Protocol):
     """运行前优化器：传入一个（未编译的）LangGraph StateGraph，优化后返回一个 StateGraph。"""
@@ -79,7 +79,7 @@ def optimize_langgraph(graph: "StateGraph", method: str, **kwargs) -> "StateGrap
 sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.AgentSpec
 # spec.system_prompt = 可变异提示模板（MASPO 语义：含 {question} / {context} 占位）
 
-# plugins/lg_prerun/graphview.py —— StateGraph ↔ 优化器 的唯一读写通道
+# plugins/prerun/graphview.py —— StateGraph ↔ 优化器 的唯一读写通道
 extract_view(sg) -> GraphView      # 节点(名字+AgentSpec) + 邻接(来自 sg.edges) + 终端节点
                                    # metadata 缺 agent_spec / 图非 DAG / 无唯一终端 → 显式报错
 rebuild(sg, *, prompts=None, adjacency=None) -> StateGraph
@@ -93,10 +93,10 @@ rebuild(sg, *, prompts=None, adjacency=None) -> StateGraph
 
 现行规则：`langgraph` 只允许出现在 `runtime/backends/langgraph_runtime.py` 的 `_build_app` 内。要求 2 明确要"直接接入 LangGraph"，与之冲突。修订提案：
 
-> 黄金法则 1 增补："`langgraph` 还允许出现在 `plugins/lg_prerun/`（LangGraph 原生运行前优化接缝）。"
-> 黄金法则 2 不变：`lg_prerun` 内所有 `langgraph` import 一律惰性（函数内），`make selfcheck` 仍须 `HEAVY LOADED: NONE`；类型注解用字符串前向引用。
+> 黄金法则 1 增补："`langgraph` 还允许出现在 `plugins/prerun/`（LangGraph 原生运行前优化接缝）。"
+> 黄金法则 2 不变：`prerun` 内所有 `langgraph` import 一律惰性（函数内），`make selfcheck` 仍须 `HEAVY LOADED: NONE`；类型注解用字符串前向引用。
 
-旧接缝 **`pre_run_plugin`（MASGraph 版）保留不动**：Orchestrator、`run_langgraph_preplug.py`、AgentPrune GSM8K 脚本零回归；`lg_prerun` 是 LangGraph 主线的新接缝，两者并存（AutoGen 退役后再考虑收敛）。
+旧接缝 **`pre_run_plugin`（MASGraph 版）保留不动**：Orchestrator、`run_langgraph_preplug.py`、AgentPrune GSM8K 脚本零回归；`prerun` 是 LangGraph 主线的新接缝，两者并存（AutoGen 退役后再考虑收敛）。
 
 ### 2.4 AgentPrune 并入统一接口（要求 1 的第二个算法）
 
@@ -109,7 +109,7 @@ rebuild(sg, *, prompts=None, adjacency=None) -> StateGraph
 ### 新增
 
 ```
-src/lychee_mas/plugins/lg_prerun/
+src/lychee_mas/plugins/prerun/
 ├── __init__.py          # 触发注册（maspo / agentprune）+ 导出 optimize_langgraph（纯标准库 import）
 ├── base.py              # PreRunOptimizer 协议 + optimize_langgraph 统一入口 + 返回类型校验
 ├── graphview.py         # GraphView / extract_view / rebuild（langgraph 惰性 import 的唯一位置之一）
@@ -129,13 +129,13 @@ src/lychee_mas/plugins/lg_prerun/
                          #   OPTIMIZATION_REQUIREMENTS）+ 文本工具（_sanitize_prompt、extract_answer/code、
                          #   parse_comparison_result、majority_vote）——逐字迁移，文件头保留出处引用
 
-configs/lg_prerun/maspo.yaml        # 超参默认值 = 原版论文模式：max_total_depth=9, rounds_per_turn=3,
+configs/prerun/maspo.yaml        # 超参默认值 = 原版论文模式：max_total_depth=9, rounds_per_turn=3,
                                     #   beam_width=2, lookahead_weights=[0.4,0.4,0.2], eval_batch=10,
                                     #   use_beam_refresh/lookahead/misleading=true, use_feedback=false
-configs/lg_prerun/agentprune.yaml   # state_file / eval 实现模式
+configs/prerun/agentprune.yaml   # state_file / eval 实现模式
 
 tests/test_maspo.py                 # 纯离线（零 langgraph）：算法核心单测（§5.1）
-tests/test_lg_prerun.py             # importorskip("langgraph")：图接口 + 端到端脚本化测试（§5.1）
+tests/test_prerun.py             # importorskip("langgraph")：图接口 + 端到端脚本化测试（§5.1）
 
 scripts/run_maspo_langgraph.py      # 复现实验脚本（§5.2）：纯 LangGraph 基线 / 运行前优化 两条腿
 ```
@@ -145,10 +145,10 @@ scripts/run_maspo_langgraph.py      # 复现实验脚本（§5.2）：纯 LangGr
 | 文件 | 改动 |
 |---|---|
 | `src/lychee_mas/core/registry.py` | `CATEGORIES` 加 `"pre_run_optimizer"`（表本身不强制，纯文档性） |
-| `src/lychee_mas/plugins/__init__.py` | import `lg_prerun` 触发注册 |
+| `src/lychee_mas/plugins/__init__.py` | import `prerun` 触发注册 |
 | `src/lychee_mas/plugins/README.md` | 新增 `pre_run_optimizer` 一节（接口 + method 表） |
-| `CLAUDE.md` | 黄金法则 1 增补 `plugins/lg_prerun/` 例外（§2.3 措辞） |
-| `docs/DESIGN.md` | §5 插件系统加 lg_prerun 接缝；§7 表加 `pre_run_optimizer` 行（`maspo`, `agentprune`）；`trainer` 行删去 `maspo` 桩（归类错误，迁至此处） |
+| `CLAUDE.md` | 黄金法则 1 增补 `plugins/prerun/` 例外（§2.3 措辞） |
+| `docs/DESIGN.md` | §5 插件系统加 prerun 接缝；§7 表加 `pre_run_optimizer` 行（`maspo`, `agentprune`）；`trainer` 行删去 `maspo` 桩（归类错误，迁至此处） |
 | `pyproject.toml` | 无新依赖（复用 `[langgraph]` extra；MASPO 逻辑纯标准库化，tqdm/openai 依赖全部去掉） |
 
 ### 不改
@@ -180,7 +180,7 @@ scripts/run_maspo_langgraph.py      # 复现实验脚本（§5.2）：纯 LangGr
 - beam 一步：两候选一好一坏 → 好者入 beam、best_overall 更新、score≤0 者原地保留；
 - 显式报错路径：apply 无 prompt_file、optimize 无 trainset/backend、反思器返回空文本。
 
-`tests/test_lg_prerun.py`（`pytest.importorskip("langgraph")`，与 `test_langgraph_runtime.py` 同模式）:
+`tests/test_prerun.py`（`pytest.importorskip("langgraph")`，与 `test_langgraph_runtime.py` 同模式）:
 - `extract_view` / `rebuild` roundtrip：reflect 小图（2 节点）元数据齐全 → 视图正确；缺 metadata / 有环 → 显式报错；
 - 统一入口分发：`optimize_langgraph(sg, method="maspo", mode="apply", prompt_file=...)` 后编译执行，fake LLM 记录到的 formatted prompt 已换新（即插即用验证）；未知 method → KeyError；
 - `method="agentprune"`：同一份 state 文件，统一接口剪出的邻接 == 既有 `graph_pruner/agentprune.realized_matrices("threshold")`（两条路径对拍）；
@@ -208,13 +208,13 @@ python scripts/run_maspo_langgraph.py --phase both --task gsm8k \
 
 ## 6. 实施顺序与验收
 
-- **P0 图接缝**：`lg_prerun/base.py` + `graphview.py` + `agentprune_lg.py` + registry/`__init__` + `test_lg_prerun.py` 的接口部分。验收：三件套全绿、`agentprune` 双路径对拍一致、`make selfcheck` 仍 `HEAVY LOADED: NONE`。
+- **P0 图接缝**：`prerun/base.py` + `graphview.py` + `agentprune_lg.py` + registry/`__init__` + `test_prerun.py` 的接口部分。验收：三件套全绿、`agentprune` 双路径对拍一致、`make selfcheck` 仍 `HEAVY LOADED: NONE`。
 - **P1 MASPO 核心**：`maspo/`（prompts vendored + executor + optimizer）+ `test_maspo.py` + 端到端脚本化测试 + configs。验收：三件套全绿、脚本化 optimize 全循环跑通。
 - **P2 实验与文档**：`run_maspo_langgraph.py` 小样本真跑（`--train-n 8 --eval-n 8` 冒烟）→ 全量两实验对比；可选 `benchmark/aqua`；CLAUDE.md / DESIGN.md / plugins README 同步。验收：baseline 与 optimized 两份 run 目录落盘可对比。
 
 ## 7. 待确认问题
 
-1. **黄金法则 1 修订**（§2.3）：同意 `plugins/lg_prerun/` 作为 langgraph 的第二个合法出现地（惰性 import）？
+1. **黄金法则 1 修订**（§2.3）：同意 `plugins/prerun/` 作为 langgraph 的第二个合法出现地（惰性 import）？
 2. **旧接缝去留**：`pre_run_plugin`（MASGraph 版）按本方案保留并存；若你想彻底替换（Orchestrator 也改吃 StateGraph），是另一个量级的重构，需明示。
 3. **实验数据集**：默认 gsm8k、aqua 作 P2 可选，还是必须严格用 MASPO 的 aqua/math-500 起步？
 4. **评估/反思 LLM**：原版用 gemini-2.5-pro 独立端点；本地复现默认与执行 LLM 同一个模型（可 `--evaluator-api` 指到 API）。可接受？

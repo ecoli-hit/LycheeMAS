@@ -3,7 +3,7 @@
 薄适配器：算法（logits/masks/threshold 实现）全部复用 ``layers/prune/pruners/agentprune.py``，
 本类只做「视图取邻接 → threshold 实现矩阵 → rebuild 写回」。与 MASGraph 路径
 （``pre_run_plugin/prune`` + ``AgentPrunePruner.prune``）语义一致，测试对拍见
-``tests/test_lg_prerun.py``。
+``tests/test_prerun.py``。
 
 agent 下标映射约定：``i = extract_view(graph).names 的第 i 个``（执行拓扑序），与训练脚本
 建图顺序一致时可直接加载其 state_file。

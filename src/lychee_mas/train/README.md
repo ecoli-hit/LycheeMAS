@@ -18,7 +18,7 @@ class Trainer(Protocol):
 
 | 注册名 | 状态 |
 |---|---|
-| —（RL 训练器待接） | MASPO 已按其本义（联合提示优化）落地为 `pre_run_optimizer/maspo`（`plugins/lg_prerun/`），原 `trainer/maspo` 桩迁出 |
+| —（RL 训练器待接） | MASPO 已按其本义（联合提示优化）落地为 `pre_run_optimizer/maspo`（`plugins/prerun/`），原 `trainer/maspo` 桩迁出 |
 
 ## 约定
 

@@ -1,4 +1,4 @@
-"""lg_prerun 图接缝的离线测试（需要 langgraph，未装则整文件跳过；LLM 全部脚本化）。
+"""prerun 图接缝的离线测试（需要 langgraph，未装则整文件跳过；LLM 全部脚本化）。
 
 覆盖：节点契约与视图提取、rebuild 提示/邻接写回、统一入口分发、
 agentprune 新旧双路径对拍、maspo apply/optimize 端到端。
@@ -16,13 +16,13 @@ pytest.importorskip("langgraph")
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from lychee_mas.core.types import AgentSpec  # noqa: E402
 from lychee_mas.layers.prune.pruners.agentprune import AgentPrunePruner  # noqa: E402
-from lychee_mas.plugins.lg_prerun import (  # noqa: E402
+from lychee_mas.plugins.prerun import (  # noqa: E402
     extract_view,
     optimize_langgraph,
     rebuild,
 )
-from lychee_mas.plugins.lg_prerun.maspo.executor import format_agent_prompt  # noqa: E402
-from lychee_mas.plugins.lg_prerun.maspo.prompts import AGENT_TEMPLATES  # noqa: E402
+from lychee_mas.plugins.prerun.maspo.executor import format_agent_prompt  # noqa: E402
+from lychee_mas.plugins.prerun.maspo.prompts import AGENT_TEMPLATES  # noqa: E402
 
 
 class ChainState(TypedDict):

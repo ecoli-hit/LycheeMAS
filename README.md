@@ -168,7 +168,7 @@ src/lychee_mas/
 ├── runtime/     Runtime 协议 + 共享注入引擎（injection.py）+ 后端（mock / autogen / langgraph / HF / API）
 ├── memory/      记忆层（运行时组件）：channels / managers / routing + store / context
 ├── plugins/     插件系统：pre_run / post_run 插件 + optimizer（GEPA）+ MASProgram
-│                + lg_prerun（LangGraph 原生运行前优化：MASPO / AgentPrune 统一接口）
+│                + prerun（LangGraph 原生运行前优化：MASPO / AgentPrune 统一接口）
 ├── trace/       归因/信用（读侧）：attributor + credit_assigner + TraceStore
 ├── train/       训练（写侧）：RL 训练（trainer）
 ├── layers/      层变换（construct / prune / processing{parallel,serial}）

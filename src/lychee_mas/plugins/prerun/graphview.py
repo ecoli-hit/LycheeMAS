@@ -65,7 +65,7 @@ def _exec_edges(graph: Any) -> tuple[Dict[str, List[str]], List[str], str]:
             adj[src].append(dst)
     if len(terminals) != 1:
         raise ValueError(
-            f"lg_prerun 需要恰好一个终端节点（有边指向 END），"
+            f"prerun 需要恰好一个终端节点（有边指向 END），"
             f"得到 {len(terminals)} 个: {terminals}")
     return adj, entries, terminals[0]
 
@@ -76,7 +76,7 @@ def extract_view(graph: Any) -> GraphView:
 
     _require_state_graph(graph, "extract_view")
     if dict(graph.branches):
-        raise ValueError("lg_prerun 只支持静态 DAG 边：图里存在条件分支（branches），无法优化")
+        raise ValueError("prerun 只支持静态 DAG 边：图里存在条件分支（branches），无法优化")
     if not graph.nodes:
         raise ValueError("extract_view: 图里没有任何节点")
 
@@ -86,7 +86,7 @@ def extract_view(graph: Any) -> GraphView:
         if not isinstance(spec, AgentSpec):
             raise ValueError(
                 f"节点 {name!r} 缺 metadata['agent_spec']（AgentSpec）——建图方需按 graphview "
-                "节点契约挂元数据，lg_prerun 才能读写提示/邻接")
+                "节点契约挂元数据，prerun 才能读写提示/邻接")
         specs[name] = spec
 
     exec_adj, _entries, terminal = _exec_edges(graph)
@@ -97,7 +97,7 @@ def extract_view(graph: Any) -> GraphView:
     idx = {n: i for i, n in enumerate(names_decl)}
     edge_set = {(idx[s], idx[d]) for s, ds in exec_adj.items() for d in ds}
     if _has_cycle(len(names_decl), edge_set):
-        raise ValueError("lg_prerun 只支持 DAG：StateGraph 的执行边成环")
+        raise ValueError("prerun 只支持 DAG：StateGraph 的执行边成环")
     order_idx, _preds = topological_order(len(names_decl), edge_set)
     names = [names_decl[i] for i in order_idx]
 

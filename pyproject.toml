@@ -129,7 +129,7 @@ select = ["E", "F", "I", "W"]
 # _generate.py 的 prompt 常量逐字移植自官方 AgentInit（保留原措辞，不折行）；只豁免行长。
 "src/lychee_mas/layers/construct/selectors/_generate.py" = ["E501"]
 # maspo/prompts.py 的提示常量逐字移植自 MASPO（保留原措辞，不折行）；只豁免行长。
-"src/lychee_mas/plugins/lg_prerun/maspo/prompts.py" = ["E501"]
+"src/lychee_mas/plugins/prerun/maspo/prompts.py" = ["E501"]
 
 [tool.pytest.ini_options]
 # 只收集本框架测试，避免触碰 vendored src/autogen 的测试（它们需 autogen 才能 collect）。
