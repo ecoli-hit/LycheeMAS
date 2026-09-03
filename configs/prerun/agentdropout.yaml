@@ -1,0 +1,11 @@
+# pre_run_optimizer/agentdropout —— AgentDropout 动态节点/边淘汰（ACL 2025）。
+# 用法：optimize_langgraph(sg, method="agentdropout", state_file=..., round=r)
+# apply 语义：加载两阶段训练产物，取第 round 轮 threshold 实现写回图；
+# 被淘汰节点写 spec.meta["dropped"]=True（节点工厂据此本轮不执行）。
+# 训练（两阶段：skip-REINFORCE 节点淘汰 → 逐轮边 REINFORCE + one-shot 剪边）由实验脚本驱动：
+#   阶段一 2 batch × 20 题 → node_dropout()；阶段二 4 batch × 10 题 → edge_dropout(0.25)
+# （原版 run_gsm8k.py 默认；lr=0.1，Adam）
+method: agentdropout
+state_file: null               # 训练产物（AgentDropoutOptimizer.save 落盘）
+round: 0                       # 挂载哪一轮的拓扑（多轮实验由脚本逐轮取 realized_matrices(r)）
+rounds: 2                      # 与训练时一致（状态校验不符显式报错）

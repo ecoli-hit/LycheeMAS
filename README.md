@@ -37,7 +37,7 @@
 | 接缝 | 统一入口（`plugins/`） | 实现（`methods/`） | 职责 |
 | --- | --- | --- | --- |
 | 构建 | `build_langgraph(method, ...)` | `static` 模板 / **AgentInit** 选队 | 产出契约 StateGraph |
-| 运行前 | `optimize_langgraph(sg, method)` | **MASPO**（提示联合优化）/ **AgentPrune**（剪枝）/ GEPA | 执行前改写图；optimize 离线产物化 + apply 即插即用 |
+| 运行前 | `optimize_langgraph(sg, method)` | **MASPO**（提示优化）/ **AgentPrune**（剪枝）/ **AgentDropout**（节点淘汰）/ GEPA | 执行前改写图；optimize 离线产物化 + apply 即插即用 |
 | 记忆 | `attach_memory(sg, method)` | channels / managers（cdm）/ routing | 注入六步包裹进 agent 节点（实现中） |
 | 处理 | `run_processed(runner, method)` | serial / parallel + self_consistency | 跑几次 + 归约（pass@K 承载点） |
 | 归因训练 | `analyze_run(...)` + `train_from_runs(...)` | attributor / credit / trainer（桩） | 读侧归因信用 + 写侧离线训练 |

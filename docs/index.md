@@ -10,7 +10,7 @@
 | 接缝 | 统一入口（`plugins/`） | 实现（`methods/`） | 状态 |
 | --- | --- | --- | --- |
 | 构建 build | `build_langgraph(method, ...)` | `static` 模板 / **AgentInit** 选队（EMNLP'25） | 已实现 |
-| 运行前 prerun | `optimize_langgraph(sg, method)` | **MASPO** 提示联合优化（ICML 2026）/ **AgentPrune** 剪枝（ICLR 2025）/ GEPA | 已实现（GEPA 图原生适配待接） |
+| 运行前 prerun | `optimize_langgraph(sg, method)` | **MASPO** 提示联合优化（ICML 2026）/ **AgentPrune** 剪枝（ICLR 2025）/ **AgentDropout** 节点淘汰（ACL 2025）/ GEPA | 已实现（GEPA 图原生适配待接） |
 | 记忆 memory | `attach_memory(sg, method)` | channels（NL/隐空间/C2C）+ managers（**cdm**）+ routing | 算法库已实现；挂载语义 P3 全新实现（接缝已立，显式桩） |
 | 执行 processing | `run_processed(runner, method)` | serial / parallel×K + self_consistency 归约 | 已实现（pass@K 承载点） |
 | 归因训练 postrun | `analyze_run(...)` / `train_from_runs(...)` | attributor / credit_assigner / trainer | 接缝已立，方法为桩（占名待接） |
@@ -35,7 +35,7 @@ src/lychee_mas/
 │   └── postrun.py                    #   analyze_run（读侧）+ train_from_runs（写侧）+ Trainer 协议
 ├── methods/                          # ★ 实现层（厚，按接缝镜像）
 │   ├── build/                        #   static 队伍模板 + agentinit 选队（Pareto 多样性×相关性）
-│   ├── prerun/                       #   agentprune（REINFORCE+掩码）/ maspo/（beam search 联合提示优化）/ gepa/
+│   ├── prerun/                       #   agentprune / agentdropout（两阶段淘汰）/ maspo/ / gepa/
 │   ├── memory/                       #   channels{nl,latent,c2c} + managers{cdm,外部桩} + routing + store/context
 │   ├── processing/                   #   serial / parallel + self_consistency / dynamicagg
 │   └── postrun/                      #   attributor·credit_assigner 桩 + TraceStore

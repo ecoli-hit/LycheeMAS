@@ -83,6 +83,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 - `pre_run_optimizer/maspo`——MASPO 联合提示优化（ICML 2026）：多粒度成对评估（Local/Lookahead/Global 0.4/0.4/0.2，免 gold）+ 错位驱动采样 + 进化 beam search + fixed-rounds 坐标上升 + Beam Refresh；断点续跑（`*_ckpt.json`）。MATH-500 复现：归一化口径 0.78→0.85（+7pt）。
 - `pre_run_optimizer/agentprune`——AgentPrune 时空掩码剪枝（ICLR 2025）：REINFORCE 训练逐边 logit + one-shot 剪枝（训练脚本 `run_agentprune_gsm8k.py`），threshold 确定性实现剪图。
+- `pre_run_optimizer/agentdropout`——AgentDropout 动态节点/边淘汰（ACL 2025）：两阶段——①逐轮加权度 softmax 采样跳过节点 + skip-REINFORCE 训度权重，每轮淘汰最小归一化加权度节点（空间行列 + 跨轮时间边清零）；②逐轮独立参数的边 REINFORCE + one-shot 剪边。拓扑逐轮不同：apply 按 `round=r` 挂载该轮实现，被淘汰节点写 `meta["dropped"]`。
 - `optimizer/gepa`——GEPA 反思式提示演化（`methods/prerun/gepa/`，MASProgram 表示；graph-native 适配待接）。
 
 ### 4.3 memory（运行时记忆，`plugins/memory.py` × `methods/memory/`）
@@ -117,8 +118,8 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 |---|---|---|---|
 | build | `graph_builder` | `static` | — |
 | build | `agent_selector` | `agentinit` | — |
-| prerun | `pre_run_optimizer` | `maspo`, `agentprune` | — |
-| prerun | `graph_pruner` | `agentprune` | `agentdropout`, `agentdropout_v2` |
+| prerun | `pre_run_optimizer` | `maspo`, `agentprune`, `agentdropout` | — |
+| prerun | `graph_pruner` | `agentprune`, `agentdropout` | `agentdropout_v2` |
 | prerun | `vocab_adapter` | — | `agentvocab` |
 | prerun | `optimizer` | `gepa`（graph-native 适配待接） | — |
 | memory | `memory_manager` | `cdm` | `mem0`, `ama` |

@@ -240,3 +240,38 @@ def test_maspo_optimize_missing_inputs_raise():
                            agent_llm=scripted_agent, evaluator_llm=scripted_evaluator)
     with pytest.raises(ValueError, match="agent_llm"):
         optimize_langgraph(sg, method="maspo", mode="optimize", trainset=["q"])
+
+
+# ------------------------- agentdropout 统一接口挂载 -------------------------
+
+def test_agentdropout_unified_apply_round_topology(tmp_path):
+    from lychee_mas.methods.prerun.agentdropout import AgentDropoutOptimizer
+
+    n, rounds = 4, 2
+    trained = AgentDropoutOptimizer(n_agents=n, rounds=rounds, seed=0)
+    for e in trained.deg_logits[0]:
+        trained.deg_logits[0][e] = -9.0 if 3 in e else 1.0  # 第 0 轮淘汰节点 3
+    trained.node_dropout()
+    trained.spatial_logits[0][(0, 1)] = 3.0  # 唯一过阈值的存活边
+    trained.spatial_logits[0][(1, 2)] = 3.0
+    state_file = str(tmp_path / "ad_state.json")
+    trained.save(state_file)
+
+    out = optimize_langgraph(chain_graph(n), method="agentdropout",
+                             state_file=state_file, round=0, rounds=rounds)
+    view = extract_view(out)
+    names = [f"A{i}" for i in range(n)]
+    # 通信结构 = 第 0 轮 threshold 实现（0→1、1→2），且被淘汰节点 3 无任何通信
+    assert view.predecessors[names[1]] == [names[0]]
+    assert view.predecessors[names[2]] == [names[1]]
+    assert view.predecessors[names[3]] == []
+    # dropped 元数据：只有第 0 轮被淘汰的 A3 为 True（节点工厂据此本轮不执行）
+    dropped = {nm: view.specs[nm].meta.get("dropped") for nm in names}
+    assert dropped == {"A0": False, "A1": False, "A2": False, "A3": True}
+    assert view.terminal == names[-1]
+
+    # 换一轮挂载：round=1 的淘汰节点不同（deg_logits[1] 未动 → argmin=首个最小 = A0）
+    out1 = optimize_langgraph(chain_graph(n), method="agentdropout",
+                              state_file=state_file, round=1, rounds=rounds)
+    view1 = extract_view(out1)
+    assert view1.specs["A0"].meta.get("dropped") is True
