@@ -116,14 +116,10 @@ all = [
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["lychee_mas*"]
-# 排除 vendored 的 AutoGen 源码（src/autogen/ 仅作参照，不打包）
-exclude = ["autogen*", "LycheeMAS*"]
 
 [tool.ruff]
 line-length = 100
-# 只检查本框架代码；vendored autogen 与旧 LycheeMAS 不参与 lint。
 src = ["src/lychee_mas"]
-extend-exclude = ["src/autogen", "src/LycheeMAS"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
