@@ -42,7 +42,7 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions   # 事后
 
 ## 3. 代码规范（黄金法则，违反即返工）
 
-1. **接口/实现/原语三层隔离。** `plugins/` 只放协议、统一入口、method 分发、校验与薄适配（不含论文级算法，目标 <300 行/文件）；论文复现、训练循环、重机器一律在 `methods/`（按接缝镜像分组）；模型库（transformers/openai）只经 `backends/` 触达，methods 里的算法用注入的回调调 LLM。`langgraph` 允许出现在 plugins / methods / runtime（兼容层），但**必须惰性导入**（函数内部）。
+1. **接口/实现/原语三层隔离。** `plugins/` 只放协议、统一入口、method 分发、校验与薄适配（不含论文级算法，目标 <300 行/文件）；论文复现、训练循环、重机器一律在 `methods/`（按接缝镜像分组）；模型库（transformers/openai）只经 `backends/` 触达，methods 里的算法用注入的回调调 LLM。`langgraph` 允许出现在 plugins / methods，但**必须惰性导入**（函数内部）。
 2. **重依赖一律惰性导入。** `torch / transformers / autogen_* / langgraph / numpy / yaml / sympy / datasets` 只能在函数/方法内部导入；**注册组件的模块被 import 时不得触发这些库**。校验：`make selfcheck` 必须打印 `HEAVY LOADED: NONE`。
 3. **每个算法 = 注册一个类 + method 按名挂载，绝不硬编码。** `@REGISTRY.register(category, name)` 打在 `methods/` 的实现类上；新增方法**不改任何 plugins/ 接口文件**；对照实验只换 `method` 名。
 4. **公共类型只放 `core/types.py`**；接缝协议放 `plugins/` 对应接缝文件，方法族内部契约留在 `methods/<接缝>/` 的 base 文件，不塞进 core。

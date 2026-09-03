@@ -12,7 +12,6 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ....core.types import AgentSpec
-from ....runtime.base import MASGraph
 
 AGENT_PROMPT_PREFIX = "agent:"
 AGENT_PROMPT_SUFFIX = ":system_prompt"
@@ -38,36 +37,34 @@ class MASProgram:
     meta: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_graph(cls, graph: MASGraph) -> "MASProgram":
-        """从 MASGraph 提取组件：每个 agent 的 system prompt + 拓扑描述。"""
+    def from_agents(cls, agents: list[AgentSpec]) -> "MASProgram":
+        """从 AgentSpec 列表提取组件：每个 agent 的 system prompt + 拓扑描述。"""
         components: dict[str, str] = {}
-        for node in graph.order():
-            components[_agent_key(node.name)] = node.system_prompt
-        components[TOPOLOGY_KEY] = " -> ".join(node.name for node in graph.order())
-        mutable = tuple(_agent_key(node.name) for node in graph.order())
-        return cls(components=components, mutable_keys=mutable,
-                   meta={"team": graph.meta.get("team")})
+        for spec in agents:
+            components[_agent_key(spec.name)] = spec.system_prompt
+        components[TOPOLOGY_KEY] = " -> ".join(spec.name for spec in agents)
+        mutable = tuple(_agent_key(spec.name) for spec in agents)
+        return cls(components=components, mutable_keys=mutable, meta={})
 
-    def apply_to(self, graph: MASGraph) -> MASGraph:
-        """把组件写回图：产出**新** MASGraph（深拷贝节点，替换 system prompt）。
+    def apply_to(self, agents: list[AgentSpec]) -> list[AgentSpec]:
+        """把组件写回：产出**新** AgentSpec 列表（深拷贝节点，替换 system prompt）。
 
-        图里存在但 program 未携带对应组件的节点原样保留；program 里多出的 agent 组件
-        （图中无此节点）说明系统不匹配，显式报错。
+        列表里存在但 program 未携带对应组件的节点原样保留；program 里多出的 agent 组件
+        （列表中无此节点）说明系统不匹配，显式报错。
         """
-        known = {node.name for node in graph.order()}
+        known = {spec.name for spec in agents}
         for key in self.components:
             name = _agent_name_of(key)
             if name is not None and name not in known:
-                raise KeyError(f"MASProgram 组件 {key!r} 在图中找不到对应 agent")
-        new_nodes: list[AgentSpec] = []
-        for node in graph.order():
-            prompt = self.components.get(_agent_key(node.name))
-            if prompt is not None and prompt != node.system_prompt:
-                new_nodes.append(replace(node, system_prompt=prompt))
+                raise KeyError(f"MASProgram 组件 {key!r} 找不到对应 agent")
+        out: list[AgentSpec] = []
+        for spec in agents:
+            prompt = self.components.get(_agent_key(spec.name))
+            if prompt is not None and prompt != spec.system_prompt:
+                out.append(replace(spec, system_prompt=prompt))
             else:
-                new_nodes.append(replace(node))
-        return MASGraph(nodes=new_nodes, edges=dict(graph.edges),
-                        rounds=graph.rounds, meta=dict(graph.meta))
+                out.append(replace(spec))
+        return out
 
     def mutated(self, key: str, text: str) -> "MASProgram":
         """返回把组件 `key` 替换为 `text` 的新 program（key 必须在 mutable_keys 内）。"""

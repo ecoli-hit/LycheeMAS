@@ -164,11 +164,10 @@ src/lychee_mas/
 │   └── postrun/（attributors, credit, TraceStore）
 ├── eval/        benchmarks（20 个）+ metrics（评分/落盘/pass@K）+ task_config
 ├── core/        公共类型（types：AgentSpec 等）+ 组件注册表（registry）
-├── backends/    生成原语（hf / openai_api / spans 落盘）
-└── runtime/     记忆线兼容层（MASGraph + 注入六步 + runtime/langgraph；P3 退役预定）
+└── backends/    生成原语（hf / openai_api / spans 落盘）
 configs/         YAML 配置（按接缝分组：build / prerun / memory / processing / benchmarks）
 examples/        01_five_seams_demo.py（make demo：五接缝离线端到端）
-scripts/         实验入口（run_maspo_langgraph / run_agentprune_gsm8k / run_mas / analyze_benchmark_run）
+scripts/         实验入口（run_maspo_langgraph / run_agentprune_gsm8k / analyze_benchmark_run）
 tests/           pytest（离线、LLM 全脚本化）
 docs/            DESIGN.md（唯一架构设计文档）+ plans/ + 文档站页面
 ```

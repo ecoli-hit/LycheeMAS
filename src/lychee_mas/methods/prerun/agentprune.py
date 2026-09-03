@@ -20,8 +20,8 @@ Multi-Agent Systems（ICLR 2025）；参考实现 https://github.com/yanweiyue/A
 2. logits 为逐边独立参数（原版同为逐边 Parameter 向量，无低秩参数化）。
 
 纯标准库、零重依赖；训练循环（rollout 谁来跑）由实验脚本驱动，本类只负责
-「采样 / 更新 / 剪枝 / 产出剪枝后的图」。`prune(graph)` 满足 GraphPruner 协议，
-经 `pre_run_plugin/prune` 适配器即可作为运行前插件挂载。
+「采样 / 更新 / 剪枝 / 产出实现矩阵」。图级挂载经统一接口
+`optimize_langgraph(sg, method="agentprune")`（plugins/prerun/agentprune_lg.py）。
 """
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...core.registry import REGISTRY
-from ...runtime.base import MASGraph
 
 Edge = Tuple[int, int]  # (src_agent_index, dst_agent_index)
 
@@ -238,7 +237,7 @@ class AgentPrunePruner:
             if self.optimized_temporal else 0
         return ks, kt
 
-    # ---------------- 确定性实现（评测 / prune 协议） ----------------
+    # ---------------- 确定性实现（评测 / 统一接口挂载用） ----------------
 
     def realized_matrices(self, mode: str = "threshold",
                           rng: Optional[random.Random] = None
@@ -257,28 +256,6 @@ class AgentPrunePruner:
         sm = [[1 if (i, j) in spatial else 0 for j in range(self.n)] for i in range(self.n)]
         tm = [[1 if (i, j) in temporal else 0 for j in range(self.n)] for i in range(self.n)]
         return sm, tm
-
-    def prune(self, graph: MASGraph, context: Any = None) -> MASGraph:
-        """GraphPruner 协议：把 threshold 实现写进图（edges 按名 + meta 存矩阵）。"""
-        nodes = list(graph.order())
-        if len(nodes) != self.n:
-            raise ValueError(
-                f"agentprune 配置为 {self.n} 个 agent，但图里有 {len(nodes)} 个节点")
-        sm, tm = self.realized_matrices("threshold")
-        names = [node.name for node in nodes]
-        edges: Dict[str, List[str]] = {}
-        for i in range(self.n):
-            outs = [names[j] for j in range(self.n) if sm[i][j]]
-            if outs:
-                edges[names[i]] = outs
-        meta = dict(graph.meta)
-        meta["agentprune"] = {
-            "spatial": sm,
-            "temporal": tm,
-            "alive_spatial": sum(v for row in sm for v in row),
-            "alive_temporal": sum(v for row in tm for v in row),
-        }
-        return MASGraph(nodes=[n for n in nodes], edges=edges, rounds=graph.rounds, meta=meta)
 
     # ---------------- 状态持久化 ----------------
 

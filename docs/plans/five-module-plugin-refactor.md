@@ -2,7 +2,9 @@
 
 > 状态：**已执行至 P1+P2+P4 主体**（2026-09-03）：methods/backends 两层立层、五接缝接口就位、
 > 旧接缝组（Orchestrator/adapters/mock/autogen 线）已删除、docs/README 全面改写。
-> 剩余：P3 memory 挂载语义实现（attach_memory 当前显式桩，记忆线走 runtime 兼容层）、
+> 追加决策（2026-09-03）：runtime/ 兼容层**整体删除**（含 MASGraph/injection/langgraph 后端与
+> run_mas 线脚本配置），P3 记忆挂载按新架构全新实现（旧注入引擎见 git 历史）。
+> 剩余：P3 memory 挂载全新实现（attach_memory 显式桩）、
 > GEPA graph-native 适配、run_mas 的 lg 原生重写、脚本三合一收尾。
 > 用户决策：①五个模块全部收敛为挂载式插件；②`lg_prerun` 改名 `prerun`；③plugins/ 只做
 > 接口层，复杂实现放同级 `methods/`（按接缝镜像分组）；④训练不立第六接缝——写侧入口并入

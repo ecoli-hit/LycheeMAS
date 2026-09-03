@@ -47,12 +47,12 @@ analyze_run(trajectory, ...)   运行后：归因 → 信用（读侧）；train
 
 - **`core/types.py`**（纯 dataclass，零重依赖）：`AgentSpec`（图节点画像，**节点契约的载体**）、`Message`、`Answer`、`Trajectory`（一次执行 τ）、`TaskQuery`（含 `gold`）、`Budget/BudgetUnit`。
 - **`core/registry.py`**：`@REGISTRY.register(category, name)` / `REGISTRY.create` / `snapshot`。**CATEGORIES 按接缝分组**：
-  - build：`graph_builder, agent_selector, topology_generator`
+  - build：`graph_builder, agent_selector`
   - prerun：`pre_run_optimizer, graph_pruner, vocab_adapter`
   - memory：`memory_manager, memory_router`
   - processing：`processor, aggregator`
   - postrun：`attributor, credit_assigner, trainer`
-  - 其他：`benchmark`（评测）、`optimizer`（GEPA 离线 compile）、`runtime`（记忆线兼容层）
+  - 其他：`benchmark`（评测）、`optimizer`（GEPA 离线 compile）
 
 ### 3.2 `backends/` — 生成原语层
 
@@ -68,10 +68,6 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 ```
 
 读写唯一通道 `plugins/prerun/graphview.py`：`extract_view(sg)`（视图提取；缺元数据/非 DAG/多终端显式报错）、`rebuild(sg, prompts=…/adjacency=…)`（提示原地写 / 邻接产新图并回写元数据）。build 接缝产契约图，prerun/memory 接缝消费与改写契约图。
-
-### 3.4 `runtime/` — 记忆线兼容层（P3 退役预定）
-
-保留给 `scripts/run_mas.py`（CDM 记忆线）的执行路径：`base.py`（MASGraph 容器 + Runtime 协议）、`injection.py`（记忆注入六步引擎——P3 将改造为 `plugins/memory` 的节点包裹挂载）、`backends/langgraph_runtime.py`（runtime/langgraph）。AutoGen 线与 mock/vllm 已随重构退役。
 
 ---
 
@@ -91,7 +87,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 ### 4.3 memory（运行时记忆，`plugins/memory.py` × `methods/memory/`）
 
-回答「智能体之间记住什么、以什么表征传递」。`attach_memory(sg, method, backend, **kw) -> sg`：把注入六步（observe → route → recall → system 段注入 → 生成 → 记账）**重包进每个 agent 节点**（P3 实现中，当前显式桩；记忆线暂走 runtime 兼容层）。算法库：`channels/`（NL / 隐空间 / C2C）+ `managers/`（`memory_manager/cdm` 已实现）+ `routing/`（`static`/`fixed` 已实现）+ `store.py` + `context.py`（RoutingContext 决策日志/span 落盘）。
+回答「智能体之间记住什么、以什么表征传递」。`attach_memory(sg, method, backend, **kw) -> sg`：把注入六步（observe → route → recall → system 段注入 → 生成 → 记账）**重包进每个 agent 节点**（P3 全新实现中，当前显式桩）。算法库：`channels/`（NL / 隐空间 / C2C）+ `managers/`（`memory_manager/cdm` 已实现）+ `routing/`（`static`/`fixed` 已实现）+ `store.py` + `context.py`（RoutingContext 决策日志/span 落盘）。注入六步的旧引擎实现已随 runtime 兼容层删除（git 历史 `runtime/injection.py` 可作 P3 语义参照）。
 
 ### 4.4 processing（执行，`plugins/processing.py` × `methods/processing/`）
 
@@ -109,8 +105,8 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 ## 5. 评测体系（`eval/`，顶层独立）
 
 - **benchmark（20 个注册名）**：文本推理/知识 `gsm8k, aime_2024, math500, medqa, arc_easy, openbookqa, locomo10`；代码/通用助理 `human_eval, gaia_validation(_level_1..3)`；MAS 轨迹分析 `aftraj_audit(_test), agent_collab_{idr,rtd,cpr,clc}, mast_failure, open_agent_traces`。统一记录格式 `{task, kind, question, gold, context}`；数据加载惰性；入口 `benchmarks.load(task, n)` / `prepare(task)`。
-- **推理 / 打分分离**：`scripts/run_mas.py` 只推理（落 `predictions.jsonl` + `spans.jsonl` + config 快照）；`scripts/analyze_benchmark_run.py --score-predictions` 事后打分。
-- **pass@K**：`run_mas --samples K` 采样 K 次；打分侧 `metrics.aggregate_samples` 按 case 聚合（pass@1 = 各 case K 份均分再平均；pass@K = best-of-K 再平均）。
+- **推理 / 打分分离**：实验脚本只推理落盘（samples + config 快照）；`scripts/analyze_benchmark_run.py --score-predictions` 事后打分。
+- **pass@K**：`run_processed(method="parallel", k=K)` 采样 K 次；打分侧 `metrics.aggregate_samples` 按 case 聚合（pass@1 = 各 case K 份均分再平均；pass@K = best-of-K 再平均）。
 - **指标**：`kind` 覆盖 mc / exact / aime（数值+符号等价）/ f1 / human_eval / gaia / MAS 专用族；评测同时报告 accuracy / token / latency。注意：免 gold 的判官偏好优化会漂移答案表面形式（Unicode 极简写法等），评测端需写法鲁棒（MASPO 复现的方法学发现）。
 
 ---
@@ -120,7 +116,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 | 接缝 | 类别 | 已实现/可跑 | 桩（占名待接） |
 |---|---|---|---|
 | build | `graph_builder` | `static` | — |
-| build | `agent_selector` / `topology_generator` | `agentinit` / `static` | — |
+| build | `agent_selector` | `agentinit` | — |
 | prerun | `pre_run_optimizer` | `maspo`, `agentprune` | — |
 | prerun | `graph_pruner` | `agentprune` | `agentdropout`, `agentdropout_v2` |
 | prerun | `vocab_adapter` | — | `agentvocab` |
@@ -133,7 +129,6 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 | postrun | `credit_assigner` | — | `attribution_guided` |
 | postrun | `trainer` | — | —（RL 线待接） |
 | — | `benchmark` | 20 个（§5） | — |
-| — | `runtime` | `langgraph`（记忆线兼容层，P3 退役） | — |
 
 > 桩能被 `REGISTRY.list` 看到是有意为之：占好名字、让消融矩阵可见。组件状态变化时同步更新本表。
 

@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | 构建 build | `build_langgraph(method, ...)` | `static` 模板 / **AgentInit** 选队（EMNLP'25） | 已实现 |
 | 运行前 prerun | `optimize_langgraph(sg, method)` | **MASPO** 提示联合优化（ICML 2026）/ **AgentPrune** 剪枝（ICLR 2025）/ GEPA | 已实现（GEPA 图原生适配待接） |
-| 记忆 memory | `attach_memory(sg, method)` | channels（NL/隐空间/C2C）+ managers（**cdm**）+ routing | 算法库已实现；挂载语义实现中（暂走 runtime 兼容层） |
+| 记忆 memory | `attach_memory(sg, method)` | channels（NL/隐空间/C2C）+ managers（**cdm**）+ routing | 算法库已实现；挂载语义 P3 全新实现（接缝已立，显式桩） |
 | 执行 processing | `run_processed(runner, method)` | serial / parallel×K + self_consistency 归约 | 已实现（pass@K 承载点） |
 | 归因训练 postrun | `analyze_run(...)` / `train_from_runs(...)` | attributor / credit_assigner / trainer | 接缝已立，方法为桩（占名待接） |
 
@@ -28,7 +28,7 @@ build → prerun(可选) → memory(可选) → compile → processing 包裹执
 ```text
 src/lychee_mas/
 ├── plugins/                          # ★ 接口层（薄）
-│   ├── build.py                      #   build_langgraph + AgentSelector/TopologyGenerator 协议
+│   ├── build.py                      #   build_langgraph + AgentSelector/GraphBuilder 协议
 │   ├── prerun/                       #   optimize_langgraph + graphview 节点契约 + agentprune 薄适配
 │   ├── memory.py                     #   attach_memory（P3 实现中，显式桩）
 │   ├── processing.py                 #   run_processed + Processor/Aggregator 协议
@@ -46,15 +46,14 @@ src/lychee_mas/
 ├── core/                             # 公共基座（零重依赖）
 │   ├── types.py                      #   AgentSpec（节点契约载体）/Message/Trajectory/TaskQuery/…
 │   └── registry.py                   #   REGISTRY（@register / create / snapshot，类别按接缝分组）
-├── backends/                         # 生成原语（怎么调一个 LLM）
-│   ├── hf_backend.py                 #   本地 HF（generate_chat / encode_hidden / KV 原语）
-│   ├── openai_api_backend.py         #   OpenAI 兼容 API
-│   └── spans.py                      #   JsonlSpanLogger 运行事件落盘
-└── runtime/                          # 记忆线兼容层（P3 退役预定）：MASGraph + 注入六步 + runtime/langgraph
+└── backends/                         # 生成原语（怎么调一个 LLM）
+    ├── hf_backend.py                 #   本地 HF（generate_chat / encode_hidden / KV 原语）
+    ├── openai_api_backend.py         #   OpenAI 兼容 API
+    └── spans.py                      #   JsonlSpanLogger 运行事件落盘
 
 configs/    按接缝分组 YAML（build / prerun / memory / processing / benchmarks）
 examples/   01_five_seams_demo.py（make demo：五接缝离线端到端）
-scripts/    实验入口（run_maspo_langgraph / run_agentprune_gsm8k / run_mas / analyze_benchmark_run）
+scripts/    实验入口（run_maspo_langgraph / run_agentprune_gsm8k / analyze_benchmark_run）
 tests/      pytest（离线、LLM 全脚本化）
 docs/       MkDocs 文档站（本站）+ DESIGN.md（唯一架构设计文档）+ plans/
 ```

@@ -2,7 +2,7 @@
 
 与 `run_langgraph_baseline.py` 的唯一区别在**网络构建**环节：
   - baseline    ：agent 画像内联在脚本里（脚本自包含）
-  - 本脚本      ：用构建层的封装函数产图——`layers.construct.templates.StaticTopology`
+  - 本脚本      ：用构建层封装函数产队伍——`methods.build.templates.team_to_agentspecs`
                   按 team 模板产出 AgentSpec 顺序链（MASGraph），team 名默认由
                   `eval.task_config.team_name_for_task(task)` 按任务选择，可 --team 覆盖
 
@@ -11,7 +11,7 @@
 
 五个环节：
   ① Benchmark 选择   eval.benchmarks.load(task, n)
-  ② 网络构建         StaticTopology(team, rounds).build() -> MASGraph（框架封装函数）
+  ② 网络构建         team_to_agentspecs(team) -> list[AgentSpec]（框架封装函数）
   ③ 执行             原生 StateGraph（每个 AgentSpec 一节点；APPROVE / 轮数上限终止）
   ④ 评测             eval.task_config.extractor_for_task + eval.metrics.score
   ⑤ 落盘             outputs.jsonl + metrics.json + config.yaml（与 run_mas 同口径）
@@ -44,7 +44,7 @@ from lychee_mas.eval import metrics as M  # noqa: E402
 from lychee_mas.eval.benchmarks import LOADERS  # noqa: E402
 from lychee_mas.eval.benchmarks import load as load_benchmark  # noqa: E402
 from lychee_mas.eval.task_config import extractor_for_task, team_name_for_task  # noqa: E402
-from lychee_mas.methods.build.templates import TEAMS, StaticTopology  # noqa: E402
+from lychee_mas.methods.build.templates import TEAMS, team_to_agentspecs  # noqa: E402
 
 
 class RunState(TypedDict):
@@ -105,26 +105,25 @@ class HFChat:
 
 # ====================== ② 网络构建：框架封装函数产图 → 原生 StateGraph ======================
 
-def build_masgraph(task: str, team: str | None, max_rounds: int) -> Any:
-    """用构建层封装函数产 MASGraph：team 名默认按任务选，显式 --team 覆盖。"""
+def build_team(task: str, team: str | None) -> tuple[str, list]:
+    """用构建层封装函数产 AgentSpec 列表：team 名默认按任务选，显式 --team 覆盖。"""
     profile = team or team_name_for_task(task)
     if profile not in TEAMS:
         raise SystemExit(f"未知 team {profile!r}；可用：{sorted(TEAMS)}")
-    graph = StaticTopology(team=profile, rounds=max_rounds).build()
-    for node in graph.order():  # 无工具执行环境：工具型节点显式拒绝，不静默降级
+    specs = team_to_agentspecs(profile)
+    for node in specs:  # 无工具执行环境：工具型节点显式拒绝，不静默降级
         kind = str(node.meta.get("agent_type") or node.meta.get("type") or "assistant").lower()
         if kind != "assistant" or node.tools or node.meta.get("tools"):
             raise SystemExit(
                 f"team {profile!r} 含工具型节点 {node.name!r}（{kind}）；"
-                "本脚本仅支持纯文本团队，请换 --team 或用套件的 run_mas.py")
-    return graph
+                "本脚本仅支持纯文本团队，请换 --team")
+    return profile, specs
 
 
-def build_app(graph: Any, chat: HFChat, max_turns: int, max_new_tokens: int) -> Any:
-    """把 MASGraph 的 AgentSpec 节点连成顺序轮转的 StateGraph（原生 API）。"""
+def build_app(specs: list, chat: HFChat, max_turns: int, max_new_tokens: int) -> Any:
+    """把 AgentSpec 列表连成顺序轮转的 StateGraph（原生 API）。"""
     from langgraph.graph import END, START, StateGraph
 
-    specs = list(graph.order())
     names = [s.name for s in specs]
 
     def make_node(name: str, system_prompt: str) -> Callable[[RunState],
@@ -238,15 +237,14 @@ def main() -> None:
         raise SystemExit(f"benchmark {args.task!r} 加载为空：请先准备数据（benchmarks.prepare）")
 
     # ② 网络构建（框架封装函数）
-    graph = build_masgraph(args.task, args.team, args.max_rounds)
-    team = str(graph.meta.get("team"))
-    names = [s.name for s in graph.order()]
+    team, specs = build_team(args.task, args.team)
+    names = [s.name for s in specs]
     max_turns = len(names) * args.max_rounds
     print(f"[construct] task={args.task} cases={len(records)} "
           f"team={team} agents={names} max_turns={max_turns}")
 
     chat = HFChat(args.model_path, device=args.device, dtype=args.dtype)
-    app = build_app(graph, chat, max_turns=max_turns, max_new_tokens=args.max_new_tokens)
+    app = build_app(specs, chat, max_turns=max_turns, max_new_tokens=args.max_new_tokens)
 
     # ③ 执行 + ④ 评测
     samples: List[Dict[str, Any]] = []

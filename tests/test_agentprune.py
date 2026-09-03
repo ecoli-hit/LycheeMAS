@@ -11,15 +11,13 @@ from lychee_mas.methods.prerun.agentprune import (
     full_connected_masks,
     topological_order,
 )
-from lychee_mas.runtime.base import MASGraph
 
 
 def make_pruner(**kw) -> AgentPrunePruner:
     return AgentPrunePruner(n_agents=4, seed=0, **kw)
 
 
-def make_graph(n: int = 4) -> MASGraph:
-    return MASGraph(nodes=[AgentSpec(name=f"A{i}", role=f"r{i}") for i in range(n)])
+
 
 
 def test_full_connected_masks():
@@ -80,18 +78,14 @@ def test_topological_order_dag_and_cycle_break():
     assert preds2[order2[0]] == set()  # 首节点无前驱（破环边被丢弃）
 
 
-def test_prune_protocol_and_plugin_mount():
+def test_threshold_realization_keeps_all_at_init():
     p = make_pruner()
-    graph = make_graph()
-    out = p.prune(graph)
-    assert isinstance(out, MASGraph)
-    meta = out.meta["agentprune"]
-    assert meta["alive_spatial"] == 12  # 初始 p=0.5，threshold(>=0.5) 全保留
+    sm, tm = p.realized_matrices("threshold")
+    assert sum(v for row in sm for v in row) == 12  # 初始 p=0.5，threshold(>=0.5) 全保留
+    assert sum(v for row in tm for v in row) == 16
     with pytest.raises(ValueError):
-        p.prune(make_graph(3))  # 节点数不符显式报错
-
-    # 统一接口（pre_run_optimizer/agentprune）的挂载对拍见 tests/test_prerun.py
-
+        p.realized_matrices("bogus")  # 未知模式显式报错
+    # 图级挂载（optimize_langgraph(method="agentprune")）的对拍见 tests/test_prerun.py
 
 def test_state_roundtrip(tmp_path):
     p = make_pruner()

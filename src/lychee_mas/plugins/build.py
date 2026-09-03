@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.registry import REGISTRY
-from ..methods.build.base import AgentSelector, TopologyGenerator  # noqa: F401  协议 re-export
+from ..methods.build.base import AgentSelector, GraphBuilder  # noqa: F401  协议 re-export
 
 
 def build_langgraph(method: str = "static", **kwargs: Any) -> Any:

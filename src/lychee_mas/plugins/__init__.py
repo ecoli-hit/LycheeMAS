@@ -11,7 +11,7 @@
 """
 from __future__ import annotations
 
-from .build import AgentSelector, TopologyGenerator, build_langgraph
+from .build import AgentSelector, GraphBuilder, build_langgraph
 from .memory import attach_memory
 from .postrun import Trainer, analyze_run, train_from_runs
 from .prerun import optimize_langgraph
@@ -25,6 +25,6 @@ __all__ = [
     "analyze_run",
     "train_from_runs",
     "AgentSelector",
-    "TopologyGenerator",
+    "GraphBuilder",
     "Trainer",
 ]

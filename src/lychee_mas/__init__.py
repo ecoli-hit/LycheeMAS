@@ -16,7 +16,7 @@ from __future__ import annotations
 __version__ = "0.3.0"
 
 # 依次 import 触发组件注册（side-effect import；放进 __all__ 以避免被判为未使用）。
-from . import backends, eval, methods, plugins, runtime
+from . import backends, eval, methods, plugins
 from .core.registry import REGISTRY
 
-__all__ = ["__version__", "REGISTRY", "plugins", "methods", "eval", "backends", "runtime"]
+__all__ = ["__version__", "REGISTRY", "plugins", "methods", "eval", "backends"]

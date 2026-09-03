@@ -48,4 +48,3 @@ def test_global_snapshot_has_key_categories():
     assert "static" in snap["graph_builder"]          # build 接缝
     assert "maspo" in snap["pre_run_optimizer"]       # prerun 接缝
     assert "self_consistency" in snap["aggregator"]   # processing 接缝
-    assert "langgraph" in snap["runtime"]             # 记忆线兼容层

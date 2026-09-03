@@ -243,23 +243,3 @@ def team_to_agentspecs(team: str, model: Optional[str] = None) -> List[AgentSpec
             tools=list(r.tools or []),
             meta=meta))
     return specs
-
-
-@REGISTRY.register("topology_generator", "static")
-class StaticTopology:
-    """按 team 名产出 AgentSpec 列表，封装成顺序链 MASGraph（静态拓扑，必做 baseline）。"""
-
-    name = "static"
-
-    def __init__(self, team: str = "default", model: Optional[str] = None, rounds: int = 2):
-        self.team = team
-        self.model = model
-        self.rounds = rounds
-
-    def build(self, agents: Optional[List[AgentSpec]] = None, query=None):
-        # agents 显式给则直接用；否则按 team 名生成。返回 MASGraph（顺序链，边留空=声明顺序）。
-        from ...runtime.base import MASGraph  # 惰性导入避免环依赖
-
-        nodes = list(agents) if agents else team_to_agentspecs(self.team, self.model)
-        meta = {"team": self.team, **TEAM_META.get(self.team, {})}
-        return MASGraph(nodes=nodes, rounds=self.rounds, meta=meta)

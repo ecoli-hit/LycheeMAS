@@ -13,7 +13,6 @@ from lychee_mas.methods.prerun.gepa.pareto import (
     sample_candidate,
 )
 from lychee_mas.methods.prerun.gepa.program import MASProgram
-from lychee_mas.runtime.base import MASGraph
 
 # ---------------- pareto 纯函数 ----------------
 
@@ -54,16 +53,16 @@ def test_pareto_input_validation():
 
 # ---------------- MASProgram ----------------
 
-def make_graph():
-    return MASGraph(nodes=[
+def make_agents():
+    return [
         AgentSpec(name="planner", role="planner", system_prompt="plan it"),
         AgentSpec(name="solver", role="solver", system_prompt="solve it"),
-    ], meta={"team": "t"})
+    ]
 
 
 def test_program_roundtrip_and_mutation():
-    graph = make_graph()
-    prog = MASProgram.from_graph(graph)
+    agents = make_agents()
+    prog = MASProgram.from_agents(agents)
     assert prog.components["agent:planner:system_prompt"] == "plan it"
     assert prog.components["topology:description"] == "planner -> solver"
     assert prog.mutable_keys == ("agent:planner:system_prompt", "agent:solver:system_prompt")
@@ -72,9 +71,9 @@ def test_program_roundtrip_and_mutation():
     assert child.components["agent:solver:system_prompt"] == "solve harder"
     assert prog.components["agent:solver:system_prompt"] == "solve it"  # 不原地改
 
-    new_graph = child.apply_to(graph)
-    assert new_graph.order()[1].system_prompt == "solve harder"
-    assert graph.order()[1].system_prompt == "solve it"  # 原图不动
+    new_agents = child.apply_to(agents)
+    assert new_agents[1].system_prompt == "solve harder"
+    assert agents[1].system_prompt == "solve it"  # 原列表不动
 
     with pytest.raises(KeyError):
         prog.mutated("topology:description", "x")  # 冻结组件不可变异
@@ -84,7 +83,7 @@ def test_program_apply_to_unknown_agent_raises():
     prog = MASProgram(components={"agent:ghost:system_prompt": "boo"},
                       mutable_keys=("agent:ghost:system_prompt",))
     with pytest.raises(KeyError):
-        prog.apply_to(make_graph())
+        prog.apply_to(make_agents())
 
 
 # ---------------- GEPA compile（脚本化 rollout/reflector） ----------------
@@ -106,7 +105,7 @@ def appending_reflector(component_text: str, feedback: list) -> str:
 
 
 def test_gepa_optimizes_to_keyword():
-    prog = MASProgram.from_graph(make_graph())
+    prog = MASProgram.from_agents(make_agents())
     opt = REGISTRY.create("optimizer", "gepa", rollout=scripted_rollout,
                           reflector=appending_reflector,
                           minibatch_size=2, max_metric_calls=40, seed=0)
@@ -118,7 +117,7 @@ def test_gepa_optimizes_to_keyword():
 
 
 def test_gepa_budget_is_hard_ceiling():
-    prog = MASProgram.from_graph(make_graph())
+    prog = MASProgram.from_agents(make_agents())
     calls = {"n": 0}
 
     def counting_rollout(program, query):
@@ -135,7 +134,7 @@ def test_gepa_budget_is_hard_ceiling():
 
 
 def test_gepa_explicit_errors():
-    prog = MASProgram.from_graph(make_graph())
+    prog = MASProgram.from_agents(make_agents())
     trainset = [TaskQuery(question="q")]
     with pytest.raises(ValueError, match="rollout"):
         REGISTRY.create("optimizer", "gepa").optimize(prog, trainset, keyword_metric)
