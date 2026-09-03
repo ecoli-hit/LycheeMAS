@@ -6,12 +6,11 @@ import random
 import pytest
 from lychee_mas.core.registry import REGISTRY
 from lychee_mas.core.types import AgentSpec, TaskQuery
-from lychee_mas.layers.prune.pruners.agentprune import (
+from lychee_mas.methods.prerun.agentprune import (
     AgentPrunePruner,
     full_connected_masks,
     topological_order,
 )
-from lychee_mas.plugins.base import RunContext
 from lychee_mas.runtime.base import MASGraph
 
 
@@ -91,9 +90,7 @@ def test_prune_protocol_and_plugin_mount():
     with pytest.raises(ValueError):
         p.prune(make_graph(3))  # 节点数不符显式报错
 
-    plugin = REGISTRY.create("pre_run_plugin", "prune", pruner="agentprune", n_agents=4)
-    pruned = plugin.before_run(graph, TaskQuery(question="q"), RunContext())
-    assert isinstance(pruned, MASGraph) and "agentprune" in pruned.meta
+    # 统一接口（pre_run_optimizer/agentprune）的挂载对拍见 tests/test_prerun.py
 
 
 def test_state_roundtrip(tmp_path):

@@ -5,7 +5,6 @@ from lychee_mas.core.types import TaskQuery
 from lychee_mas.eval import benchmarks  # noqa: F401
 from lychee_mas.eval.metrics import score, score_details
 from lychee_mas.eval.benchmarks import aftraj, agent_collab, choice_qa, common, locomo10, mast_data, open_agent_traces
-from lychee_mas.runtime.backends.autogen_runtime import AutoGenRuntime
 
 
 def test_extended_benchmarks_registered():
@@ -154,30 +153,6 @@ def test_choice_qa_and_locomo_standardizers():
     assert "session_1" in original_records[0]["context"]
     assert "Caroline: I went to support group." in original_records[0]["context"]
 
-
-def test_autogen_runtime_owns_tool_workspace_helpers(tmp_path):
-    runtimes = set(REGISTRY.list("runtime"))
-    assert "autogen" in runtimes
-    assert "autogen_tools" not in runtimes
-    source = tmp_path / "source.txt"
-    source.write_text("public attachment", encoding="utf-8")
-    runtime = AutoGenRuntime(work_root=tmp_path / "work")
-    workspace, task_text, copied = runtime._prepare_workspace(
-        TaskQuery(
-            id="case/one",
-            question=f"Read this file.\n\nReferenced file path: {source}",
-            context=f"Referenced file path: {source}",
-        )
-    )
-    assert workspace.is_dir()
-    assert (workspace / "source.txt").read_text(encoding="utf-8") == "public attachment"
-    assert str(source) not in task_text
-    assert "source.txt" in task_text
-    assert copied == [str(workspace / "source.txt")]
-    assert runtime._is_tool_event("ComputerTerminal", "TextMessage")
-    assert runtime._is_tool_event("WebSurfer", "TextMessage")
-    assert runtime._is_tool_event("Coder", "ToolCallExecutionEvent")
-    assert not runtime._is_tool_event("Coder", "TextMessage")
 
 
 def test_gaia_scorer_uses_official_normalization():

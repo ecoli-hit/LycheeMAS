@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ...core.types import AgentSpec
-from ...layers.prune.pruners.agentprune import topological_order
+from ...methods.prerun.agentprune import topological_order
 
 
 @dataclass

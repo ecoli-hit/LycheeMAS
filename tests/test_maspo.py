@@ -11,14 +11,14 @@ import pytest
 from lychee_mas.core.registry import REGISTRY
 from lychee_mas.core.types import AgentSpec
 from lychee_mas.plugins.prerun.graphview import GraphView
-from lychee_mas.plugins.prerun.maspo.executor import CachedExecutor
-from lychee_mas.plugins.prerun.maspo.optimizer import MASPOOptimizer
-from lychee_mas.plugins.prerun.maspo.prompts import (
+from lychee_mas.methods.prerun.maspo.executor import CachedExecutor
+from lychee_mas.methods.prerun.maspo.optimizer import MASPOOptimizer
+from lychee_mas.methods.prerun.maspo.prompts import (
     AGENT_TEMPLATES,
     role_description,
     seed_template,
 )
-from lychee_mas.plugins.prerun.maspo.textops import (
+from lychee_mas.methods.prerun.maspo.textops import (
     extract_answer,
     extract_prompt_tag,
     parse_comparison_result,
@@ -152,7 +152,7 @@ def run_with_limits(opt: MASPOOptimizer, coro_factory):
         import asyncio as aio
 
         sem = aio.Semaphore(opt.max_concurrency)
-        from lychee_mas.plugins.prerun.maspo.optimizer import _limited
+        from lychee_mas.methods.prerun.maspo.optimizer import _limited
 
         opt.agent_llm = _limited(opt._raw_agent_llm, sem)
         opt.evaluator_llm = _limited(opt._raw_evaluator_llm, sem)
@@ -250,7 +250,7 @@ def test_process_single_node_keeps_winner():
     agent = ScriptedAgentLLM()
     evaluator = ScriptedEvaluatorLLM()  # 候选恒赢
     opt = make_opt(agent, evaluator)
-    states = {n: __import__("lychee_mas.plugins.prerun.maspo.optimizer",
+    states = {n: __import__("lychee_mas.methods.prerun.maspo.optimizer",
                             fromlist=["AgentOptState"]).AgentOptState.seeded(
                                 n, view.specs[n].system_prompt) for n in view.names}
     node = dict(states["predictor"].current_beam[0])
@@ -266,7 +266,7 @@ def test_process_single_node_loser_keeps_old_node():
     view = make_view()
     evaluator = ScriptedEvaluatorLLM(local="B", global_="B", next_local="B", terminal="B")
     opt = make_opt(ScriptedAgentLLM(), evaluator)
-    states = {n: __import__("lychee_mas.plugins.prerun.maspo.optimizer",
+    states = {n: __import__("lychee_mas.methods.prerun.maspo.optimizer",
                             fromlist=["AgentOptState"]).AgentOptState.seeded(
                                 n, view.specs[n].system_prompt) for n in view.names}
     node = dict(states["predictor"].current_beam[0])

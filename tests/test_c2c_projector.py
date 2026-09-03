@@ -6,7 +6,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from lychee_mas.memory.channels.c2c_projector import (  # noqa: E402
+from lychee_mas.methods.memory.channels.c2c_projector import (  # noqa: E402
     C2CProjector,
     build_projector_stack,
 )

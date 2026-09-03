@@ -44,7 +44,7 @@ from lychee_mas.eval import metrics as M  # noqa: E402
 from lychee_mas.eval.benchmarks import LOADERS  # noqa: E402
 from lychee_mas.eval.benchmarks import load as load_benchmark  # noqa: E402
 from lychee_mas.eval.task_config import extractor_for_task, team_name_for_task  # noqa: E402
-from lychee_mas.layers.construct.templates import TEAMS, StaticTopology  # noqa: E402
+from lychee_mas.methods.build.templates import TEAMS, StaticTopology  # noqa: E402
 
 
 class RunState(TypedDict):

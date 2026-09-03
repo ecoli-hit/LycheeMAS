@@ -12,7 +12,7 @@ pytest.importorskip("vendi_score")
 
 from lychee_mas.core.registry import REGISTRY  # noqa: E402
 from lychee_mas.core.types import AgentSpec, Budget, BudgetUnit, TaskQuery  # noqa: E402
-from lychee_mas.layers.construct.selectors import _pareto  # noqa: E402
+from lychee_mas.methods.build.selectors import _pareto  # noqa: E402
 
 
 def _sel(**cfg):
@@ -31,7 +31,7 @@ def test_returns_agentspecs_within_bounds():
 
 
 def test_selected_come_from_candidate_pool():
-    from lychee_mas.layers.construct.selectors.pool import CANDIDATE_ROLES
+    from lychee_mas.methods.build.selectors.pool import CANDIDATE_ROLES
 
     pool_names = {r[0] for r in CANDIDATE_ROLES}
     out = _sel().select(_q())

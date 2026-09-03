@@ -43,7 +43,9 @@ def test_global_snapshot_has_key_categories():
     # memory_router 是本次重构新增的关键类别（CLAUDE.md §5）
     assert "memory_router" in snap
     assert "static" in snap["memory_router"]
-    # cdm 记忆方法 + mock runtime + 可跑的 self_consistency 聚合器
+    # cdm 记忆方法 + 五接缝关键类别 + 可跑的 self_consistency 聚合器
     assert "cdm" in snap["memory_manager"]
-    assert "mock" in snap["runtime"]
-    assert "self_consistency" in snap["aggregator"]
+    assert "static" in snap["graph_builder"]          # build 接缝
+    assert "maspo" in snap["pre_run_optimizer"]       # prerun 接缝
+    assert "self_consistency" in snap["aggregator"]   # processing 接缝
+    assert "langgraph" in snap["runtime"]             # 记忆线兼容层

@@ -50,6 +50,6 @@ def test_parallel_runs_k_times_and_aggregates():
 
 
 def test_processing_protocol_importable():
-    from lychee_mas.layers.processing import ProcessingResult, Processor
+    from lychee_mas.methods.processing import ProcessingResult, Processor
     assert hasattr(Processor, "run")
     assert hasattr(ProcessingResult, "__dataclass_fields__")

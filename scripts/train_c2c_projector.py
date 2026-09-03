@@ -98,11 +98,11 @@ def main() -> None:
     args = ap.parse_args()
 
     import torch
-    from lychee_mas.memory.channels.c2c_projector import (
+    from lychee_mas.methods.memory.channels.c2c_projector import (
         build_projector_stack,
         map_source_to_target_layers,
     )
-    from lychee_mas.runtime.backends.hf_backend import (
+    from lychee_mas.backends.hf_backend import (
         HFBackend,
         common_suffix_len,
         make_fusion_cache,

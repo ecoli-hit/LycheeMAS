@@ -11,15 +11,13 @@ from typing import Any, Callable, TypeVar
 T = TypeVar("T")
 
 CATEGORIES = (
-    "runtime", "model_client",
-    "agent_selector", "topology_generator",
-    "graph_pruner", "vocab_adapter",
-    "memory_manager", "memory_router",
-    "aggregator", "processor",
-    "attributor", "credit_assigner", "trainer",
-    "benchmark",
-    "pre_run_plugin", "post_run_plugin", "optimizer",
-    "pre_run_optimizer",
+    "graph_builder", "agent_selector", "topology_generator",   # build 接缝
+    "pre_run_optimizer", "graph_pruner", "vocab_adapter",      # prerun 接缝
+    "memory_manager", "memory_router",                         # memory 接缝
+    "processor", "aggregator",                                 # processing 接缝
+    "attributor", "credit_assigner", "trainer",                # postrun 接缝
+    "benchmark", "optimizer",                                  # eval / 离线 compile（gepa）
+    "runtime",                                                 # 记忆线兼容层（P3 退役）
 )
 
 

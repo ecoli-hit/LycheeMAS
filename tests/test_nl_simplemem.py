@@ -5,7 +5,7 @@ import sys
 import types
 
 import pytest
-from lychee_mas.memory.channels.nl import MEMORY_HEADER, PREV_OUTPUT_HEADER, NLMemory
+from lychee_mas.methods.memory.channels.nl import MEMORY_HEADER, PREV_OUTPUT_HEADER, NLMemory
 
 
 class _FakeSimpleMem:
@@ -70,8 +70,8 @@ def test_simplemem_reset_starts_new_memory(fake_simplemem):
 
 
 def test_manager_feeds_nl_simplemem(fake_simplemem):
-    from lychee_mas.memory.managers.DualChannelMemory import DualChannelMemoryManager
-    from lychee_mas.memory.routing.base import RouteDecision
+    from lychee_mas.methods.memory.managers.DualChannelMemory import DualChannelMemoryManager
+    from lychee_mas.methods.memory.routing.base import RouteDecision
 
     class FakeBackend:  # 无 tok / 无 torch
         pass

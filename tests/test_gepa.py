@@ -6,13 +6,13 @@ import random
 import pytest
 from lychee_mas.core.registry import REGISTRY
 from lychee_mas.core.types import AgentSpec, Answer, TaskQuery, Trajectory
-from lychee_mas.plugins.gepa.pareto import (
+from lychee_mas.methods.prerun.gepa.pareto import (
     dominated,
     pareto_pool,
     per_instance_best,
     sample_candidate,
 )
-from lychee_mas.plugins.program import MASProgram
+from lychee_mas.methods.prerun.gepa.program import MASProgram
 from lychee_mas.runtime.base import MASGraph
 
 # ---------------- pareto 纯函数 ----------------

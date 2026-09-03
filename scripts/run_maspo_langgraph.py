@@ -49,12 +49,12 @@ from lychee_mas.core.types import AgentSpec  # noqa: E402
 from lychee_mas.eval import metrics as M  # noqa: E402
 from lychee_mas.eval.benchmarks import load as load_benchmark  # noqa: E402
 from lychee_mas.plugins.prerun import optimize_langgraph  # noqa: E402
-from lychee_mas.plugins.prerun.maspo.executor import (  # noqa: E402
+from lychee_mas.methods.prerun.maspo.executor import (  # noqa: E402
     CONTEXT_JOINER,
     format_agent_prompt,
 )
-from lychee_mas.plugins.prerun.maspo.prompts import COMPRESS_PROMPT, seed_template  # noqa: E402
-from lychee_mas.plugins.prerun.maspo.textops import extract_answer  # noqa: E402
+from lychee_mas.methods.prerun.maspo.prompts import COMPRESS_PROMPT, seed_template  # noqa: E402
+from lychee_mas.methods.prerun.maspo.textops import extract_answer  # noqa: E402
 
 DEFAULT_MODEL = "/data/mxy/Models/Qwen/Qwen3-8B"       # MASPO 执行模型（本地权重）
 DEFAULT_EVALUATOR_MODEL = "gemini-2.5-pro"             # MASPO 评估/反思模型
@@ -205,7 +205,7 @@ def make_evaluator_llm(args: argparse.Namespace, stats: Stats, temperature: floa
 
     temperature：比较端 0.0 / 反思提议端 0.7（原版 _propose_new_prompt 的分工）。
     """
-    from lychee_mas.runtime.backends.openai_api_backend import OpenAICompatibleBackend
+    from lychee_mas.backends.openai_api_backend import OpenAICompatibleBackend
 
     backend = OpenAICompatibleBackend(
         args.evaluator_model, base_url=args.evaluator_base_url,

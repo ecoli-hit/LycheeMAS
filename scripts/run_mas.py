@@ -295,13 +295,13 @@ async def run_one(cfg: dict, args) -> dict:
     from lychee_mas.eval.benchmarks import load as load_task
     from lychee_mas.eval.benchmarks.common import runs_root as default_runs_root
     from lychee_mas.eval.task_config import team_name_for_task
-    from lychee_mas.layers.construct.templates import StaticTopology
-    from lychee_mas.memory.context import RoutingContext
-    from lychee_mas.memory.managers.DualChannelMemory import DualChannelMemoryManager
-    from lychee_mas.memory.routing.static import fixed_channel_router
+    from lychee_mas.methods.build.templates import StaticTopology
+    from lychee_mas.methods.memory.context import RoutingContext
+    from lychee_mas.methods.memory.managers.DualChannelMemory import DualChannelMemoryManager
+    from lychee_mas.methods.memory.routing.static import fixed_channel_router
     from lychee_mas.runtime.backends.autogen_runtime import AutoGenRuntime
-    from lychee_mas.runtime.backends.openai_api_backend import OpenAICompatibleBackend
-    from lychee_mas.runtime.spans import JsonlSpanLogger, exception_record
+    from lychee_mas.backends.openai_api_backend import OpenAICompatibleBackend
+    from lychee_mas.backends.spans import JsonlSpanLogger, exception_record
 
     runtime_name = args.runtime or _get(cfg, "runtime.name", "autogen")
     if runtime_name not in ("autogen", "langgraph"):
@@ -420,7 +420,7 @@ async def run_one(cfg: dict, args) -> dict:
         )
     elif backend_provider == "hf":
         import torch
-        from lychee_mas.runtime.backends.hf_backend import HFBackend
+        from lychee_mas.backends.hf_backend import HFBackend
 
         dtypes = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
         dtype = dtypes.get(_get(cfg, "backend.dtype", "bfloat16"), torch.bfloat16)

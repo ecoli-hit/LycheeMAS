@@ -32,17 +32,17 @@
 
 ## 框架总览
 
-五层多智能体系统（MAS）研究框架。主线是把整个 MAS 统一表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**，每一层都是对 G（或其执行轨迹 τ）的一次变换；执行引擎可插拔（**autogen / langgraph 双后端**），运行前/运行后优化以 **GEPA 式插件**（pre_run / post_run / optimizer 三接缝）挂载。完整设计见 [`docs/DESIGN.md`](docs/DESIGN.md)：
+五模块多智能体系统（MAS）研究框架。把整个 MAS 统一表示为一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**（载体 = LangGraph `StateGraph` + AgentSpec 节点契约）；**五个模块 = 五个挂载式接缝**，一切算法经 REGISTRY 按 `method` 名挂载。完整设计见 [`docs/DESIGN.md`](docs/DESIGN.md)：
 
-| 层       | 模块                                        | 职责                                                                  |
-| -------- | ------------------------------------------- | --------------------------------------------------------------------- |
-| 构建     | `lychee_mas.layers.construct`             | 多智能体网络构建（团队组建 + 静态/动态图；**AgentInit** 多样性×相关性选队）|
-| 剪枝     | `lychee_mas.layers.prune`                 | 网络剪枝与优化（含模型级词表降本）                                    |
-| 记忆     | `lychee_mas.memory`                       | 运行时多维度多表征记忆管理（NL/隐空间/参数；已提升为顶层包）          |
-| 处理     | `lychee_mas.layers.processing`            | 决定跑几次 MAS：`serial` 单次执行 + `parallel` 并发 K 次并聚合    |
-| 归因训练 | `lychee_mas.trace` + `lychee_mas.train` | 错误归因/信用（trace，含 TraceStore）+ 强化学习/提示优化训练（train） |
+| 接缝 | 统一入口（`plugins/`） | 实现（`methods/`） | 职责 |
+| --- | --- | --- | --- |
+| 构建 | `build_langgraph(method, ...)` | `static` 模板 / **AgentInit** 选队 | 产出契约 StateGraph |
+| 运行前 | `optimize_langgraph(sg, method)` | **MASPO**（提示联合优化）/ **AgentPrune**（剪枝）/ GEPA | 执行前改写图；optimize 离线产物化 + apply 即插即用 |
+| 记忆 | `attach_memory(sg, method)` | channels / managers（cdm）/ routing | 注入六步包裹进 agent 节点（实现中） |
+| 处理 | `run_processed(runner, method)` | serial / parallel + self_consistency | 跑几次 + 归约（pass@K 承载点） |
+| 归因训练 | `analyze_run(...)` + `train_from_runs(...)` | attributor / credit / trainer（桩） | 读侧归因信用 + 写侧离线训练 |
 
-设计四原则：**可插拔可消融**（registry + config）、**Runtime 抽象隔离执行引擎**（autogen / langgraph 双后端 + 共享注入引擎）、**性能-成本联合度量**、**可复现**。
+两层结构：**`plugins/` 定义接缝（薄），`methods/` 存方法（厚）**，按接缝镜像。设计四原则：**可插拔可消融**（registry + method 按名挂载）、**接口/实现/生成原语三层隔离**（plugins / methods / backends）、**性能-成本联合度量**、**可复现**。
 
 ---
 
@@ -58,7 +58,7 @@ conda activate LycheeMAS
 source .venv/bin/activate          # 首次创建见下方「初始化 .venv」
 
 # 安装可编辑包（在已激活的 .venv 内执行）
-uv pip install -e ".[dev]"         # 仅骨架 + 开发工具：离线 mock 即可跑通（无需 autogen/torch/API）
+uv pip install -e ".[dev]"         # 仅骨架 + 开发工具：离线示例即可跑通（无需 torch/API）
 uv pip install -e ".[all]"         # 全量：autogen + 真实推理/评测依赖（torch/transformers/vLLM 已在 .venv 内）
 ```
 
@@ -77,35 +77,27 @@ uv pip install -e ".[all]"
 
 ---
 
-## 跑 demo（离线，零重依赖）
+## 跑 demo（离线，零 GPU / 零 API）
 
 ```bash
 make demo
 # 等价于：
-PYTHONPATH=src python examples/01_static_chain_e2e.py
+PYTHONPATH=src python examples/01_five_seams_demo.py
 ```
 
-用 `runtime=mock` + 一个静态团队 + 一个 `TaskQuery` 跑通 `Orchestrator`，打印最终答案与 `REGISTRY.snapshot()`。
+五接缝离线端到端（LLM 为脚本化假后端，需 `.[langgraph]` extra）：`build_langgraph`（构建契约图）→ `optimize_langgraph`（prerun apply 挂载优化提示）→ `compile` → `run_processed`（并发 3 次 + self_consistency 投票），打印最终答案与 `REGISTRY.snapshot()`。
 
-实验入口（CLI + 落盘，默认 `runtime=mock` 可离线）：
+统一挂载用法（换算法 = 换 `method` 字符串）：
 
-```bash
-PYTHONPATH=src python scripts/run_experiment.py \
-    --runtime mock --team default --aggregator self_consistency \
-    --questions "2 plus 2 is 4" "answer is 7"
+```python
+from lychee_mas.plugins import build_langgraph, optimize_langgraph, run_processed
+
+sg = build_langgraph(method="static", node_factory=..., state_schema=..., team="default")
+sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")   # 或 method="agentprune"
+result = await run_processed(runner, method="parallel", k=8, aggregator="self_consistency")
 ```
 
-**AgentInit 选队**（`agent_selector/agentinit`，EMNLP'25 Findings）：用多样性×相关性的 Pareto 选择决定团队成员，替代固定 `--team` 模板。需 `.[construct]`（`vendi_score`）：
-
-```bash
-uv pip install -e ".[construct]"
-# pool 模式：固定候选池 + 确定性挑选，离线、可复现（generate 模式走 LLM 现场生成角色）
-PYTHONPATH=src python scripts/run_experiment.py \
-    --runtime mock --selector agentinit --selector-mode pool \
-    --questions "2 plus 2 is 4"
-```
-
-不带 `--selector` 时行为完全不变（走 `--team` 模板，零回归）。构建层设计见 `docs/DESIGN.md` §4.1。
+真实实验入口见 `scripts/run_maspo_langgraph.py`（MASPO × MATH-500 复现：baseline / optimize / eval 三条腿）与 `scripts/run_agentprune_gsm8k.py`（AgentPrune × GSM8K）。
 
 ---
 
@@ -116,7 +108,7 @@ make test     # PYTHONPATH=src pytest -q
 make lint     # ruff check src
 ```
 
-全部用 mock runtime，无需 API key。
+全部离线（LLM 脚本化），无需 API key。
 
 ---
 
@@ -164,24 +156,24 @@ make lint     # ruff check src
 
 ```
 src/lychee_mas/
-├── core/        统一图抽象类型（types）+ 组件注册表（registry，17 类别）
-├── runtime/     Runtime 协议 + 共享注入引擎（injection.py）+ 后端（mock / autogen / langgraph / HF / API）
-├── memory/      记忆层（运行时组件）：channels / managers / routing + store / context
-├── plugins/     插件系统：pre_run / post_run 插件 + optimizer（GEPA）+ MASProgram
-│                + prerun（LangGraph 原生运行前优化：MASPO / AgentPrune 统一接口）
-├── trace/       归因/信用（读侧）：attributor + credit_assigner + TraceStore
-├── train/       训练（写侧）：RL 训练（trainer）
-├── layers/      层变换（construct / prune / processing{parallel,serial}）
-├── pipeline.py  Orchestrator.run（端到端编排 + 插件链，按 config 从 REGISTRY 取组件）
-└── eval/        benchmarks（20 个）+ metrics（评分/落盘/pass@K）+ task_config
-configs/         YAML 配置（按组件分组，含 plugins/）
-examples/        可运行示例（离线 mock 优先）
-scripts/         实验入口（run_mas / analyze_benchmark_run / run_experiment）
-tests/           pytest（离线、零重依赖）
-docs/            DESIGN.md（唯一架构设计文档）+ 文档站页面
+├── plugins/     接口层（薄）：五接缝统一入口 + 协议 + 节点契约
+│   ├── build.py / prerun/ / memory.py / processing.py / postrun.py
+├── methods/     实现层（厚）：论文复现/训练循环，按接缝镜像
+│   ├── build/（static, agentinit）  prerun/（agentprune, maspo/, gepa/）
+│   ├── memory/（channels/managers/routing）  processing/（serial/parallel）
+│   └── postrun/（attributors, credit, TraceStore）
+├── eval/        benchmarks（20 个）+ metrics（评分/落盘/pass@K）+ task_config
+├── core/        公共类型（types：AgentSpec 等）+ 组件注册表（registry）
+├── backends/    生成原语（hf / openai_api / spans 落盘）
+└── runtime/     记忆线兼容层（MASGraph + 注入六步 + runtime/langgraph；P3 退役预定）
+configs/         YAML 配置（按接缝分组：build / prerun / memory / processing / benchmarks）
+examples/        01_five_seams_demo.py（make demo：五接缝离线端到端）
+scripts/         实验入口（run_maspo_langgraph / run_agentprune_gsm8k / run_mas / analyze_benchmark_run）
+tests/           pytest（离线、LLM 全脚本化）
+docs/            DESIGN.md（唯一架构设计文档）+ plans/ + 文档站页面
 ```
 
-> **架构设计**（模块职责、接口契约、组件全景、评测体系）见 `docs/DESIGN.md`；**开发规范**（环境、命令、黄金法则、六步配方、检查清单）见 `CLAUDE.md`；每个顶层包另有一份接口 `README.md`。
+> **架构设计**（接缝职责、节点契约、组件全景、评测体系）见 `docs/DESIGN.md`；**开发规范**（环境、命令、黄金法则、六步配方、检查清单）见 `CLAUDE.md`。
 
 ---
 

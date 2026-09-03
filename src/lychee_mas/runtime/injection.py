@@ -27,9 +27,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from ..memory.channels.latent import LatentMemory
-from ..memory.routing.base import RouteDecision, RouterInputs
-from .spans import exception_record
+from ..backends.spans import exception_record
+from ..methods.memory.channels.latent import LatentMemory
+from ..methods.memory.routing.base import RouteDecision, RouterInputs
 
 # chat 消息：{"role": str, "content": str, 可选 "source": 发言者名}
 ChatMessage = Dict[str, Any]

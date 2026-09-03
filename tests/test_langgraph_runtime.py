@@ -13,10 +13,10 @@ pytest.importorskip("langgraph")
 
 from lychee_mas.core.registry import REGISTRY
 from lychee_mas.core.types import TaskQuery
-from lychee_mas.layers.construct.templates import StaticTopology
-from lychee_mas.memory.base import MemoryBundle
-from lychee_mas.memory.context import RoutingContext
-from lychee_mas.memory.routing.static import fixed_channel_router
+from lychee_mas.methods.build.templates import StaticTopology
+from lychee_mas.methods.memory.base import MemoryBundle
+from lychee_mas.methods.memory.context import RoutingContext
+from lychee_mas.methods.memory.routing.static import fixed_channel_router
 
 
 class FakeGen:

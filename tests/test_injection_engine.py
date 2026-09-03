@@ -6,10 +6,10 @@
 from __future__ import annotations
 
 import pytest
-from lychee_mas.memory.base import MemoryBundle
-from lychee_mas.memory.channels.latent import LatentMemory
-from lychee_mas.memory.context import RoutingContext
-from lychee_mas.memory.routing.base import MemoryRouter, RouteDecision, RouterInputs
+from lychee_mas.methods.memory.base import MemoryBundle
+from lychee_mas.methods.memory.channels.latent import LatentMemory
+from lychee_mas.methods.memory.context import RoutingContext
+from lychee_mas.methods.memory.routing.base import MemoryRouter, RouteDecision, RouterInputs
 from lychee_mas.runtime.injection import (
     InjectionRequest,
     PostProcessed,

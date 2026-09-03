@@ -1,7 +1,0 @@
-# optimizer/gepa —— GEPA 式离线 compile（反思式提示演化）。
-# 用法：opt = REGISTRY.create("optimizer", "gepa", rollout=..., backend=..., **本文件超参)
-plugin: gepa
-minibatch_size: 3              # 每轮变异用的反馈小批量
-max_metric_calls: 100          # 硬预算：rollout+metric 的总调用数
-reflect_max_new_tokens: 512    # 默认反思器的生成预算
-seed: 0

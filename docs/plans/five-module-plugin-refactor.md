@@ -1,6 +1,9 @@
 # 五模块全插件化重构方案
 
-> 状态：**方案定稿 + Phase 0 已执行 + prerun 改名已执行**（2026-09-03）。
+> 状态：**已执行至 P1+P2+P4 主体**（2026-09-03）：methods/backends 两层立层、五接缝接口就位、
+> 旧接缝组（Orchestrator/adapters/mock/autogen 线）已删除、docs/README 全面改写。
+> 剩余：P3 memory 挂载语义实现（attach_memory 当前显式桩，记忆线走 runtime 兼容层）、
+> GEPA graph-native 适配、run_mas 的 lg 原生重写、脚本三合一收尾。
 > 用户决策：①五个模块全部收敛为挂载式插件；②`lg_prerun` 改名 `prerun`；③plugins/ 只做
 > 接口层，复杂实现放同级 `methods/`（按接缝镜像分组）；④训练不立第六接缝——写侧入口并入
 > postrun（`train_from_runs`），产物经 prerun apply 挂载；⑤`eval/` 维持顶层独立。

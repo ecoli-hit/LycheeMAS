@@ -6,7 +6,7 @@
 
 ## 1. 一句话认知
 
-LycheeMAS 是**多智能体系统（MAS）研究框架**：整个 MAS = 一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**；一切能力都是「注册到 REGISTRY 的组件」，由配置按名选择；执行引擎（autogen / langgraph 双后端）隔离在 `runtime/backends/` 之后，业务层零依赖引擎。动手前：`make snapshot` 看现有组件，读 `docs/DESIGN.md` 对应章节。
+LycheeMAS 是**多智能体系统（MAS）研究框架**：整个 MAS = 一张带时序与记忆状态的有向图 **G=(V,E,W,T,M)**；**五个模块 = 五个挂载式接缝**（build → prerun → memory → compile → processing → postrun），一切算法经 REGISTRY 按 `method` 名挂载在 LangGraph 契约图上。两层结构：**`plugins/` 定义接缝（薄），`methods/` 存方法（厚）**，按接缝互相镜像；`eval/` 评测、`core/` 类型+注册表、`backends/` 生成原语。动手前：`make snapshot` 看现有组件，读 `docs/DESIGN.md` 对应章节。
 
 ---
 
@@ -17,7 +17,7 @@ LycheeMAS 是**多智能体系统（MAS）研究框架**：整个 MAS = 一张�
 conda activate CDM
 
 # 安装（src-layout，可编辑装）
-uv pip install -e ".[dev]"        # 骨架 + 开发工具：离线 mock 即可跑通（无需 autogen/torch/API）
+uv pip install -e ".[dev]"        # 骨架 + 开发工具：离线示例即可跑通（无需 torch/API）
 uv pip install -e ".[all]"        # 全量：autogen + langgraph + torch/transformers 等（真实跑分用）
                                   # ⚠ 勿加 --upgrade：环境内是 CUDA 版 torch，升级会换成无 CUDA 轮子
 # 按需 extras：[langgraph]（LangGraph 后端）/ [benchmark]（基准数据准备）/ [construct]（agentinit）
@@ -42,10 +42,10 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions   # 事后
 
 ## 3. 代码规范（黄金法则，违反即返工）
 
-1. **业务代码禁止 import 执行引擎。** `autogen_*` 只允许出现在 `runtime/backends/autogen_*.py`；`langgraph` 只允许出现在 `runtime/backends/langgraph_runtime.py` 的 `_build_app` 内，以及 `plugins/prerun/`（LangGraph 原生运行前优化接缝，图进图出）；且都必须惰性导入（函数内部）。其余业务层只用 `lychee_mas.runtime` 的 `Runtime` 协议。
+1. **接口/实现/原语三层隔离。** `plugins/` 只放协议、统一入口、method 分发、校验与薄适配（不含论文级算法，目标 <300 行/文件）；论文复现、训练循环、重机器一律在 `methods/`（按接缝镜像分组）；模型库（transformers/openai）只经 `backends/` 触达，methods 里的算法用注入的回调调 LLM。`langgraph` 允许出现在 plugins / methods / runtime（兼容层），但**必须惰性导入**（函数内部）。
 2. **重依赖一律惰性导入。** `torch / transformers / autogen_* / langgraph / numpy / yaml / sympy / datasets` 只能在函数/方法内部导入；**注册组件的模块被 import 时不得触发这些库**。校验：`make selfcheck` 必须打印 `HEAVY LOADED: NONE`。
-3. **每个算法 = 注册一个类 + 配置选择，绝不硬编码。** `@REGISTRY.register(category, name)`；新增方法**不改 `pipeline.py`**；对照实验只换组件名。
-4. **公共类型只放 `core/types.py`**；层内专用契约留在该层 `base.py`，不塞进 core。
+3. **每个算法 = 注册一个类 + method 按名挂载，绝不硬编码。** `@REGISTRY.register(category, name)` 打在 `methods/` 的实现类上；新增方法**不改任何 plugins/ 接口文件**；对照实验只换 `method` 名。
+4. **公共类型只放 `core/types.py`**；接缝协议放 `plugins/` 对应接缝文件，方法族内部契约留在 `methods/<接缝>/` 的 base 文件，不塞进 core。
 5. **保持类型注解；提交前 `make lint` + `make test` + `make selfcheck` 三者全绿。**
 6. **显式错误，禁止静默兜底。** 组件遇到不支持的输入/配置显式 raise；严禁写死数据兜底造成假阳性；严禁静默降级掩盖配置错误。
 7. **可复现**：固定种子；实验落 config 快照 + git SHA；评测同时报告 accuracy / token / latency。
@@ -58,12 +58,12 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions   # 事后
 
 ### 4.1 新增/实现一个组件（六步配方 = 一篇消融）
 
-1. **读接口**：目标包的 `README.md` + `base.py` 确认协议签名（17 个组件类别见 `docs/DESIGN.md` §7）。
-2. **写实现**：实现协议 + `@REGISTRY.register(category, name)`；重依赖在方法内惰性 import。
-3. **触发注册**：在该子包 `__init__.py` import 你的模块（包 `__init__` 被 `lychee_mas/__init__` 链式 import）。
-4. **加配置**：`configs/<category>/<name>.yaml`（超参 + 默认值）。
-5. **加测试**：`tests/test_<name>.py`，用 mock / 构造输入断言行为（含显式报错路径）。
-6. **验证**：`make lint && make test && make selfcheck`，再 `make demo` 看端到端不回归。
+1. **读接口**：`plugins/<接缝>` 的协议与统一入口 + `docs/DESIGN.md` §6 全景表确认类别与签名。
+2. **写实现**：在 `methods/<接缝>/` 实现协议 + `@REGISTRY.register(category, name)`；重依赖在方法内惰性 import；LLM 经注入回调触达（不直接 import 模型库）。
+3. **触发注册**：在 `methods/<接缝>/__init__.py` import 你的模块（被 `lychee_mas/__init__` 链式 import）。
+4. **加配置**：`configs/<接缝>/<name>.yaml`（超参 + 默认值）。
+5. **加测试**：`tests/test_<name>.py`，LLM 全部脚本化、构造输入断言行为（含显式报错路径）。
+6. **验证**：`make lint && make test && make selfcheck`，再 `make demo` 看五接缝端到端不回归。
 
 ### 4.2 改动前后的固定动作
 

@@ -1,8 +1,8 @@
 """路由：static.decide + _enforce_availability（latent 不可用/异构对回退 nl/none）。"""
 from __future__ import annotations
 
-from lychee_mas.memory.routing.base import RouterInputs
-from lychee_mas.memory.routing.static import StaticRouter, fixed_channel_router
+from lychee_mas.methods.memory.routing.base import RouterInputs
+from lychee_mas.methods.memory.routing.static import StaticRouter, fixed_channel_router
 
 
 def _inputs(**kw):

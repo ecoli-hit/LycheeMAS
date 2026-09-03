@@ -7,23 +7,27 @@ make demo
 # 等价：PYTHONPATH=src python examples/01_static_chain_e2e.py
 ```
 
-用 `runtime=mock` + 一个静态团队 + 一个 `TaskQuery` 跑通 `Orchestrator`，打印最终答案、`TraceStore` 收到的消息条数与 `REGISTRY.snapshot()`。**无需 GPU / API key。**
+五接缝离线端到端（LLM 为脚本化假后端，需 `.[langgraph]` extra）：`build_langgraph` 建契约图 → `optimize_langgraph` 挂载优化提示 → `compile` → `run_processed` 并发投票归约，打印最终答案与 `REGISTRY.snapshot()`。**无需 GPU / API key。**
 
 ## 看现有组件 / 校验零重依赖
 
 ```bash
 make snapshot     # 打印 REGISTRY.snapshot()：每个类别下已注册的实现名
 make selfcheck    # 应打印 HEAVY LOADED: NONE（注册路径不触发 torch/autogen）
-make test         # 离线单元测试（mock runtime，无需 GPU/API）
+make test         # 离线单元测试（LLM 全脚本化，无需 GPU/API）
 ```
 
-## 实验入口（CLI + 落盘，默认 `runtime=mock` 可离线）
+## 五接缝挂载（换算法 = 换 `method`）
 
-```bash
-PYTHONPATH=src python scripts/run_experiment.py \
-    --runtime mock --team default --aggregator self_consistency \
-    --questions "2 plus 2 is 4" "answer is 7"
+```python
+from lychee_mas.plugins import build_langgraph, optimize_langgraph, run_processed
+
+sg = build_langgraph(method="static", node_factory=..., state_schema=..., team="default")
+sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")
+result = await run_processed(runner, method="parallel", k=8, aggregator="self_consistency")
 ```
+
+真实实验：`scripts/run_maspo_langgraph.py`（MASPO × MATH-500）、`scripts/run_agentprune_gsm8k.py`（AgentPrune × GSM8K）、`scripts/run_mas.py`（记忆线 benchmark）。
 
 ## 带记忆通道的真实 AIME 实验（需 `.[all]` + GPU）
 

@@ -19,7 +19,7 @@ install-all:
 
 # 离线端到端示例（runtime=mock，零重依赖）
 demo:
-> PYTHONPATH=src python examples/01_static_chain_e2e.py
+> PYTHONPATH=src python examples/01_five_seams_demo.py
 
 # 单元测试（mock runtime，无需 API key）
 test:

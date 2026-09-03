@@ -1,6 +1,6 @@
 # 安装
 
-`src-layout`，包名 `lychee_mas`，发行名 `lychee-mas`。**核心骨架零运行依赖**：纯标准库即可 `import lychee_mas` 并跑通离线 mock 示例。
+`src-layout`，包名 `lychee_mas`，发行名 `lychee-mas`。**核心骨架零运行依赖**：纯标准库即可 `import lychee_mas`（demo 另需 langgraph extra）。
 
 **环境约定**：conda 环境 `LycheeMAS`（系统 / CUDA 工具链）+ uv 管理的 `.venv`（torch / transformers / vLLM 等重依赖已就位）。包管理统一用 `uv`。
 
@@ -14,7 +14,7 @@ source .venv/bin/activate          # 首次创建见下方「初始化 .venv」
 ## 安装可编辑包（在已激活的 `.venv` 内）
 
 ```bash
-uv pip install -e ".[dev]"         # 仅骨架 + 开发工具：离线 mock 即可跑通（无需 autogen/torch/API）
+uv pip install -e ".[dev]"         # 仅骨架 + 开发工具：离线示例即可跑通（无需 torch/API）
 uv pip install -e ".[all]"         # 全量：autogen + 真实推理/评测依赖（torch/transformers/vLLM 已在 .venv 内）
 uv pip install -e ".[docs]"        # 文档站工具：MkDocs Material + mkdocstrings（构建本站）
 ```

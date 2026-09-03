@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ...core.registry import REGISTRY
-from ...layers.prune.pruners.agentprune import AgentPrunePruner
+from ...methods.prerun.agentprune import AgentPrunePruner
 
 
 @REGISTRY.register("pre_run_optimizer", "agentprune")

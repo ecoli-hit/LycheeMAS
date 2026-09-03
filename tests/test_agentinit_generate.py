@@ -17,8 +17,8 @@ pytest.importorskip("vendi_score")
 
 from lychee_mas.core.registry import REGISTRY  # noqa: E402
 from lychee_mas.core.types import AgentSpec, TaskQuery  # noqa: E402
-from lychee_mas.layers.construct.selectors._llm import ChatUsage  # noqa: E402
-from lychee_mas.layers.construct.selectors.pool import _hash_embed  # noqa: E402
+from lychee_mas.methods.build.selectors._llm import ChatUsage  # noqa: E402
+from lychee_mas.methods.build.selectors.pool import _hash_embed  # noqa: E402
 
 # 一个合法的格式化响应：两个角色 + 执行计划（供解析）。
 _FORMATTED = """\

@@ -1,5 +1,0 @@
-# pre_run_plugin/prune —— 把任意已注册 graph_pruner 挂成运行前插件。
-# 用法（Orchestrator）：pre_plugins=[("prune", {"pruner": "agentdropout"})]
-plugin: prune
-pruner: agentdropout          # graph_pruner 类别的注册名（agentdropout / agentdropout_v2 / agentprune）
-# 其余 kwargs 透传给被包装的 pruner 构造器

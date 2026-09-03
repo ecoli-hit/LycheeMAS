@@ -47,11 +47,11 @@ def main() -> None:
     import torch
     from lychee_mas.eval.benchmarks import load as load_task
     from lychee_mas.eval.metrics import score
-    from lychee_mas.memory.channels.c2c_projector import (
+    from lychee_mas.methods.memory.channels.c2c_projector import (
         build_projector_stack,
         map_source_to_target_layers,
     )
-    from lychee_mas.runtime.backends.hf_backend import HFBackend, common_suffix_len
+    from lychee_mas.backends.hf_backend import HFBackend, common_suffix_len
     from train_c2c_projector import ANALYST_SYS, SOLVER_SYS
 
     blob = torch.load(os.path.join(args.ckpt, "projectors.pt"), map_location="cuda:0")

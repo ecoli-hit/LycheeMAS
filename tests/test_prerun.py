@@ -15,14 +15,14 @@ pytest.importorskip("langgraph")
 
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from lychee_mas.core.types import AgentSpec  # noqa: E402
-from lychee_mas.layers.prune.pruners.agentprune import AgentPrunePruner  # noqa: E402
+from lychee_mas.methods.prerun.agentprune import AgentPrunePruner  # noqa: E402
 from lychee_mas.plugins.prerun import (  # noqa: E402
     extract_view,
     optimize_langgraph,
     rebuild,
 )
-from lychee_mas.plugins.prerun.maspo.executor import format_agent_prompt  # noqa: E402
-from lychee_mas.plugins.prerun.maspo.prompts import AGENT_TEMPLATES  # noqa: E402
+from lychee_mas.methods.prerun.maspo.executor import format_agent_prompt  # noqa: E402
+from lychee_mas.methods.prerun.maspo.prompts import AGENT_TEMPLATES  # noqa: E402
 
 
 class ChainState(TypedDict):

@@ -1,69 +1,49 @@
-# `plugins` — 插件系统（运行前 / 运行后 / 离线优化）
+# `plugins` — 五模块接缝的接口层
 
-## 功能
+## 定位
 
-把「优化器」挂在执行外部的三种生命周期，三接口分立：
+**plugins/ 定义接缝，methods/ 存方法**：本包只放协议、统一入口、`method` 按名分发、返回校验与薄适配（目标 <300 行/文件）；论文级算法（复现、训练循环、缓存执行器）一律在姊妹包 `methods/`（按接缝镜像分组），注册装饰器随实现走。
 
-- **PreRunPlugin**（类别 `pre_run_plugin`）：每次执行前变换图 G（如剪枝）。
-- **PostRunPlugin**（类别 `post_run_plugin`）：每次执行后消费轨迹 τ（如归因/信用）。
-- **Optimizer**（类别 `optimizer`）：GEPA 式离线 compile 循环，迭代改进系统的可变异文本组件。
+## 五个接缝
 
-挂载：`Orchestrator(pre_plugins=[...], post_plugins=[...])`，每项为名字或 `(名字, kwargs)`；不配置时行为与无插件完全一致。Optimizer 由驱动脚本直接 `REGISTRY.create("optimizer", ...)` 调用。
+| 接缝 | 统一入口 | REGISTRY 类别 | 说明 |
+|---|---|---|---|
+| 构建 | `build_langgraph(method, node_factory, state_schema, ...) -> sg` | `graph_builder`(+`agent_selector`/`topology_generator`) | 产出契约 StateGraph；节点语义由 `node_factory(spec, is_terminal)` 注入 |
+| 运行前 | `optimize_langgraph(sg, method, **kw) -> sg` | `pre_run_optimizer`(+`graph_pruner`/`vocab_adapter`) | 图进图出；`mode="optimize"` 离线产物化 / `mode="apply"` 即插即用 |
+| 记忆 | `attach_memory(sg, method, backend, **kw) -> sg` | `memory_manager`+`memory_router` | 注入六步重包进 agent 节点（P3 实现中，显式桩） |
+| 执行 | `run_processed(runner, method, **kw) -> ProcessingResult` | `processor`+`aggregator` | serial 1 次 / parallel×K + 归约（pass@K 承载点） |
+| 运行后 | `analyze_run(traj, score, method)` / `train_from_runs(method)` | `attributor`+`credit_assigner` / `trainer` | 读侧归因信用；写侧离线训练（产物经 prerun apply 挂载） |
 
-## 接口（`base.py`）
+## 节点契约（`prerun/graphview.py`，五接缝互操作的唯一约定）
 
 ```python
-@dataclass
-class RunContext:                       # 插件可见的运行上下文
-    task: str; trace_store: Any; routing_ctx: Any; backend: Any; meta: dict
-
-class PreRunPlugin(Protocol):
-    def before_run(self, graph: MASGraph, query: TaskQuery, ctx: RunContext) -> MASGraph: ...
-
-class PostRunPlugin(Protocol):
-    def after_run(self, trajectory: Trajectory, score: Optional[float], ctx: RunContext) -> None: ...
-
-Metric = Callable[[Trajectory, TaskQuery], float]
-
-class Optimizer(Protocol):
-    def optimize(self, system: MASProgram, trainset: Sequence[TaskQuery], metric: Metric) -> MASProgram: ...
+sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.AgentSpec
+# spec.system_prompt        = 可变异提示模板（{question}/{context} 占位）
+# spec.meta["predecessors"] = 通信前驱（节点函数据此从 state 选 context）
+# 节点函数运行时从 spec 读——闭包与元数据共享同一对象，优化器改 spec 即改行为
 ```
 
-`before_run` 必须返回 MASGraph——编排器校验，非法返回显式 TypeError（显式错误原则）。
+`extract_view(sg)` 提取视图（缺元数据 / 非 DAG / 多终端显式报错）；`rebuild(sg, prompts=…/adjacency=…)` 写回。只支持静态 DAG + 唯一终端。
 
-## `program.py` — `MASProgram`
-
-系统的「可变异文本组件」视图（Optimizer 的操作对象）：`components: dict[str, str]`（键如 `agent:<name>:system_prompt`、`topology:description`）+ `mutable_keys`。方法：`from_graph(graph)` / `apply_to(graph) -> 新图` / `mutated(key, text) -> 新 program`（不原地改；不可变异组件 / 图中不存在的 agent 显式 KeyError）。
-
-## 已注册组件
-
-| 类别/名字 | 说明 |
-|---|---|
-| `pre_run_plugin/prune` | 适配器：包装任意已注册 `graph_pruner`（构造参数 `pruner=<name>`） |
-| `post_run_plugin/attribution` | 适配器：串 attributor + credit_assigner，写 `trajectory.meta["attribution"/"credits"]` + TraceStore |
-| `optimizer/gepa` | GEPA 反思式提示演化（`gepa/`）：候选池 + per-instance Pareto 采样（`gepa/pareto.py` 纯函数）→ 轮换选可变组件 → minibatch rollout 收反馈 → 反思变异（`reflector` 可注入，默认走 `backend.generate_chat`）→ minibatch 提升才全量评估入池 → `max_metric_calls` 硬预算耗尽返回均分最优。`rollout: (MASProgram, TaskQuery) -> Trajectory` 必须注入 |
-
-## `prerun/` — LangGraph 原生运行前优化（类别 `pre_run_optimizer`）
-
-与上面三接缝并存的**第四个接缝**：算法直接在 LangGraph 图上做运行前优化，图进图出。
+## 用法
 
 ```python
-from lychee_mas.plugins.prerun import optimize_langgraph
+from lychee_mas.plugins import (build_langgraph, optimize_langgraph,
+                                run_processed, analyze_run)
 
-sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")   # 即插即用
-sg = optimize_langgraph(sg, method="maspo", mode="optimize", trainset=[...],
-                        agent_llm=..., evaluator_llm=..., prompt_file="p.json")   # 离线优化
-sg = optimize_langgraph(sg, method="agentprune", state_file="state.json")         # 剪边
+sg = build_langgraph(method="static", node_factory=make_node,
+                     state_schema=MyState, team="default")
+sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")
+sg = optimize_langgraph(sg, method="agentprune", state_file="state.json")  # 换算法=换 method
 app = sg.compile()
+result = await run_processed(runner, method="parallel", k=8,
+                             aggregator="self_consistency")
 ```
 
-- **节点契约**（`graphview.py`）：`sg.add_node(name, fn, metadata={"agent_spec": spec})`；`spec.system_prompt` = 可变异提示模板（`{question}`/`{context}`）；`spec.meta["predecessors"]` = 通信前驱；节点函数运行时从 spec 读——换 spec 即换行为，无需重建节点。只支持静态 DAG + 唯一终端，违反显式报错。
-- **`pre_run_optimizer/maspo`**（`maspo/`，MASPO ICML 2026）：多粒度成对评估（Local/Lookahead/Global，免 gold）+ 错位驱动采样 + 进化 beam search + fixed-rounds 坐标上升 + Beam Refresh；optimize 落 `{"prompts": {节点名: 提示}}` JSON，apply 加载注入。提示资产逐字 vendored（`maspo/prompts.py`，保留出处引用）。
-- **`pre_run_optimizer/agentprune`**：复用 `graph_pruner/agentprune` 的 threshold 实现剪 LangGraph 边（与 MASGraph 路径对拍一致，见 `tests/test_prerun.py`）。
-- langgraph 在本包内**一律惰性导入**（`make selfcheck` 仍须 HEAVY LOADED: NONE）。
+端到端示例见 `examples/01_five_seams_demo.py`（`make demo`）。
 
 ## 约定
 
-- 纯标准库、零重依赖；LLM 只经由传入的 backend 触达。
-- 插件对不支持的输入显式 raise，不静默降级；被包装的桩组件（如 `agentdropout`）的 `NotImplementedError` 如实上抛。
-- 新增插件：实现对应协议 + `@REGISTRY.register("<category>", name)` + 本包 `__init__` import 触发 + config + test。
+- 纯标准库注册；langgraph 一律惰性导入（`make selfcheck` 须 HEAVY LOADED: NONE）。
+- 接缝入口对非法输入显式 raise（未知 method → KeyError 列可用名；返回类型强校验）；桩组件的 `NotImplementedError` 如实上抛。
+- 新增方法：在 `methods/<接缝>/` 实现 + 注册 + 该包 `__init__` 触发 + config + test（六步配方见 CLAUDE.md §4.1），**不改本包任何文件**。

@@ -20,10 +20,10 @@ experiments/run_gsm8k.py（FullConnected 模式，4 个 MathSolver 节点 + Fina
   - LLM 为本地 HF 模型（原版 gpt-4-1106-preview）；绝对准确率不可比，
     对比对象是「同模型下 FullConnected vs 剪枝后」的准确率与 token 成本。
   - 执行引擎为 LangGraph StateGraph（按采样实现图的拓扑序连线性链 + 决策节点）。
-  - 评测阶段经**本框架运行前组件**挂载：`pre_run_plugin/prune` 包装训练好的
-    `graph_pruner/agentprune`（state_file 加载 logits/masks），before_run 产出
-    剪枝图（threshold 实现，确定性），LangGraph 按该图执行——这正是
-    「剪枝 = 运行前插件」的端到端用法。--eval-mode sample 可切回原版的采样式推理。
+  - 评测阶段直接加载训练好的 `methods/prerun/agentprune`（state_file → threshold
+    确定性实现）驱动 LangGraph 执行；图级统一接口挂载（optimize_langgraph(
+    method="agentprune")）见 run_maspo_langgraph.py 与 tests/test_prerun.py。
+    --eval-mode sample 可切回原版的采样式推理。
 
 用法（train 落 pruner 状态 → eval 挂插件跑分；也可分阶段跑）：
   CDM_DATA_ROOT=/data/.../raw CUDA_VISIBLE_DEVICES=0 \
@@ -49,17 +49,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import agentprune_gsm8k_prompts as P  # noqa: E402  vendored 原版 prompt 资产
-from lychee_mas.core.registry import REGISTRY  # noqa: E402
-from lychee_mas.core.types import AgentSpec, TaskQuery  # noqa: E402
+from lychee_mas.core.types import AgentSpec  # noqa: E402
 from lychee_mas.eval import metrics as M  # noqa: E402
 from lychee_mas.eval.benchmarks import load as load_benchmark  # noqa: E402
-from lychee_mas.layers.prune.pruners.agentprune import (  # noqa: E402
+from lychee_mas.methods.prerun.agentprune import (  # noqa: E402
     AgentPrunePruner,
     Realization,
     topological_order,
 )
-from lychee_mas.plugins.base import RunContext  # noqa: E402
-from lychee_mas.runtime.base import MASGraph  # noqa: E402
 
 QUESTION_SUFFIX = "\nGive the final numeric answer."  # 本框架 loader 附加，复现时剥掉
 N_AGENTS = 4
@@ -266,13 +263,6 @@ async def run_query(chat: HFChat, question: str, realizations: List[Realization]
     return final, outputs, stats
 
 
-def make_base_graph() -> MASGraph:
-    nodes = [AgentSpec(name=f"A{i}", role=AGENT_ROLES[i],
-                       system_prompt=P.ROLE_DESCRIPTION[AGENT_ROLES[i]])
-             for i in range(N_AGENTS)]
-    return MASGraph(nodes=nodes, rounds=1, meta={"team": "agentprune_gsm8k"})
-
-
 def utility_of(final_answer: str, gold: str) -> float:
     pred = P.gsm_get_predict(final_answer)
     try:
@@ -342,27 +332,21 @@ def train(args: argparse.Namespace, chat: HFChat) -> str:
 
 def evaluate(args: argparse.Namespace, chat: HFChat, state_file: Optional[str]) -> None:
     records = load_gsm8k_records(args.eval_n, skip=args.train_n)
-    base_graph = make_base_graph()
 
     if state_file:
-        # ★ 本框架运行前组件：pre_run_plugin/prune 包装训练好的 agentprune
-        plugin = REGISTRY.create("pre_run_plugin", "prune", pruner="agentprune",
-                                 n_agents=N_AGENTS, state_file=state_file,
-                                 optimized_spatial=True,
-                                 optimized_temporal=(args.num_rounds > 1))
+        # ★ 加载训练产物：threshold 确定性实现 / sample 采样式（原版）
+        pruner = AgentPrunePruner(n_agents=N_AGENTS, state_file=state_file,
+                                  optimized_spatial=True,
+                                  optimized_temporal=(args.num_rounds > 1))
         method = "agentprune_pruned"
     else:
-        plugin = None  # 对照：不挂插件 = FullConnected 全图
+        pruner = None  # 对照：FullConnected 全图
         method = "agentprune_full"
-    run_ctx = RunContext(task="gsm8k")
 
     samples: List[Dict[str, Any]] = []
     for i, rec in enumerate(records):
-        query = TaskQuery(question=rec["question"], gold=rec["gold"], meta={"task": "gsm8k"})
-        if plugin is not None:
-            pruned = plugin.before_run(base_graph, query, run_ctx)
-            sm = pruned.meta["agentprune"]["spatial"]
-            tm = pruned.meta["agentprune"]["temporal"]
+        if pruner is not None:
+            sm, tm = pruner.realized_matrices("threshold")
             if args.eval_mode == "threshold":
                 spatial = {(a, b) for a in range(N_AGENTS) for b in range(N_AGENTS)
                            if sm[a][b]}
@@ -372,8 +356,7 @@ def evaluate(args: argparse.Namespace, chat: HFChat, state_file: Optional[str]) 
                                      temporal_edges=(temporal if r > 0 else set()))
                          for r in range(args.num_rounds)]
             else:  # sample：原版式采样推理（用训练后的 logits/masks）
-                sampler = plugin._pruner  # noqa: SLF001  实验脚本读内部状态
-                reals = [sampler.sample_realization(include_temporal=(r > 0))
+                reals = [pruner.sample_realization(include_temporal=(r > 0))
                          for r in range(args.num_rounds)]
         else:
             full = {(a, b) for a in range(N_AGENTS) for b in range(N_AGENTS) if a != b}

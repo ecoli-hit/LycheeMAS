@@ -1,27 +1,30 @@
-"""插件系统（顶层包）—— 运行前 / 运行后 / 离线优化三接缝。
+"""plugins —— 五模块接缝的接口层（薄：协议、统一入口、method 分发、校验、薄适配）。
 
-- base.py     三协议（PreRunPlugin / PostRunPlugin / Optimizer）+ RunContext + Metric
-- program.py  MASProgram（系统的可变异文本组件集合，Optimizer 的操作对象）
-- adapters.py 旧层适配器：pre_run_plugin/prune、post_run_plugin/attribution
-- gepa/       optimizer/gepa（Pareto 选择 + 反思变异 compile 循环）
+  build.py       构建   build_langgraph(method, ...) -> StateGraph
+  prerun/        运行前 optimize_langgraph(sg, method, ...) -> sg（base + graphview 节点契约）
+  memory.py      运行时 attach_memory(sg, method, ...) -> sg（P3 语义实现中，显式桩）
+  processing.py  执行   run_processed(runner, method, ...) -> ProcessingResult
+  postrun.py     运行后 analyze_run(...)（读侧归因）+ train_from_runs(...)（写侧训练）
 
-import 本包触发全部插件注册（纯标准库，不触发重依赖）。
+论文级算法一律在姊妹包 ``methods/``（按接缝镜像分组），注册装饰器随实现走；
+本包 import 各接缝模块即触发全部注册。langgraph 惰性导入（selfcheck 零重依赖）。
 """
 from __future__ import annotations
 
-from . import adapters  # noqa: F401  触发 pre_run_plugin/prune + post_run_plugin/attribution 注册
-from .base import Metric, Optimizer, PostRunPlugin, PreRunPlugin, RunContext
-from .gepa import GEPAOptimizer  # noqa: F401  触发 optimizer/gepa 注册
-from .prerun import optimize_langgraph  # noqa: F401  触发 pre_run_optimizer/* 注册
-from .program import MASProgram
+from .build import AgentSelector, TopologyGenerator, build_langgraph
+from .memory import attach_memory
+from .postrun import Trainer, analyze_run, train_from_runs
+from .prerun import optimize_langgraph
+from .processing import run_processed
 
 __all__ = [
-    "PreRunPlugin",
-    "PostRunPlugin",
-    "Optimizer",
-    "RunContext",
-    "Metric",
-    "MASProgram",
-    "GEPAOptimizer",
+    "build_langgraph",
     "optimize_langgraph",
+    "attach_memory",
+    "run_processed",
+    "analyze_run",
+    "train_from_runs",
+    "AgentSelector",
+    "TopologyGenerator",
+    "Trainer",
 ]
