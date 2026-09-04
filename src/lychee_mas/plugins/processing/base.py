@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.registry import REGISTRY
-from ..methods.processing.base import (  # noqa: F401  协议 re-export
+from ...core.registry import REGISTRY
+from ...methods.processing.base import (  # noqa: F401  协议 re-export
     ProcessingResult,
     Processor,
     Runner,

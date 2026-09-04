@@ -14,6 +14,10 @@
 | 执行 | `run_processed(runner, method, **kw) -> ProcessingResult` | `processor`+`aggregator` | serial 1 次 / parallel×K + 归约（pass@K 承载点） |
 | 运行后 | `analyze_run(...)` / `optimize_postrun(sg, taus, method)` / `train_from_runs(...)` | `attributor`+`credit_assigner` / `post_run_optimizer` / `trainer` | 读侧归因；图+轨迹→图闭环；写侧离线训练 |
 
+## 目录结构
+
+五接缝一缝一子目录（与 `methods/` 镜像）：`build/`、`prerun/`、`memory/`、`processing/`、`postrun/`——各自 `base.py` 装协议与统一入口，`__init__.py` 再导出并触发注册。
+
 ## 节点契约（`prerun/graphview.py`，五接缝互操作的唯一约定）
 
 ```python

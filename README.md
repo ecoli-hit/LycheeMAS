@@ -157,7 +157,7 @@ make lint     # ruff check src
 ```
 src/lychee_mas/
 ├── plugins/     接口层（薄）：五接缝统一入口 + 协议 + 节点契约
-│   ├── build.py / prerun/ / memory.py / processing.py / postrun.py
+│   ├── build/ │ prerun/ │ memory/ │ processing/ │ postrun/
 ├── methods/     实现层（厚）：论文复现/训练循环，按接缝镜像
 │   ├── build/（static, agentinit）  prerun/（agentprune, maspo/, gepa/）
 │   ├── memory/（channels/managers/routing）  processing/（serial/parallel）

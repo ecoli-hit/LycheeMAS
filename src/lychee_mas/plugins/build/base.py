@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.registry import REGISTRY
-from ..methods.build.base import AgentSelector, GraphBuilder  # noqa: F401  协议 re-export
+from ...core.registry import REGISTRY
+from ...methods.build.base import AgentSelector, GraphBuilder  # noqa: F401  协议 re-export
 
 
 def build_langgraph(method: str = "static", **kwargs: Any) -> Any:
@@ -21,8 +21,8 @@ def build_langgraph(method: str = "static", **kwargs: Any) -> Any:
 
     返回值必须是未编译 StateGraph 且满足节点契约（经 extract_view 校验，非法显式报错）。
     """
-    from .prerun.base import _require_state_graph
-    from .prerun.graphview import extract_view
+    from ..prerun.base import _require_state_graph
+    from ..prerun.graphview import extract_view
 
     builder = REGISTRY.create("graph_builder", method, **kwargs)
     sg = builder.build()

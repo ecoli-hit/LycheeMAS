@@ -16,14 +16,14 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from ..core.registry import REGISTRY
-from ..core.types import Trajectory
-from ..methods.postrun.base import (  # noqa: F401  协议 re-export
+from ...core.registry import REGISTRY
+from ...core.types import Trajectory
+from ...methods.postrun.base import (  # noqa: F401  协议 re-export
     Attribution,
     CreditAssigner,
     FailureAttributor,
 )
-from ..methods.postrun.store import TraceStore  # noqa: F401
+from ...methods.postrun.store import TraceStore  # noqa: F401
 
 
 @runtime_checkable
@@ -90,7 +90,7 @@ def optimize_postrun(graph: Any, trajectories: Any, method: str, **kwargs: Any) 
     未知 method 由 REGISTRY 显式 KeyError（并列出可用名）；图与轨迹的非法输入、
     以及非 StateGraph 的返回值均显式 TypeError（与 optimize_langgraph 同款约定）。
     """
-    from .prerun.base import _require_state_graph  # 两接缝共用「未编译 StateGraph」校验
+    from ..prerun.base import _require_state_graph  # 两接缝共用「未编译 StateGraph」校验
 
     _require_state_graph(graph, "optimize_postrun")
     taus = _require_trajectories(trajectories, "optimize_postrun")

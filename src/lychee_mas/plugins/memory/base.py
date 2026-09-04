@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..methods.memory.base import MemoryBundle, MemoryManager  # noqa: F401  协议 re-export
-from ..methods.memory.routing.base import MemoryRouter, RouteDecision  # noqa: F401
+from ...methods.memory.base import MemoryBundle, MemoryManager  # noqa: F401  协议 re-export
+from ...methods.memory.routing.base import MemoryRouter, RouteDecision  # noqa: F401
 
 
 def attach_memory(sg: Any, method: str = "cdm", **kwargs: Any) -> Any:

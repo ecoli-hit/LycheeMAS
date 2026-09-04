@@ -28,11 +28,11 @@ build → prerun(可选) → memory(可选) → compile → processing 包裹执
 ```text
 src/lychee_mas/
 ├── plugins/                          # ★ 接口层（薄）
-│   ├── build.py                      #   build_langgraph + AgentSelector/GraphBuilder 协议
-│   ├── prerun/                       #   optimize_langgraph + graphview 节点契约 + agentprune 薄适配
-│   ├── memory.py                     #   attach_memory（P3 实现中，显式桩）
-│   ├── processing.py                 #   run_processed + Processor/Aggregator 协议
-│   └── postrun.py                    #   analyze_run（读侧）+ train_from_runs（写侧）+ Trainer 协议
+│   ├── build/                        #   build_langgraph + AgentSelector/GraphBuilder 协议
+│   ├── prerun/                       #   optimize_langgraph + graphview 节点契约 + 薄适配
+│   ├── memory/                       #   attach_memory（P3 实现中，显式桩）
+│   ├── processing/                   #   run_processed + Processor/Aggregator 协议
+│   └── postrun/                      #   analyze_run + optimize_postrun + train_from_runs
 ├── methods/                          # ★ 实现层（厚，按接缝镜像）
 │   ├── build/                        #   static 队伍模板 + agentinit 选队（Pareto 多样性×相关性）
 │   ├── prerun/                       #   agentprune / agentdropout（两阶段淘汰）/ maspo/ / gepa/

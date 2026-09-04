@@ -73,7 +73,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 ## 4. 五接缝详解（plugins/ 接口 × methods/ 实现）
 
-### 4.1 build（构建，`plugins/build.py` × `methods/build/`）
+### 4.1 build（构建，`plugins/build/` × `methods/build/`）
 
 回答「由谁组队、怎么连」。`build_langgraph(method, node_factory, state_schema, ...) -> StateGraph`：节点函数语义（生成后端、状态形状）由实验方以 `node_factory(spec, is_terminal)` 注入，构建器负责 AgentSpec 链、通信结构、元数据挂载与 START→…→END 执行边。已实现 `graph_builder/static`（team 模板链）；选队器 `agent_selector/agentinit`（EMNLP'25，多样性×相关性 Pareto 选队）产出 AgentSpec 列表经 `agents=` 传入。
 
@@ -86,15 +86,15 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 - `pre_run_optimizer/agentdropout`——AgentDropout 动态节点/边淘汰（ACL 2025）：两阶段——①逐轮加权度 softmax 采样跳过节点 + skip-REINFORCE 训度权重，每轮淘汰最小归一化加权度节点（空间行列 + 跨轮时间边清零）；②逐轮独立参数的边 REINFORCE + one-shot 剪边。拓扑逐轮不同：apply 按 `round=r` 挂载该轮实现，被淘汰节点写 `meta["dropped"]`。
 - `optimizer/gepa`——GEPA 反思式提示演化（`methods/prerun/gepa/`，MASProgram 表示；graph-native 适配待接）。
 
-### 4.3 memory（运行时记忆，`plugins/memory.py` × `methods/memory/`）
+### 4.3 memory（运行时记忆，`plugins/memory/` × `methods/memory/`）
 
 回答「智能体之间记住什么、以什么表征传递」。`attach_memory(sg, method, backend, **kw) -> sg`：把注入六步（observe → route → recall → system 段注入 → 生成 → 记账）**重包进每个 agent 节点**（P3 全新实现中，当前显式桩）。算法库：`channels/`（NL / 隐空间 / C2C）+ `managers/`（`memory_manager/cdm` 已实现）+ `routing/`（`static`/`fixed` 已实现）+ `store.py` + `context.py`（RoutingContext 决策日志/span 落盘）。注入六步的旧引擎实现已随 runtime 兼容层删除（git 历史 `runtime/injection.py` 可作 P3 语义参照）。
 
-### 4.4 processing（执行，`plugins/processing.py` × `methods/processing/`）
+### 4.4 processing（执行，`plugins/processing/` × `methods/processing/`）
 
 回答「一个任务跑几次、多次结果如何归约」。`run_processed(runner, method, **kw) -> ProcessingResult`（`runner: async () -> Trajectory` 由调用方提供）：`processor/serial`（1 次）/ `processor/parallel`（并发 K 次 + aggregator 归约，构造超参走 `aggregator_kwargs` 透传）。归约策略：`self_consistency` 多数投票 / `aggagent`（AggAgent 移植，COLM 2026：聚合本身 agentic 化——检索工具跨轨迹「数证据不数轨迹数」，需 tool-calling 端点）。pass@K 的承载点。
 
-### 4.5 postrun（归因训练，`plugins/postrun.py` × `methods/postrun/`）
+### 4.5 postrun（归因训练，`plugins/postrun/` × `methods/postrun/`）
 
 回答「一条轨迹里谁该为成败负责、如何用信号改进系统」。三入口：
 
