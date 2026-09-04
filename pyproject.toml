@@ -130,6 +130,9 @@ select = ["E", "F", "I", "W"]
 "src/lychee_mas/methods/build/selectors/_generate.py" = ["E501"]
 # maspo/prompts.py 的提示常量逐字移植自 MASPO（保留原措辞，不折行）；只豁免行长。
 "src/lychee_mas/methods/prerun/maspo/prompts.py" = ["E501"]
+# aggagent prompts/tools 逐字移植自 princeton-pli/AggAgent（保留原措辞，不折行）；只豁免行长。
+"src/lychee_mas/methods/processing/aggagent/prompts.py" = ["E501"]
+"src/lychee_mas/methods/processing/aggagent/tools.py" = ["E501"]
 
 [tool.pytest.ini_options]
 # 只收集本框架测试，避免触碰 vendored src/autogen 的测试（它们需 autogen 才能 collect）。

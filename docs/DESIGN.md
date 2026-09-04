@@ -92,13 +92,14 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 ### 4.4 processing（执行，`plugins/processing.py` × `methods/processing/`）
 
-回答「一个任务跑几次、多次结果如何归约」。`run_processed(runner, method, **kw) -> ProcessingResult`（`runner: async () -> Trajectory` 由调用方提供）：`processor/serial`（1 次）/ `processor/parallel`（并发 K 次 + `aggregator/self_consistency` 投票归约）。pass@K 的承载点。
+回答「一个任务跑几次、多次结果如何归约」。`run_processed(runner, method, **kw) -> ProcessingResult`（`runner: async () -> Trajectory` 由调用方提供）：`processor/serial`（1 次）/ `processor/parallel`（并发 K 次 + aggregator 归约，构造超参走 `aggregator_kwargs` 透传）。归约策略：`self_consistency` 多数投票 / `aggagent`（AggAgent 移植，COLM 2026：聚合本身 agentic 化——检索工具跨轨迹「数证据不数轨迹数」，需 tool-calling 端点）。pass@K 的承载点。
 
 ### 4.5 postrun（归因训练，`plugins/postrun.py` × `methods/postrun/`）
 
-回答「一条轨迹里谁该为成败负责、如何用信号改进系统」。双入口：
+回答「一条轨迹里谁该为成败负责、如何用信号改进系统」。三入口：
 
 - **读侧** `analyze_run(trajectory, score, method, ...)`：attributor（`all_at_once/step_by_step/binary_search` 桩）→ credit_assigner（`attribution_guided` 桩）→ 写回 `trajectory.meta` 与 `TraceStore`。
+- **图闭环** `optimize_postrun(sg, trajectories, method, ...)`：与 prerun 对称的批量离线运行后优化——图 + 轨迹批 → 优化 → 图（`post_run_optimizer` 类别；`attribution`/`train` 桩占名）。
 - **写侧** `train_from_runs(method, ...)`：离线消费轨迹与信用产训练产物（`trainer` 类别占名待接 RL 线）；产物经 prerun apply 挂载。
 
 ---
@@ -125,10 +126,11 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 | memory | `memory_manager` | `cdm` | `mem0`, `ama` |
 | memory | `memory_router` | `static`, `fixed` | `learned`, `soft_gate` |
 | processing | `processor` | `serial`, `parallel` | — |
-| processing | `aggregator` | `self_consistency` | `dynamicagg` |
+| processing | `aggregator` | `self_consistency`, `aggagent`（AggAgent agentic 聚合，COLM 2026） | `dynamicagg` |
 | postrun | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |
 | postrun | `credit_assigner` | — | `attribution_guided` |
 | postrun | `trainer` | — | —（RL 线待接） |
+| postrun | `post_run_optimizer` | — | `attribution`, `train`（图闭环桩） |
 | — | `benchmark` | 20 个（§5） | — |
 
 > 桩能被 `REGISTRY.list` 看到是有意为之：占好名字、让消融矩阵可见。组件状态变化时同步更新本表。

@@ -12,7 +12,7 @@
 | 运行前 | `optimize_langgraph(sg, method, **kw) -> sg` | `pre_run_optimizer`(+`graph_pruner`/`vocab_adapter`) | 图进图出；`mode="optimize"` 离线产物化 / `mode="apply"` 即插即用 |
 | 记忆 | `attach_memory(sg, method, backend, **kw) -> sg` | `memory_manager`+`memory_router` | 注入六步重包进 agent 节点（P3 实现中，显式桩） |
 | 执行 | `run_processed(runner, method, **kw) -> ProcessingResult` | `processor`+`aggregator` | serial 1 次 / parallel×K + 归约（pass@K 承载点） |
-| 运行后 | `analyze_run(traj, score, method)` / `train_from_runs(method)` | `attributor`+`credit_assigner` / `trainer` | 读侧归因信用；写侧离线训练（产物经 prerun apply 挂载） |
+| 运行后 | `analyze_run(...)` / `optimize_postrun(sg, taus, method)` / `train_from_runs(...)` | `attributor`+`credit_assigner` / `post_run_optimizer` / `trainer` | 读侧归因；图+轨迹→图闭环；写侧离线训练 |
 
 ## 节点契约（`prerun/graphview.py`，五接缝互操作的唯一约定）
 
@@ -37,7 +37,7 @@ sg = optimize_langgraph(sg, method="maspo", mode="apply", prompt_file="p.json")
 sg = optimize_langgraph(sg, method="agentprune", state_file="state.json")  # 换算法=换 method
 app = sg.compile()
 result = await run_processed(runner, method="parallel", k=8,
-                             aggregator="self_consistency")
+                             aggregator="self_consistency")   # 或 aggregator="aggagent"
 ```
 
 端到端示例见 `examples/01_five_seams_demo.py`（`make demo`）。

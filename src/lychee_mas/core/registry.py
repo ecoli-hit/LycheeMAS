@@ -15,7 +15,8 @@ CATEGORIES = (
     "pre_run_optimizer", "graph_pruner", "vocab_adapter",      # prerun 接缝
     "memory_manager", "memory_router",                         # memory 接缝
     "processor", "aggregator",                                 # processing 接缝
-    "attributor", "credit_assigner", "trainer",                # postrun 接缝
+    "attributor", "credit_assigner", "trainer",
+    "post_run_optimizer",                                      # postrun 接缝
     "benchmark", "optimizer",                                  # eval / 离线 compile（gepa）
 )
 

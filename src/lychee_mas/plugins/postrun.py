@@ -1,7 +1,10 @@
-"""运行后接缝（postrun）—— 第五模块（归因训练）的双入口。
+"""运行后接缝（postrun）—— 第五模块（归因训练）的三入口。
 
 - **读侧** ``analyze_run(trajectory, score, method, ...)``：逐次运行的归因 → 信用，
   写回 ``trajectory.meta``（attributor + credit_assigner，实现/桩在 ``methods/postrun/``）。
+- **图闭环** ``optimize_postrun(sg, trajectories, method, ...)``：与 prerun 对称的
+  **批量离线**运行后优化——图 + 一批执行轨迹 τ → 优化 → 图（归因 → 信用 → 更新写回；
+  post_run_optimizer 类别，桩在 ``methods/postrun/optimizers.py``）。
 - **写侧** ``train_from_runs(method, ...)``：离线消费轨迹与信用信号产训练产物
   （trainer 类别，当前无实现——占名待接 RL 线）；产物统一经 prerun 的 apply 挂载回图。
 
@@ -50,6 +53,51 @@ def analyze_run(trajectory: Trajectory, score: Optional[float] = None,
             "task_id": trajectory.task_id, "score": score, "credits": dict(credits),
         })
     return dict(credits)
+
+
+@runtime_checkable
+class PostRunOptimizer(Protocol):
+    """运行后优化器协议：传入未编译 StateGraph + 轨迹批，返回优化后的 StateGraph。
+
+    与 PreRunOptimizer 对称，语义差异在输入多一份执行轨迹（消费 τ 反哺图）。
+    实现类经 ``@REGISTRY.register("post_run_optimizer", <method>)`` 注册；超参与运行
+    素材走构造参数，``optimize`` 保持「图 + 轨迹 → 图」的最小签名。
+    """
+
+    def optimize(self, graph: Any, trajectories: Any) -> Any: ...
+
+
+def _require_trajectories(obj: Any, where: str) -> list[Trajectory]:
+    """校验 obj 是 Trajectory 序列（可为空——apply 模式可能不消费轨迹）。非法显式 TypeError。"""
+    if isinstance(obj, (list, tuple)) and all(isinstance(t, Trajectory) for t in obj):
+        return list(obj)
+    raise TypeError(
+        f"{where} 需要 Trajectory 序列（list/tuple，可空——apply 模式可能不消费轨迹），"
+        f"得到 {type(obj).__name__}")
+
+
+def optimize_postrun(graph: Any, trajectories: Any, method: str, **kwargs: Any) -> Any:
+    """图闭环入口：按 ``method`` 从 REGISTRY 取运行后优化器，消费轨迹、优化图。
+
+    用法示例::
+
+        sg = optimize_postrun(sg, taus, method="attribution",
+                              mode="apply", prompt_file="p.json")
+        sg = optimize_postrun(sg, taus, method="attribution", mode="optimize",
+                              attributor="all_at_once", evaluator_llm=...)
+        app = sg.compile()
+
+    未知 method 由 REGISTRY 显式 KeyError（并列出可用名）；图与轨迹的非法输入、
+    以及非 StateGraph 的返回值均显式 TypeError（与 optimize_langgraph 同款约定）。
+    """
+    from .prerun.base import _require_state_graph  # 两接缝共用「未编译 StateGraph」校验
+
+    _require_state_graph(graph, "optimize_postrun")
+    taus = _require_trajectories(trajectories, "optimize_postrun")
+    optimizer = REGISTRY.create("post_run_optimizer", method, **kwargs)
+    out = optimizer.optimize(graph, taus)
+    _require_state_graph(out, f"post_run_optimizer/{method}.optimize 的返回值")
+    return out
 
 
 def train_from_runs(method: str, **kwargs: Any) -> Any:

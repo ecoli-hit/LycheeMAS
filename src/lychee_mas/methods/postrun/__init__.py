@@ -14,6 +14,7 @@ from typing import Any
 
 from ...core.registry import REGISTRY
 from ...core.types import Trajectory
+from . import optimizers  # noqa: F401  触发 post_run_optimizer/{attribution,train} 桩注册
 from .base import (
     Attribution,
     CreditAssigner,

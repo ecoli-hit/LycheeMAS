@@ -2,10 +2,13 @@
 
 - processor/parallel           并行处理器：并发 K 次 → K 条轨迹 → aggregator 聚合（子模块入口）
 - aggregator/self_consistency  纯标准库多数投票（真实可测组件，CLAUDE.md §5 要求至少一个可跑）
+- aggregator/aggagent          agentic 聚合（AggAgent 移植，见 ../aggagent/）：检索工具跨轨迹
+                               「数证据不数轨迹数」，mock 可测、真实跑分走 tool-calling 端点
 - aggregator/dynamicagg        动态聚合（在研，桩）
 
 `aggregator`（TrajectoryAggregator）是并行处理器的可插拔归约策略：对 list[Answer]（或从
-list[Trajectory] 取 final_answer）按归一化内容取众数（self_consistency）。
+list[Trajectory] 取 final_answer）按归一化内容取众数（self_consistency）——aggagent 在
+同样的并行采集上做检索式 agentic 归约，是它的对拍对象。
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ from collections import Counter
 
 from ....core.registry import REGISTRY
 from ....core.types import Answer, Trajectory
+from ..aggagent import AggAgentAggregator
 from ..base import ProcessingResult, Runner
 
 
@@ -91,20 +95,28 @@ class DynamicAggregator:
 class ParallelProcessor:
     """并行处理：并发调用 runner **K 次**产出 K 条轨迹，再用 `aggregator` 聚合成一个 Answer。
 
-    K=`k`；聚合策略 = `aggregator`（默认 self_consistency 多数投票）。runner 需每次产出独立轨迹
-    （调用方负责隔离，如 ctx.reset）。"""
+    K=`k`；聚合策略 = `aggregator`（默认 self_consistency 多数投票）；聚合器构造超参走
+    `aggregator_kwargs` 透传（如 aggagent 的 client / model+api_base——多数投票无参可省）。
+    runner 需每次产出独立轨迹（调用方负责隔离，如 ctx.reset）。"""
 
     name = "parallel"
 
-    def __init__(self, k: int = 5, aggregator: str = "self_consistency", **kwargs):
+    def __init__(
+        self,
+        k: int = 5,
+        aggregator: str = "self_consistency",
+        aggregator_kwargs: dict | None = None,
+        **kwargs,
+    ):
         self.k = max(1, int(k))
         self.aggregator = aggregator
+        self.aggregator_kwargs = dict(aggregator_kwargs or {})
         self.cfg = kwargs
 
     async def run(self, runner: Runner) -> ProcessingResult:
         trajs = list(await asyncio.gather(*[runner() for _ in range(self.k)]))
-        agg = REGISTRY.create("aggregator", self.aggregator)
+        agg = REGISTRY.create("aggregator", self.aggregator, **self.aggregator_kwargs)
         return ProcessingResult(answer=agg.aggregate(trajs), trajectories=trajs)
 
 
-__all__ = ["SelfConsistencyVote", "DynamicAggregator", "ParallelProcessor"]
+__all__ = ["SelfConsistencyVote", "DynamicAggregator", "ParallelProcessor", "AggAgentAggregator"]

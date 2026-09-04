@@ -49,6 +49,17 @@ def test_parallel_runs_k_times_and_aggregates():
     assert res.answer.meta["votes"] == 2
 
 
+def test_parallel_forwards_aggregator_kwargs():
+    # aggregator_kwargs 透传给聚合器构造器：k=1 → 只取第一条终答（9），而非众数 4。
+    # 若无透传，REGISTRY.create 会拿到默认 k=None，结果应是 "4"——本测试即转发证据。
+    proc = REGISTRY.create(
+        "processor", "parallel", k=3, aggregator="self_consistency",
+        aggregator_kwargs={"k": 1})
+    res = asyncio.run(proc.run(_runner_from(["9", "4", "4"])))
+    assert res.answer.content == "9"
+    assert res.answer.meta["votes"] == 1       # 只有 1 票参与（answers[:1]）
+
+
 def test_processing_protocol_importable():
     from lychee_mas.methods.processing import ProcessingResult, Processor
     assert hasattr(Processor, "run")
