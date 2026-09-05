@@ -86,6 +86,7 @@ plugins:
 nav:
   - 首页: index.md
   - 团队入门与开发指南: ONBOARDING.md
+  - 开发实例走读（MASPO）: example-maspo.md
   - 安装: installation.md
   - 快速上手: quickstart.md
   - 架构设计: DESIGN.md

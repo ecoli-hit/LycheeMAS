@@ -130,6 +130,8 @@ LycheeMAS/
 
 ## 5. 模块开发与评测实例（dev → test → eval）
 
+> 本节是最小配方；**完整真实案例**（MASPO 从论文到可挂载组件的全过程走读）见 [`example-maspo.md`](example-maspo.md)。
+
 ### 5.0 环境与三件套
 
 ```bash
