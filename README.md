@@ -16,7 +16,6 @@
 
 <p align="center">
   <a href="https://github.com/ecoli-hit/LycheeMAS">GitHub</a> ·
-  <a href="https://ecoli-hit.github.io/LycheeMAS/">文档站</a> ·
   <a href="docs/DESIGN.md">架构设计</a> ·
   <a href="CLAUDE.md">开发规范</a> ·
   <a href="configs/">配置</a> ·
