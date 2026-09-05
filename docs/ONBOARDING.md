@@ -210,12 +210,16 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions
 
 > 本节部分规则来自一次真实事故（2026-09-04：旧基线 rebase 把未解决冲突标记与 27 万行已删代码推上了主线，见 `backup/jay-rebase-20260904`）。请认真对待。
 
-### 6.1 分支模型
+### 6.1 分支模型与权限
 
-- **`LycheeMASv0.3`**：当前开发主线（受保护语义：不接受直接的历史改写）。
-- **个人/特性分支**：`feat/<名字>-<主题>`（如 `feat/jay-aggagent`），从主线最新处切出，做完经 review 合入。
-- **备份/存档**：`backup/<描述>-<日期>`（事故现场、里程碑快照）。
-- 大版本推进（如 v0.4）由负责人开新分支并公告。
+- **主线 `LycheeMASvX`**（当前 `LycheeMASv0.3`）：**只由项目负责人创建与更新**——版本分支的开设、主线的直接 push、历史管理均为负责人专属；其他成员对主线只读。
+- **贡献流程（负责人以外的所有成员）**：
+  1. **fork** 本仓库到自己名下；
+  2. 在 fork 里从主线最新处新建分支，命名 **`<module>_<方法名>`**——module 取接缝/模块名（`build` / `prerun` / `memory` / `processing` / `postrun` / `eval` / `scripts`），例：`prerun_agentdropout`、`processing_aggagent`、`postrun_attribution`；
+  3. 开发（过 §6.3 检查清单）；
+  4. 向主仓库主线提交 **Pull Request**，由负责人 review 后合入。**不直接 push 主线，不代替负责人合并。**
+- **PR 要求**：一个 PR 一件事；描述"做了什么 + 为什么"；附三件套（lint/test/selfcheck）输出；复现论文方法注明出处（repo + arXiv）、声明偏差与许可证处理。
+- **备份/存档** `backup/<描述>-<日期>` 与大版本推进（如 v0.4）由负责人管理并公告。
 
 ### 6.2 提交规范
 
@@ -226,11 +230,12 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions
 ### 6.3 push 前检查清单（每次，无例外）
 
 ```bash
-git pull --rebase origin LycheeMASv0.3   # ① 先同步（解决冲突在本地，不在远程）
+# fork 工作流：upstream = 主仓库（git remote add upstream git@github.com:ecoli-hit/LycheeMAS.git）
+git fetch upstream && git rebase upstream/LycheeMASv0.3   # ① 先同步主线（冲突解决在本地）
 make lint && make test && make selfcheck # ② 三件套全绿
 make demo                                # ③ 改了执行链路时端到端不回归
 git diff --cached | grep -E '^\+.*(<<<<<<<|>>>>>>>)' && echo "冲突标记！" # ④ 自查
-git push origin LycheeMASv0.3
+git push origin <module>_<方法名>         # ⑤ 推到自己 fork，再开 PR（负责人合并）
 ```
 
 ### 6.4 红线（事故直接来源，逐条对应）
