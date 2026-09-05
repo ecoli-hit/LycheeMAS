@@ -1,7 +1,7 @@
 # LycheeMAS 团队入门与开发指南（ONBOARDING）
 
 > 面向**每一位参与本项目的人**：我们要做什么、代码怎么读、按什么规则开发与协作。
-> 三份文档的分工：本文是**入门与协作规范**；[`DESIGN.md`](DESIGN.md) 是**唯一架构设计文档**（接缝契约与组件全景）；仓库根 [`CLAUDE.md`](../CLAUDE.md) 是**编码代理与日常操作规范**（命令、黄金法则、检查清单）。冲突时以 DESIGN/CLAUDE 为准并回来修本文。
+> 三份文档的分工：本文是**入门与协作规范**；[`DESIGN.md`](DESIGN.md) 是**唯一架构设计文档**（接缝契约与组件全景）；仓库根 [`CLAUDE.md`](https://github.com/ecoli-hit/LycheeMAS/blob/LycheeMASv0.3/CLAUDE.md) 是**编码代理与日常操作规范**（命令、黄金法则、检查清单）。冲突时以 DESIGN/CLAUDE 为准并回来修本文。
 
 ---
 
