@@ -208,49 +208,10 @@ python scripts/analyze_benchmark_run.py <run_dir> --score-predictions
 
 评测纪律：结果目录 = `<root>/<model_tag>/<method>/<task>/`（samples + summary + config 快照）；同时报 accuracy / token / latency；对照实验只换 `method`/配置名；改了执行链路必须与改前基线小样本对拍（predictions 逐字一致）。长时优化要支持断点续跑（参照 maspo 的 `*_ckpt.json`）。
 
-## 6. git 项目管理指南
+## 6. git 项目管理
 
-> 本节部分规则来自一次真实事故（2026-09-04：旧基线 rebase 把未解决冲突标记与 27 万行已删代码推上了主线，见 `backup/jay-rebase-20260904`）。请认真对待。
+已独立成文：**[`GIT_GUIDE.md`](GIT_GUIDE.md)**（分支模型与权限 / fork-PR 全流程 / 提交规范 / push 检查清单 / 五条红线 / 事故处置与复盘范例）。三句话版本：
 
-### 6.1 分支模型与权限
-
-- **主线 `LycheeMASvX`**（当前 `LycheeMASv0.3`）：**只由项目负责人创建与更新**——版本分支的开设、主线的直接 push、历史管理均为负责人专属；其他成员对主线只读。
-- **贡献流程（负责人以外的所有成员）**：
-  1. **fork** 本仓库到自己名下；
-  2. 在 fork 里从主线最新处新建分支，命名 **`<module>_<方法名>`**——module 取接缝/模块名（`build` / `prerun` / `memory` / `processing` / `postrun` / `eval` / `scripts`），例：`prerun_agentdropout`、`processing_aggagent`、`postrun_attribution`；
-  3. 开发（过 §6.3 检查清单）；
-  4. 向主仓库主线提交 **Pull Request**，由负责人 review 后合入。**不直接 push 主线，不代替负责人合并。**
-- **PR 要求**：一个 PR 一件事；描述"做了什么 + 为什么"；附三件套（lint/test/selfcheck）输出；复现论文方法注明出处（repo + arXiv）、声明偏差与许可证处理。
-- **备份/存档** `backup/<描述>-<日期>` 与大版本推进（如 v0.4）由负责人管理并公告。
-
-### 6.2 提交规范
-
-- 格式：`<type>(<scope>): <一句话中文摘要>`，type ∈ `feat / fix / refactor / test / docs / chore`，scope 用接缝或模块名（`prerun` / `processing` / `eval` / `scripts`…）。正文写清"做了什么 + 为什么 + 声明偏差"（参照 `git log` 现有风格）。
-- 一个提交一件事：功能、测试、文档可以同提交（同一件事的三面），两个无关功能必须拆开。
-- 复现论文方法的提交必须写明：出处（repo + arXiv）、与原版的声明差异、许可证处理。
-
-### 6.3 push 前检查清单（每次，无例外）
-
-```bash
-# fork 工作流：upstream = 主仓库（git remote add upstream git@github.com:ecoli-hit/LycheeMAS.git）
-git fetch upstream && git rebase upstream/LycheeMASv0.3   # ① 先同步主线（冲突解决在本地）
-make lint && make test && make selfcheck # ② 三件套全绿
-make demo                                # ③ 改了执行链路时端到端不回归
-git diff --cached | grep -E '^\+.*(<<<<<<<|>>>>>>>)' && echo "冲突标记！" # ④ 自查
-git push origin <module>_<方法名>         # ⑤ 推到自己 fork，再开 PR（负责人合并）
-```
-
-### 6.4 红线（事故直接来源，逐条对应）
-
-1. **禁止提交冲突标记**：`<<<<<<< / ======= / >>>>>>>` 进库 = 立即返工（事故中 registry.py 因此语法损坏）。rebase/merge 后必须重跑三件套再 push。
-2. **禁止从过期基线 rebase 后直接 push**：本地基线落后主线超过一次大重构时，先 `git fetch` + 读最新 `docs/DESIGN.md`，确认目录结构没变过；已删除的目录（如曾经的 `layers/`、`src/autogen/`）在你的旧工作区里"复活"是最典型的信号——**出现成百上千个"新增文件"的 diff 时停下来检查**。
-3. **禁止对共享分支 force-push**（`--force`/`--force-with-lease` 均属之），除非：负责人批准 + 已建 `backup/` 分支 + 通知所有协作者。事故修复即按此流程执行（备份 → 提取有效贡献重做署名提交 → lease 保护下重写 tip）。
-4. **禁止大文件/产物/密钥入库**：`runs/`、`*.jsonl`、模型权重、`.env`、`.vscode/`、vendored 整仓——`.gitignore` 已覆盖，别绕过它 `git add -f`。
-5. **协作者的贡献不丢弃**：即使提交有问题，也走"备份 → 提取 → 以原作者署名（`--author`）重做"的流程，不做无备份的覆盖。
-
-### 6.5 出事了怎么办
-
-- **push 被拒（non-fast-forward）**：`git pull --rebase` 解冲突 → 三件套 → 再 push。**不要**用 force 解决。
-- **发现远程被污染**：不要急着改，先 `git branch backup/<描述>-<日期> <坏提交>` 推远程留档 + `git bundle` 本地备份，再评估"修复提交"还是"tip 重写"（后者需负责人批准）。
-- **本地被远程重写甩开**：`git fetch && git reset --hard origin/LycheeMASv0.3`（本地未推的工作先 `git stash` 或切备份分支保住）。
-- 任何拿不准的操作：先在 `backup/` 分支上演练，或在群里问一句——恢复一个 force-push 的成本远高于问一句的成本。
+1. **主线 `LycheeMASvX` 只由负责人更新**；成员 fork 后在 `<module>_<方法名>` 分支开发，提 PR 合入。
+2. push 前四绿（lint / test / selfcheck / demo）+ 冲突标记自查，**永不**对共享分支 force-push。
+3. 出事先备份（`backup/` 分支 + bundle）再处置，协作者的贡献不丢弃。
