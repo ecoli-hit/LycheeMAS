@@ -5,6 +5,9 @@
 
 ---
 
+<p align="center"><img src="assets/main.png" alt="LycheeMAS 框架主图" width="820"></p>
+<p align="center"><em>框架主图：中轴「系统初始化 → 运行前优化 → 运行时优化」对应 build / prerun / processing 接缝，左「记忆中枢」= memory，右「进化中枢」（轨迹→归因→信用→训练）= postrun；底部为数据/基模/评测/沙箱/工具的生态底座，顶部为示范应用。</em></p>
+
 ## 1. 项目目标
 
 **LycheeMAS 是一个多智能体系统（MAS）研究框架**，回答一个问题：*如何把 MAS 领域的各种优化方法放进同一套可消融、可复现的实验体系里公平比较？*
