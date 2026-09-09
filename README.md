@@ -18,6 +18,9 @@
   <a href="https://github.com/ecoli-hit/LycheeMAS">GitHub</a> ·
   <a href="docs/DESIGN.md">架构设计</a> ·
   <a href="CLAUDE.md">开发规范</a> ·
+  <a href="docs/ONBOARDING.md">团队入门</a> ·
+  <a href="docs/GIT_GUIDE.md">Git 规范</a> ·
+  <a href="docs/example-maspo.md">MASPO 实例</a> ·
   <a href="configs/">配置</a> ·
   <a href="examples/">示例</a>
 </p>
@@ -26,7 +29,7 @@
 
 > **版本范围：** 本 README 对应 **LycheeMAS v0.3**。
 
-[框架总览](#框架总览) · [安装](#安装) · [跑 demo](#跑-demo离线零重依赖) · [跑测试](#跑测试) · [支持的 Benchmarks](#支持的-benchmarks) · [目录](#目录)
+[框架总览](#框架总览) · [安装](#安装) · [跑 demo](#跑-demo离线零重依赖) · [跑测试](#跑测试) · [支持的 Benchmarks](#支持的-benchmarks) · [目录](#目录) · [团队文档](#团队文档)
 
 ---
 
@@ -169,10 +172,20 @@ configs/         YAML 配置（按接缝分组：build / prerun / memory / proce
 examples/        01_five_seams_demo.py（make demo：五接缝离线端到端）
 scripts/         实验入口（run_maspo_langgraph / run_agentprune_gsm8k / analyze_benchmark_run）
 tests/           pytest（离线、LLM 全脚本化）
-docs/            DESIGN.md（唯一架构设计文档）+ plans/ + 文档站页面
+docs/            DESIGN.md（唯一架构设计文档）+ ONBOARDING / GIT_GUIDE / example-maspo（团队文档）+ plans/ + 文档站页面
 ```
 
 > **架构设计**（接缝职责、节点契约、组件全景、评测体系）见 `docs/DESIGN.md`；**开发规范**（环境、命令、黄金法则、六步配方、检查清单）见 `CLAUDE.md`。
+
+## 团队文档
+
+新成员按顺序读这三份（均随仓库版本管理）：
+
+| 文档 | 读什么 |
+| --- | --- |
+| [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | 团队入门与开发指南：项目目标与总览（框架主图）、项目结构、各模块解读、模块开发与评测实例（六步配方） |
+| [`docs/GIT_GUIDE.md`](docs/GIT_GUIDE.md) | Git 项目管理规范：fork + `<module>_<方法名>` 分支 + PR、push 前清单、五条红线、事故复盘 |
+| [`docs/example-maspo.md`](docs/example-maspo.md) | MASPO 开发实例走读：一个 prerun 方法从协议、注册、测试到实验落盘的完整范例 |
 
 ---
 
