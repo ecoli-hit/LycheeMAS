@@ -3,8 +3,9 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-build/
-dist/
+# 打包产物只忽略仓库根目录的（前导 / 锚定）；写成 build/ 会吞掉 src/**/build/ 接缝包
+/build/
+/dist/
 
 # 虚拟环境 / 密钥
 .venv/

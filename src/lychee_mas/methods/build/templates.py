@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-from ...core.registry import REGISTRY
 from ...core.types import AgentSpec
 from ..memory.channels.nl import PREV_OUTPUT_HEADER  # 来源标志的唯一来源
 
