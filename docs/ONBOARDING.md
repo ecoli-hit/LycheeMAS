@@ -82,7 +82,7 @@ LycheeMAS/
 │   │   └── postrun/           运行后：analyze_run + optimize_postrun + train_from_runs
 │   ├── methods/               ★ 实现层（厚，与 plugins 镜像）
 │   │   ├── build/             static 队伍模板、agentinit 选队（Pareto 多样性×相关性）
-│   │   ├── prerun/            agentprune、agentdropout（接缝类+两阶段训练）、maspo/、gepa/（+桩）
+│   │   ├── prerun/            agentprune、agentdropout（接缝类+两阶段训练）、maspo/、gepa/、graphops.py（共享图原语）（+桩）
 │   │   ├── memory/            channels{nl,latent,c2c} + managers{cdm} + routing + store/context
 │   │   ├── processing/        serial / parallel + self_consistency / aggagent/（+dynamicagg 桩）
 │   │   └── postrun/           attributor·credit 桩 + post_run_optimizer 桩 + TraceStore
@@ -203,6 +203,10 @@ CUDA_VISIBLE_DEVICES=0,1 python scripts/run_maspo_langgraph.py --phase both \
 
 # 例二：AgentPrune × GSM8K（train 落 state → eval 挂载）
 CDM_DATA_ROOT=... CUDA_VISIBLE_DEVICES=0 python scripts/run_agentprune_gsm8k.py \
+    --phase both --model-path /path/to/model --train-n 40 --eval-n 40
+
+# 例三：AgentDropout × GSM8K（两阶段日程 train 落 state → 逐轮 apply 评测）
+CDM_DATA_ROOT=... CUDA_VISIBLE_DEVICES=0 python scripts/run_agentdropout_gsm8k.py \
     --phase both --model-path /path/to/model --train-n 40 --eval-n 40
 
 # 事后打分（与推理分离）

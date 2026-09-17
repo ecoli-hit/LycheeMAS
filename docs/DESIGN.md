@@ -69,6 +69,8 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 读写唯一通道 `plugins/prerun/graphview.py`：`extract_view(sg)`（视图提取；缺元数据/非 DAG/多终端显式报错）、`rebuild(sg, prompts=…/adjacency=…)`（提示原地写 / 邻接产新图并回写元数据）。build 接缝产契约图，prerun/memory 接缝消费与改写契约图。
 
+graphview 的拓扑排序原语（破环 Kahn 序）取自 `methods/prerun/graphops.py`——AgentPrune/AgentDropout 同族共用的最小图与优化原语（`Edge` / `full_connected_masks` / `topological_order` / `Realization` / `Adam`，纯标准库、不注册组件）；依赖方向是「方法族 → graphops ← graphview」，接缝层不反向 import 具体方法文件。`agentprune.py` 保留同名 re-export（含私有名 `_Adam`）以不破坏旧 import 路径。
+
 ---
 
 ## 4. 五接缝详解（plugins/ 接口 × methods/ 实现）
