@@ -1,0 +1,21 @@
+# One-case demonstration; this is not a formal GSM8K experiment config.
+server_url: http://127.0.0.1:8080
+variant: mad_m2s  # cot | cot_sc | mad | mad_m2s
+question_id: 0
+seed: 41
+question: "What is 2 + 2?"
+gold: "#### 4"
+max_tokens: 1024
+stop: []
+ignore_eos: false
+sampling:
+  temperature: 1.0
+  top_p: 1.0
+  top_k: 0
+  min_p: 0.0
+  typical_p: 1.0
+  repeat_penalty: 1.0
+  presence_penalty: 0.0
+  frequency_penalty: 0.0
+  mirostat: 0
+  cache_prompt: false

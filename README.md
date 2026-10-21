@@ -102,6 +102,8 @@ result = await run_processed(runner, method="parallel", k=8, aggregator="self_co
 
 真实实验入口见 `scripts/run_maspo_langgraph.py`（MASPO × MATH-500 复现：baseline / optimize / eval 三条腿）与 `scripts/run_agentprune_gsm8k.py`（AgentPrune × GSM8K）。
 
+MAD-M² 的四种方法（CoT、CoT-SC、MAD、MAD-M²(S)）可用 `graph_builder/mad_m2` 静态图和 `LlamaCppBackend` 运行；配置与单题示例见 [`docs/mad_m2.md`](docs/mad_m2.md)。
+
 ---
 
 ## 跑测试
