@@ -97,9 +97,7 @@ def extract_answer_with_source(text: str) -> tuple[str, str]:
     matches = re.findall(r"####\s*(-?[0-9\.\,]+)", text)
     if matches:
         return matches[-1].replace(",", "").replace("$", ""), "gsm8k_marker"
-    matches = re.findall(
-        r"(?:[Tt]he(?:\s+final)?(?:\s+answer)?(?:\s+is)?:?)\s*([^\n]+)", text
-    )
+    matches = re.findall(r"(?:[Tt]he(?:\s+final)?(?:\s+answer)?(?:\s+is)?:?)\s*([^\n]+)", text)
     if matches:
         return matches[-1], "answer_phrase"
     return text.split("\n")[-1], "last_line"
@@ -135,9 +133,11 @@ def mask_decision(raw_response: str, strict: bool = False) -> tuple[str, bool]:
     """Match subjective pruning: only a parsed NO is masked when strict=False."""
     match = re.search(r"<label>(.*?)</label>", raw_response, re.DOTALL)
     label = match.group(1).strip() if match else None
-    normalized = re.sub(
-        r"[\(\[\{]([A-Za-z])[\)\]\}]|([A-Za-z])[\.:\\)]", r"\1\2", str(label)
-    ).lower().strip()
+    normalized = (
+        re.sub(r"[\(\[\{]([A-Za-z])[\)\]\}]|([A-Za-z])[\.:\\)]", r"\1\2", str(label))
+        .lower()
+        .strip()
+    )
     if normalized == "yes":
         return normalized, True
     if normalized == "no":
