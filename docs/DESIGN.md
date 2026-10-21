@@ -56,7 +56,7 @@ analyze_run(trajectory, ...)   运行后：归因 → 信用（读侧）；train
 
 ### 3.2 `backends/` — 生成原语层
 
-回答「**怎么调一个 LLM**」（plugins/methods 回答「用 LLM 做什么」）：`hf_backend`（本地 HF：`generate_chat` / `encode_hidden` / prefix-KV 原语）、`openai_api_backend`（OpenAI 兼容 API）、`spans`（`JsonlSpanLogger` 运行事件落盘）。methods 里的算法不直接 import transformers/openai——由脚本用本层构造 async 回调注入（如 MASPO 的 `agent_llm`/`evaluator_llm`/`proposer_llm`）。重依赖只在此层（与 methods 内部）惰性导入，`make selfcheck` 必须 `HEAVY LOADED: NONE`。
+回答「**怎么调一个 LLM**」（plugins/methods 回答「用 LLM 做什么」）：`hf_backend`（本地 HF：`generate_chat` / `encode_hidden` / prefix-KV 原语）、`openai_api_backend`（OpenAI 兼容 API）、`llama_cpp_backend`（本地 llama-server `/completion`；逐次 seed 与原始响应）、`spans`（`JsonlSpanLogger` 运行事件落盘）。methods 里的算法不直接 import transformers/openai——由脚本用本层构造 async 回调注入（如 MASPO 的 `agent_llm`/`evaluator_llm`/`proposer_llm`）。重依赖只在此层（与 methods 内部）惰性导入，`make selfcheck` 必须 `HEAVY LOADED: NONE`。
 
 ### 3.3 节点契约（graphview，五接缝互操作的唯一约定）
 
@@ -75,7 +75,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 ### 4.1 build（构建，`plugins/build/` × `methods/build/`）
 
-回答「由谁组队、怎么连」。`build_langgraph(method, node_factory, state_schema, ...) -> StateGraph`：节点函数语义（生成后端、状态形状）由实验方以 `node_factory(spec, is_terminal)` 注入，构建器负责 AgentSpec 链、通信结构、元数据挂载与 START→…→END 执行边。已实现 `graph_builder/static`（team 模板链）；选队器 `agent_selector/agentinit`（EMNLP'25，多样性×相关性 Pareto 选队）产出 AgentSpec 列表经 `agents=` 传入。
+回答「由谁组队、怎么连」。`build_langgraph(method, node_factory, state_schema, ...) -> StateGraph`：默认构建器由实验方以 `node_factory(spec, is_terminal)` 注入节点语义，构建器负责 AgentSpec 链、通信结构、元数据挂载与 START→…→END 执行边。已实现 `graph_builder/static`（team 模板链）与 `graph_builder/mad_m2`（固定 CoT / CoT-SC / MAD / MAD-M²(S) 的顺序 DAG，后端注入，见 `docs/mad_m2.md`）；选队器 `agent_selector/agentinit`（EMNLP'25，多样性×相关性 Pareto 选队）产出 AgentSpec 列表经 `agents=` 传入。
 
 ### 4.2 prerun（运行前优化，`plugins/prerun/` × `methods/prerun/`）
 
@@ -117,7 +117,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 
 | 接缝 | 类别 | 已实现/可跑 | 桩（占名待接） |
 |---|---|---|---|
-| build | `graph_builder` | `static` | — |
+| build | `graph_builder` | `static`, `mad_m2` | — |
 | build | `agent_selector` | `agentinit` | — |
 | prerun | `pre_run_optimizer` | `maspo`, `agentprune`, `agentdropout` | — |
 | prerun | `graph_pruner` | `agentprune`, `agentdropout` | `agentdropout_v2` |

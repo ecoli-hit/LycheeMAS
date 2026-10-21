@@ -2,6 +2,7 @@
 
   hf_backend.py         本地 HF 模型（generate_chat / encode_hidden / prefix-KV 原语）
   openai_api_backend.py OpenAI 兼容 API（MASPO 的 API 评估端等）
+  llama_cpp_backend.py  llama-server /completion，逐次固定 seed
   spans.py              运行事件落盘（JsonlSpanLogger，回归对拍原始数据）
 
 methods 里的算法不直接 import transformers/openai——由脚本用本层构造回调注入。
@@ -9,4 +10,4 @@ methods 里的算法不直接 import transformers/openai——由脚本用本层
 """
 from __future__ import annotations
 
-__all__ = ["hf_backend", "openai_api_backend", "spans"]
+__all__ = ["hf_backend", "llama_cpp_backend", "openai_api_backend", "spans"]

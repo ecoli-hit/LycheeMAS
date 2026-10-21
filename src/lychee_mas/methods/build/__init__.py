@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from .base import AgentSelector, GraphBuilder
 from .lg_builder import StaticGraphBuilder  # noqa: F401  触发 graph_builder/static 注册
+from .mad_m2_builder import MadM2GraphBuilder  # noqa: F401  触发 graph_builder/mad_m2 注册
 from .selectors import AgentInitSelector
 from .templates import (
     ROLE_SYSTEM,
@@ -20,6 +21,8 @@ from .templates import (
 __all__ = [
     "AgentSelector",
     "GraphBuilder",
+    "MadM2GraphBuilder",
+    "StaticGraphBuilder",
     "AgentInitSelector",
     "Role",
     "ROLE_SYSTEM",
