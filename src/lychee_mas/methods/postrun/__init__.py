@@ -8,17 +8,29 @@
 训练（trainer）拆到姊妹包 `lychee_mas.train`。注册占位实现（`<name>: not wired yet (TODO)`），
 但能被 REGISTRY.list 看到。import 本包触发注册（不触发 torch/RL 库）。
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 from ...core.registry import REGISTRY
 from ...core.types import Trajectory
-from . import optimizers  # noqa: F401  触发 post_run_optimizer/{attribution,train} 桩注册
+from . import (
+    agentracer,  # noqa: F401  触发 attributor/agentracer 注册
+    optimizers,  # noqa: F401  触发 post_run_optimizer/{attribution,train} 桩注册
+)
 from .base import (
     Attribution,
     CreditAssigner,
     FailureAttributor,
+)
+from .counterfactual import (
+    ArithmeticReplayTask,
+    LocalizationResult,
+    RepairProposal,
+    ReplayStep,
+    ReplayTrace,
+    locate_first_effective_fix,
 )
 from .store import TraceStore
 
@@ -70,4 +82,11 @@ __all__ = [
     "StepByStepAttributor",
     "BinarySearchAttributor",
     "AttributionGuidedCredit",
+    "agentracer",
+    "ArithmeticReplayTask",
+    "LocalizationResult",
+    "RepairProposal",
+    "ReplayStep",
+    "ReplayTrace",
+    "locate_first_effective_fix",
 ]

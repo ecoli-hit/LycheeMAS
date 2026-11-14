@@ -1,0 +1,66 @@
+[
+  {
+    "task_id": "arith_01",
+    "a": 2,
+    "b": 3,
+    "c": 4,
+    "failure_step": 0,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_02",
+    "a": 5,
+    "b": 7,
+    "c": 2,
+    "failure_step": 0,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_03",
+    "a": 4,
+    "b": 6,
+    "c": 3,
+    "failure_step": 1,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_04",
+    "a": 8,
+    "b": 1,
+    "c": 5,
+    "failure_step": 1,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_05",
+    "a": 9,
+    "b": 2,
+    "c": 4,
+    "failure_step": 2,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_06",
+    "a": 3,
+    "b": 7,
+    "c": 6,
+    "failure_step": 2,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_07",
+    "a": 10,
+    "b": 5,
+    "c": 2,
+    "failure_step": 3,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  },
+  {
+    "task_id": "arith_08",
+    "a": 6,
+    "b": 4,
+    "c": 7,
+    "failure_step": 3,
+    "verification": "manual label: one intentionally corrupted step; expected=(a+b)*c"
+  }
+]

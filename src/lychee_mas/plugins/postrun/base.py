@@ -11,6 +11,7 @@
 方法自带训练（MASPO/GEPA/AgentPrune 的 optimize 模式）不走本接缝——训练素材自给的方法，
 训练代码跟方法走（methods/prerun/）；素材来自执行轨迹的才在这里。
 """
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -30,29 +31,43 @@ from ...methods.postrun.store import TraceStore  # noqa: F401
 class Trainer(Protocol):
     """离线训练器协议（写侧）：消费信用与轨迹，产出新参数/提示（RL 库只在实现里依赖）。"""
 
-    def train(self, credits: dict[str, float], trajectories: list[Trajectory],
-              **kwargs: Any) -> Any: ...
+    def train(
+        self, credits: dict[str, float], trajectories: list[Trajectory], **kwargs: Any
+    ) -> Any: ...
 
 
-def analyze_run(trajectory: Trajectory, score: Optional[float] = None,
-                method: str = "all_at_once", credit_assigner: str = "attribution_guided",
-                trace_store: Any = None, **kwargs: Any) -> dict[str, float]:
+def analyze_run(
+    trajectory: Trajectory,
+    score: Optional[float] = None,
+    method: str = "all_at_once",
+    credit_assigner: Optional[str] = "attribution_guided",
+    trace_store: Any = None,
+    context: Any = None,
+    **kwargs: Any,
+) -> dict[str, float]:
     """读侧：归因（attributor/<method>）→ 信用（credit_assigner）→ 写回轨迹与 TraceStore。
 
     桩组件的 NotImplementedError 如实上抛（显式错误原则）。返回 per-agent 信用。
     """
     attributor = REGISTRY.create("attributor", method, **kwargs)
-    assigner = REGISTRY.create("credit_assigner", credit_assigner)
-    attributions = attributor.attribute(trajectory, context=None)
-    credits = assigner.credits(attributions, float(score) if score is not None else 0.0)
+    attributions = attributor.attribute(trajectory, context=context)
+    credits: dict[str, float] = {}
+    if credit_assigner is not None:
+        assigner = REGISTRY.create("credit_assigner", credit_assigner)
+        credits = dict(assigner.credits(attributions, float(score) if score is not None else 0.0))
     trajectory.meta["attribution"] = [asdict(a) for a in attributions]
     trajectory.meta["credits"] = dict(credits)
     if trace_store is not None:
-        trace_store.log_decision({
-            "type": "attribution", "trajectory_id": trajectory.id,
-            "task_id": trajectory.task_id, "score": score, "credits": dict(credits),
-        })
-    return dict(credits)
+        trace_store.log_decision(
+            {
+                "type": "attribution",
+                "trajectory_id": trajectory.id,
+                "task_id": trajectory.task_id,
+                "score": score,
+                "credits": dict(credits),
+            }
+        )
+    return credits
 
 
 @runtime_checkable
@@ -73,7 +88,8 @@ def _require_trajectories(obj: Any, where: str) -> list[Trajectory]:
         return list(obj)
     raise TypeError(
         f"{where} 需要 Trajectory 序列（list/tuple，可空——apply 模式可能不消费轨迹），"
-        f"得到 {type(obj).__name__}")
+        f"得到 {type(obj).__name__}"
+    )
 
 
 def optimize_postrun(graph: Any, trajectories: Any, method: str, **kwargs: Any) -> Any:

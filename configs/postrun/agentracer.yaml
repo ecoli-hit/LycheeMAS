@@ -1,0 +1,3 @@
+method: agentracer
+# tracer_llm 由实验脚本注入；公开 AgenTracer 仓库未发布 AgenTracer-8B 权重。
+credit_assigner: null

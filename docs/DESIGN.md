@@ -127,7 +127,7 @@ sg.add_node(name, node_fn, metadata={"agent_spec": spec})   # spec: core.types.A
 | memory | `memory_router` | `static`, `fixed` | `learned`, `soft_gate` |
 | processing | `processor` | `serial`, `parallel` | — |
 | processing | `aggregator` | `self_consistency`, `aggagent`（AggAgent agentic 聚合，COLM 2026） | `dynamicagg` |
-| postrun | `attributor` | — | `all_at_once`, `step_by_step`, `binary_search` |
+| postrun | `attributor` | `agentracer`（公开 Who/When 推理协议；模型回调注入） | `all_at_once`, `step_by_step`, `binary_search` |
 | postrun | `credit_assigner` | — | `attribution_guided` |
 | postrun | `trainer` | — | —（RL 线待接） |
 | postrun | `post_run_optimizer` | — | `attribution`, `train`（图闭环桩） |
